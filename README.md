@@ -5,6 +5,10 @@
 
 OpenCode plugin with a structured Brainstorm → Plan → Implement workflow.
 
+
+https://github.com/user-attachments/assets/85236ad3-e78a-4ff7-a840-620f6ea2f512
+
+
 ## Installation
 
 Add to `~/.config/opencode/opencode.json`:
