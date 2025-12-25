@@ -1,5 +1,25 @@
-import { spawn } from "bun";
+import { spawn, which } from "bun";
 import { tool } from "@opencode-ai/plugin/tool";
+
+/**
+ * Check if ast-grep CLI (sg) is available on the system.
+ * Returns installation instructions if not found.
+ */
+export async function checkAstGrepAvailable(): Promise<{ available: boolean; message?: string }> {
+  const sgPath = which("sg");
+  if (sgPath) {
+    return { available: true };
+  }
+  return {
+    available: false,
+    message:
+      "ast-grep CLI (sg) not found. AST-aware search/replace will not work.\n" +
+      "Install with one of:\n" +
+      "  npm install -g @ast-grep/cli\n" +
+      "  cargo install ast-grep --locked\n" +
+      "  brew install ast-grep",
+  };
+}
 
 const LANGUAGES = [
   "c", "cpp", "csharp", "css", "dart", "elixir", "go", "haskell", "html",

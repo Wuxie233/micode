@@ -5,7 +5,7 @@ import type { McpLocalConfig } from "@opencode-ai/sdk";
 import { agents, PRIMARY_AGENT_NAME } from "./agents";
 
 // Tools
-import { ast_grep_search, ast_grep_replace } from "./tools/ast-grep";
+import { ast_grep_search, ast_grep_replace, checkAstGrepAvailable } from "./tools/ast-grep";
 import { look_at } from "./tools/look-at";
 
 // Hooks
@@ -43,6 +43,12 @@ const MCP_SERVERS: Record<string, McpLocalConfig> = {
 
 
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
+  // Validate external tool dependencies at startup
+  const astGrepStatus = await checkAstGrepAvailable();
+  if (!astGrepStatus.available) {
+    console.warn(`[micode] ${astGrepStatus.message}`);
+  }
+
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
 
