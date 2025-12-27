@@ -5,6 +5,7 @@ export const brainstormerAgent: AgentConfig = {
   mode: "primary",
   model: "anthropic/claude-opus-4-5",
   temperature: 0.7,
+  tools: { ask: true },
   prompt: `<purpose>
 Turn ideas into fully formed designs through natural collaborative dialogue.
 This is DESIGN ONLY. The planner agent handles detailed implementation plans.

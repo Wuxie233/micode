@@ -109,6 +109,7 @@ export const primaryAgent: AgentConfig = {
   },
   maxTokens: 64000,
   prompt: PROMPT,
+  tools: { ask: true },
 };
 
 export const PRIMARY_AGENT_NAME = process.env.OPENCODE_AGENT_NAME || "Commander";
