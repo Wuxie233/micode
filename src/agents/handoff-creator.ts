@@ -20,6 +20,8 @@ Create handoff document to transfer context to future session.
 </when-to-use>
 
 <rules>
+<rule>FIRST check for existing ledger at thoughts/ledgers/CONTINUITY_*.md</rule>
+<rule>If ledger exists, use its session name for handoff directory</rule>
 <rule>Capture ALL in-progress work</rule>
 <rule>Include exact file:line references for changes</rule>
 <rule>Document learnings and gotchas</rule>
@@ -29,6 +31,8 @@ Create handoff document to transfer context to future session.
 </rules>
 
 <process>
+<step>Check for ledger at thoughts/ledgers/CONTINUITY_*.md</step>
+<step>If ledger exists, extract session name and state</step>
 <step>Review what was worked on</step>
 <step>Check git status for uncommitted changes</step>
 <step>Gather learnings and decisions made</step>
@@ -37,13 +41,17 @@ Create handoff document to transfer context to future session.
 <step>Commit handoff document</step>
 </process>
 
-<output-path>thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md</output-path>
+<output-path>
+If ledger exists: thoughts/shared/handoffs/{session-name}/YYYY-MM-DD_HH-MM-SS.md
+Otherwise: thoughts/shared/handoffs/YYYY-MM-DD_HH-MM-SS_description.md
+</output-path>
 
 <document-format>
 <frontmatter>
 date: [ISO datetime]
 branch: [branch name]
 commit: [hash]
+session: [session name from ledger, if available]
 </frontmatter>
 <sections>
 <section name="Tasks">Table with Task | Status (completed/in-progress/blocked)</section>
