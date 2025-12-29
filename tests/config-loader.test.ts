@@ -88,6 +88,48 @@ describe("config-loader", () => {
     expect((config?.agents?.Commander as Record<string, unknown>)?.prompt).toBeUndefined();
     expect((config?.agents?.Commander as Record<string, unknown>)?.tools).toBeUndefined();
   });
+
+  it("should handle agents: null", async () => {
+    const configPath = join(testConfigDir, "micode.json");
+    writeFileSync(configPath, JSON.stringify({ agents: null }));
+
+    const config = await loadMicodeConfig(testConfigDir);
+
+    // agents: null is not an object, so it falls through to return the raw parsed value
+    expect(config).toEqual({ agents: null });
+  });
+
+  it("should handle config with no agents key", async () => {
+    const configPath = join(testConfigDir, "micode.json");
+    writeFileSync(configPath, JSON.stringify({ someOtherKey: "value" }));
+
+    const config = await loadMicodeConfig(testConfigDir);
+
+    expect(config).not.toBeNull();
+    expect(config?.agents).toBeUndefined();
+  });
+
+  it("should handle non-object agent entries", async () => {
+    const configPath = join(testConfigDir, "micode.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        agents: {
+          Commander: "not-an-object",
+          brainstormer: null,
+          planner: { model: "openai/gpt-4o" },
+        },
+      }),
+    );
+
+    const config = await loadMicodeConfig(testConfigDir);
+
+    expect(config).not.toBeNull();
+    // Non-object entries should be skipped, only valid ones kept
+    expect(config?.agents?.Commander).toBeUndefined();
+    expect(config?.agents?.brainstormer).toBeUndefined();
+    expect(config?.agents?.planner?.model).toBe("openai/gpt-4o");
+  });
 });
 
 describe("mergeAgentConfigs", () => {
