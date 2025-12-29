@@ -7,15 +7,17 @@ import { agents, PRIMARY_AGENT_NAME } from "./agents";
 // Tools
 import { ast_grep_search, ast_grep_replace, checkAstGrepAvailable } from "./tools/ast-grep";
 import { look_at } from "./tools/look-at";
+import { artifact_search } from "./tools/artifact-search";
 
 // Hooks
 import { createAutoCompactHook } from "./hooks/auto-compact";
 import { createContextInjectorHook } from "./hooks/context-injector";
-import { createPreemptiveCompactionHook } from "./hooks/preemptive-compaction";
 import { createSessionRecoveryHook } from "./hooks/session-recovery";
 import { createTokenAwareTruncationHook } from "./hooks/token-aware-truncation";
 import { createContextWindowMonitorHook } from "./hooks/context-window-monitor";
 import { createCommentCheckerHook } from "./hooks/comment-checker";
+import { createAutoClearLedgerHook } from "./hooks/auto-clear-ledger";
+import { createLedgerLoaderHook } from "./hooks/ledger-loader";
 
 // Background Task System
 import { BackgroundTaskManager, createBackgroundTaskTools } from "./tools/background-task";
@@ -40,6 +42,21 @@ const MCP_SERVERS: Record<string, McpLocalConfig> = {
   },
 };
 
+// Environment-gated research MCP servers
+if (process.env.PERPLEXITY_API_KEY) {
+  MCP_SERVERS.perplexity = {
+    type: "local",
+    command: ["npx", "-y", "@anthropic/mcp-perplexity"],
+  };
+}
+
+if (process.env.FIRECRAWL_API_KEY) {
+  MCP_SERVERS.firecrawl = {
+    type: "local",
+    command: ["npx", "-y", "firecrawl-mcp"],
+  };
+}
+
 
 
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
@@ -55,7 +72,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Hooks
   const autoCompactHook = createAutoCompactHook(ctx);
   const contextInjectorHook = createContextInjectorHook(ctx);
-  const preemptiveCompactionHook = createPreemptiveCompactionHook(ctx);
+  const autoClearLedgerHook = createAutoClearLedgerHook(ctx);
+  const ledgerLoaderHook = createLedgerLoaderHook(ctx);
   const sessionRecoveryHook = createSessionRecoveryHook(ctx);
   const tokenAwareTruncationHook = createTokenAwareTruncationHook(ctx);
   const contextWindowMonitorHook = createContextWindowMonitorHook(ctx);
@@ -71,6 +89,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       ast_grep_search,
       ast_grep_replace,
       look_at,
+      artifact_search,
       ...backgroundTaskTools,
     },
 
@@ -108,6 +127,16 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
           agent: "project-initializer",
           template: `Initialize this project. $ARGUMENTS`,
         },
+        ledger: {
+          description: "Create or update continuity ledger for session state",
+          agent: "ledger-creator",
+          template: `Update the continuity ledger. $ARGUMENTS`,
+        },
+        search: {
+          description: "Search past handoffs, plans, and ledgers",
+          agent: "artifact-searcher",
+          template: `Search for: $ARGUMENTS`,
+        },
       };
     },
 
@@ -123,6 +152,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "chat.params": async (input, output) => {
+      // Inject ledger context first (highest priority)
+      await ledgerLoaderHook["chat.params"](input, output);
+
       // Inject project context files
       await contextInjectorHook["chat.params"](input, output);
 
@@ -164,7 +196,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Run all event hooks
       await autoCompactHook.event({ event });
-      await preemptiveCompactionHook.event({ event });
+      await autoClearLedgerHook.event({ event });
       await sessionRecoveryHook.event({ event });
       await tokenAwareTruncationHook.event({ event });
       await contextWindowMonitorHook.event({ event });
