@@ -3,7 +3,7 @@
 [![CI](https://github.com/vtemian/micode/actions/workflows/ci.yml/badge.svg)](https://github.com/vtemian/micode/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/micode.svg)](https://www.npmjs.com/package/micode)
 
-OpenCode plugin with a structured Brainstorm → Plan → Implement workflow.
+OpenCode plugin with a structured Brainstorm → Plan → Implement workflow and session continuity.
 
 
 https://github.com/user-attachments/assets/85236ad3-e78a-4ff7-a840-620f6ea2f512
@@ -133,40 +133,53 @@ Each task gets its own implement→review loop:
 3. If changes requested → re-spawn implementer (max 3 cycles)
 4. Mark as DONE or BLOCKED
 
-#### Example Output
+### 4. Session Continuity
+
+Maintain context across long sessions and context clears with the ledger system:
+
+#### Ledger System
+
+The **continuity ledger** captures essential session state:
 
 ```
-## Execution Complete
-
-**Plan**: thoughts/shared/plans/2024-01-15-auth-feature.md
-**Total tasks**: 6
-**Batches**: 2
-
-### Dependency Analysis
-- Batch 1 (parallel): Tasks 1, 2, 3 - independent, no shared files
-- Batch 2 (parallel): Tasks 4, 5, 6 - depend on batch 1
-
-### Results
-
-| Task | Status | Cycles | Notes |
-|------|--------|--------|-------|
-| 1 | ✅ DONE | 1 | |
-| 2 | ✅ DONE | 2 | Fixed type error |
-| 3 | ✅ DONE | 1 | |
-| 4 | ✅ DONE | 1 | |
-| 5 | ❌ BLOCKED | 3 | Test assertion failing |
-| 6 | ✅ DONE | 1 | |
-
-### Summary
-- Completed: 5/6 tasks
-- Blocked: 1 task needs human intervention
+/ledger
 ```
 
-### 4. Handoff
+Creates/updates `thoughts/ledgers/CONTINUITY_{session-name}.md` with:
+- Goal and constraints
+- Key decisions with rationale
+- Current state (Done/Now/Next)
+- Working set (branch, key files)
+
+**Auto-injection:** When starting a session, the most recent ledger is automatically injected into the system prompt.
+
+**Auto-clear:** At 80% context usage, the system automatically:
+1. Updates the ledger
+2. Creates a handoff document
+3. Clears the session
+4. Injects the ledger into the fresh context
+
+#### Artifact Search
+
+Search past work to find relevant precedent:
+
+```
+/search oauth authentication
+/search JWT tokens
+```
+
+Searches across:
+- Ledgers (`thoughts/ledgers/`)
+- Handoffs (`thoughts/shared/handoffs/`)
+- Plans (`thoughts/shared/plans/`)
+
+**Auto-indexing:** Artifacts are automatically indexed when created.
+
+#### Handoff
 
 Save/resume session state for continuity:
 
-- `handoff-creator`: Save current session
+- `handoff-creator`: Save current session (reads ledger for context)
 - `handoff-resumer`: Resume from handoff
 - Output: `thoughts/shared/handoffs/`
 
@@ -175,6 +188,8 @@ Save/resume session state for continuity:
 | Command | Description |
 |---------|-------------|
 | `/init` | Initialize project with ARCHITECTURE.md and CODE_STYLE.md |
+| `/ledger` | Create or update continuity ledger for session state |
+| `/search` | Search past handoffs, plans, and ledgers |
 
 ## Agents
 
@@ -183,15 +198,17 @@ Save/resume session state for continuity:
 | Commander | primary | claude-opus-4-5 | Orchestrator, delegates to specialists |
 | Brainstormer | primary | claude-opus-4-5 | Design exploration through questioning |
 | project-initializer | subagent | claude-opus-4-5 | Generate ARCHITECTURE.md and CODE_STYLE.md |
-| codebase-locator | subagent | - | Find file locations |
-| codebase-analyzer | subagent | - | Deep code analysis |
-| pattern-finder | subagent | - | Find existing patterns |
+| codebase-locator | subagent | claude-sonnet | Find file locations |
+| codebase-analyzer | subagent | claude-sonnet | Deep code analysis |
+| pattern-finder | subagent | claude-sonnet | Find existing patterns |
 | planner | subagent | claude-opus-4-5 | Create detailed implementation plans |
 | executor | subagent | claude-opus-4-5 | Orchestrate implement → review cycle |
 | implementer | subagent | claude-opus-4-5 | Execute implementation tasks |
 | reviewer | subagent | claude-opus-4-5 | Review correctness and style |
-| handoff-creator | subagent | - | Save session state |
-| handoff-resumer | subagent | - | Resume from handoff |
+| ledger-creator | subagent | claude-sonnet | Create/update continuity ledgers |
+| artifact-searcher | subagent | claude-sonnet | Search past work for precedent |
+| handoff-creator | subagent | claude-opus-4-5 | Save session state |
+| handoff-resumer | subagent | claude-opus-4-5 | Resume from handoff |
 
 ## Tools
 
@@ -199,17 +216,22 @@ Save/resume session state for continuity:
 |------|-------------|
 | `ast_grep_search` | AST-aware code pattern search |
 | `ast_grep_replace` | AST-aware code pattern replacement |
-| `look_at` | Screenshot analysis |
+| `look_at` | Extract file structure for large files |
+| `artifact_search` | Search past handoffs, plans, and ledgers |
 | `background_task` | Run long-running tasks in background |
-| `check_background_task` | Check background task status |
+| `background_output` | Check background task status/output |
+| `background_cancel` | Cancel background tasks |
+| `background_list` | List all background tasks |
 
 ## Hooks
 
 | Hook | Description |
 |------|-------------|
 | Think Mode | Keywords like "think hard" enable 32k token thinking budget |
+| Ledger Loader | Injects continuity ledger into system prompt |
+| Auto-Clear Ledger | At 80% context, saves ledger + handoff and clears session |
+| Artifact Auto-Index | Indexes artifacts when written to thoughts/ directories |
 | Auto-Compact | Summarizes session when hitting token limits |
-| Preemptive Compaction | Warns before context exhaustion |
 | Context Injector | Injects ARCHITECTURE.md, CODE_STYLE.md, .cursorrules |
 | Token-Aware Truncation | Truncates large tool outputs |
 | Context Window Monitor | Tracks token usage |
@@ -234,9 +256,11 @@ This enables subagents to work autonomously without getting stuck on permission 
 
 ## MCP Servers
 
-| Server | Description |
-|--------|-------------|
-| context7 | Documentation lookup |
+| Server | Description | Activation |
+|--------|-------------|------------|
+| context7 | Documentation lookup | Always enabled |
+| perplexity | Web search | Set `PERPLEXITY_API_KEY` |
+| firecrawl | Web crawling | Set `FIRECRAWL_API_KEY` |
 
 ## Structure
 
@@ -244,14 +268,14 @@ This enables subagents to work autonomously without getting stuck on permission 
 micode/
 ├── src/
 │   ├── agents/       # Agent definitions
-│   ├── tools/        # ast-grep, look-at, background-task
+│   ├── tools/        # ast-grep, look-at, artifact-search, background-task
 │   ├── hooks/        # Session management hooks
 │   └── index.ts      # Plugin entry
 ├── dist/             # Built plugin
 └── thoughts/         # Artifacts (gitignored)
+    ├── ledgers/        # Continuity ledgers
     └── shared/
         ├── designs/    # Brainstorm outputs
-        ├── research/   # Research documents
         ├── plans/      # Implementation plans
         └── handoffs/   # Session handoffs
 ```
@@ -270,7 +294,7 @@ bun run build
 Then use local path in config:
 ```json
 {
-  "plugin": ["~/.micode/dist/index.js"]
+  "plugin": ["~/.micode"]
 }
 ```
 
@@ -280,6 +304,8 @@ Then use local path in config:
 bun install       # Install dependencies
 bun run build     # Build plugin
 bun run typecheck # Type check
+bun test          # Run tests
+bun test --watch  # Run tests in watch mode
 ```
 
 ### Release
@@ -307,6 +333,7 @@ npm publish
 4. **Parallel investigation** - Spawn multiple subagents for speed
 5. **Isolated implementation** - Use git worktrees for features
 6. **Continuous verification** - Implementer + Reviewer per phase
+7. **Session continuity** - Never lose context across clears
 
 ## Inspiration
 
