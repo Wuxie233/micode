@@ -1,8 +1,8 @@
 // tests/setup.ts
 import { beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Global test directory for each test
 let testDir: string;

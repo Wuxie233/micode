@@ -1,8 +1,8 @@
 // tests/hooks/ledger-loader.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("ledger-loader", () => {
   let testDir: string;
@@ -18,7 +18,7 @@ describe("ledger-loader", () => {
 
     const { findCurrentLedger } = await import("../../src/hooks/ledger-loader");
     const result = await findCurrentLedger(testDir);
-    
+
     expect(result).not.toBeNull();
     expect(result?.sessionName).toBe("test-session");
   });
@@ -26,7 +26,7 @@ describe("ledger-loader", () => {
   it("should return null when no ledger exists", async () => {
     const { findCurrentLedger } = await import("../../src/hooks/ledger-loader");
     const result = await findCurrentLedger(testDir);
-    
+
     expect(result).toBeNull();
   });
 

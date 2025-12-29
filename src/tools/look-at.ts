@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin/tool";
-import { readFileSync, statSync } from "fs";
-import { extname, basename } from "path";
+import { readFileSync, statSync } from "node:fs";
+import { extname, basename } from "node:path";
 
 // File size threshold for triggering extraction (100KB)
 const LARGE_FILE_THRESHOLD = 100 * 1024;
@@ -9,7 +9,20 @@ const LARGE_FILE_THRESHOLD = 100 * 1024;
 const MAX_LINES_WITHOUT_EXTRACT = 200;
 
 // Supported file types for smart extraction
-const EXTRACTABLE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".md", ".json", ".yaml", ".yml"];
+const EXTRACTABLE_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".md",
+  ".json",
+  ".yaml",
+  ".yml",
+];
 
 function extractStructure(content: string, ext: string): string {
   const lines = content.split("\n");
@@ -54,7 +67,7 @@ function extractTypeScriptStructure(lines: string[]): string {
       trimmed.startsWith("async function ")
     ) {
       // Get the signature (first line only for multi-line)
-      const signature = trimmed.length > 80 ? trimmed.slice(0, 80) + "..." : trimmed;
+      const signature = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
       output.push(`Line ${i + 1}: ${signature}`);
     }
   }
@@ -76,7 +89,7 @@ function extractPythonStructure(lines: string[]): string {
       trimmed.startsWith("async def ") ||
       trimmed.startsWith("@")
     ) {
-      const signature = trimmed.length > 80 ? trimmed.slice(0, 80) + "..." : trimmed;
+      const signature = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
       output.push(`Line ${i + 1}: ${signature}`);
     }
   }
@@ -92,12 +105,8 @@ function extractGoStructure(lines: string[]): string {
     const trimmed = line.trim();
 
     // Capture types, functions, methods
-    if (
-      trimmed.startsWith("type ") ||
-      trimmed.startsWith("func ") ||
-      trimmed.startsWith("package ")
-    ) {
-      const signature = trimmed.length > 80 ? trimmed.slice(0, 80) + "..." : trimmed;
+    if (trimmed.startsWith("type ") || trimmed.startsWith("func ") || trimmed.startsWith("package ")) {
+      const signature = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
       output.push(`Line ${i + 1}: ${signature}`);
     }
   }
@@ -161,7 +170,10 @@ Use when you need to understand a file without loading all content.
 Ideal for: large files, getting file structure, quick overview.`,
   args: {
     filePath: tool.schema.string().describe("Path to the file"),
-    extract: tool.schema.string().optional().describe("What to extract: 'structure', 'imports', 'exports', 'all' (default: auto)"),
+    extract: tool.schema
+      .string()
+      .optional()
+      .describe("What to extract: 'structure', 'imports', 'exports', 'all' (default: auto)"),
   },
   execute: async (args) => {
     try {

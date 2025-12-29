@@ -1,8 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 export const plannerAgent: AgentConfig = {
-  description:
-    "Creates detailed implementation plans with exact file paths, complete code examples, and TDD steps",
+  description: "Creates detailed implementation plans with exact file paths, complete code examples, and TDD steps",
   mode: "subagent",
   model: "anthropic/claude-opus-4-5",
   temperature: 0.3,

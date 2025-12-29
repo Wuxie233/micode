@@ -2,7 +2,7 @@
 // Auto-indexes artifacts when written to thoughts/ directories
 
 import type { PluginInput } from "@opencode-ai/plugin";
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 import { getArtifactIndex } from "../tools/artifact-index";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
@@ -83,7 +83,7 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput) {
   return {
     "tool.execute.after": async (
       input: { tool: string; args?: Record<string, unknown> },
-      _output: { output?: string }
+      _output: { output?: string },
     ) => {
       // Only process Write tool
       if (input.tool !== "write") return;

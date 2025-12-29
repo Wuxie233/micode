@@ -58,8 +58,6 @@ if (process.env.FIRECRAWL_API_KEY) {
   };
 }
 
-
-
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Validate external tool dependencies at startup
   const astGrepStatus = await checkAstGrepAvailable();
@@ -176,7 +174,10 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     // Tool output processing
-    "tool.execute.after": async (input: { tool: string; sessionID: string; callID: string; args?: Record<string, unknown> }, output: { output?: string }) => {
+    "tool.execute.after": async (
+      input: { tool: string; sessionID: string; callID: string; args?: Record<string, unknown> },
+      output: { output?: string },
+    ) => {
       // Token-aware truncation
       await tokenAwareTruncationHook["tool.execute.after"]({ name: input.tool, sessionID: input.sessionID }, output);
 

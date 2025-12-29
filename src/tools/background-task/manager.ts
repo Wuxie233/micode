@@ -200,7 +200,7 @@ export class BackgroundTaskManager {
     if (task.progress?.lastMessage) {
       const preview =
         task.progress.lastMessage.length > 200
-          ? task.progress.lastMessage.slice(0, 200) + "..."
+          ? `${task.progress.lastMessage.slice(0, 200)}...`
           : task.progress.lastMessage;
       output += `\n### Last Message Preview\n${preview}\n`;
     }

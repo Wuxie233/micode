@@ -1,7 +1,7 @@
 // src/hooks/ledger-loader.ts
 import type { PluginInput } from "@opencode-ai/plugin";
-import { readFile, readdir } from "fs/promises";
-import { join } from "path";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
 
 const LEDGER_DIR = "thoughts/ledgers";
 const LEDGER_PREFIX = "CONTINUITY_";
@@ -14,17 +14,17 @@ export interface LedgerInfo {
 
 export async function findCurrentLedger(directory: string): Promise<LedgerInfo | null> {
   const ledgerDir = join(directory, LEDGER_DIR);
-  
+
   try {
     const files = await readdir(ledgerDir);
-    const ledgerFiles = files.filter(f => f.startsWith(LEDGER_PREFIX) && f.endsWith(".md"));
-    
+    const ledgerFiles = files.filter((f) => f.startsWith(LEDGER_PREFIX) && f.endsWith(".md"));
+
     if (ledgerFiles.length === 0) return null;
-    
+
     // Get most recently modified ledger
     let latestFile = ledgerFiles[0];
     let latestMtime = 0;
-    
+
     for (const file of ledgerFiles) {
       const filePath = join(ledgerDir, file);
       try {
@@ -37,11 +37,11 @@ export async function findCurrentLedger(directory: string): Promise<LedgerInfo |
         // Skip files we can't stat
       }
     }
-    
+
     const filePath = join(ledgerDir, latestFile);
     const content = await readFile(filePath, "utf-8");
     const sessionName = latestFile.replace(LEDGER_PREFIX, "").replace(".md", "");
-    
+
     return { sessionName, filePath, content };
   } catch {
     return null;
@@ -61,15 +61,15 @@ export function createLedgerLoaderHook(ctx: PluginInput) {
   return {
     "chat.params": async (
       _input: { sessionID: string },
-      output: { options?: Record<string, unknown>; system?: string }
+      output: { options?: Record<string, unknown>; system?: string },
     ) => {
       const ledger = await findCurrentLedger(ctx.directory);
       if (!ledger) return;
-      
+
       const injection = formatLedgerInjection(ledger);
-      
+
       if (output.system) {
-        output.system = injection + "\n\n" + output.system;
+        output.system = `${injection}\n\n${output.system}`;
       } else {
         output.system = injection;
       }

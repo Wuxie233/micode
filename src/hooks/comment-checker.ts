@@ -88,12 +88,12 @@ function analyzeComments(content: string): CommentIssue[] {
   return issues;
 }
 
-export function createCommentCheckerHook(ctx: PluginInput) {
+export function createCommentCheckerHook(_ctx: PluginInput) {
   return {
     // Check after file edits
     "tool.execute.after": async (
       input: { tool: string; args?: Record<string, unknown> },
-      output: { output?: string }
+      output: { output?: string },
     ) => {
       // Only check Edit tool
       if (input.tool !== "Edit" && input.tool !== "edit") return;
@@ -107,7 +107,9 @@ export function createCommentCheckerHook(ctx: PluginInput) {
         const warning = `\n\n⚠️ **Comment Check**: Found ${issues.length} potentially unnecessary comment(s):\n${issues
           .slice(0, 3)
           .map((i) => `- Line ${i.line}: "${i.comment}" (${i.reason})`)
-          .join("\n")}${issues.length > 3 ? `\n...and ${issues.length - 3} more` : ""}\n\nComments should explain WHY, not WHAT. Consider removing obvious comments.`;
+          .join(
+            "\n",
+          )}${issues.length > 3 ? `\n...and ${issues.length - 3} more` : ""}\n\nComments should explain WHY, not WHAT. Consider removing obvious comments.`;
 
         if (output.output) {
           output.output += warning;

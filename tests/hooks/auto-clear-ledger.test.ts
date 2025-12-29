@@ -9,7 +9,7 @@ describe("auto-clear-ledger", () => {
 
   it("should use 80% threshold", async () => {
     const { DEFAULT_THRESHOLD } = await import("../../src/hooks/auto-clear-ledger");
-    expect(DEFAULT_THRESHOLD).toBe(0.80);
+    expect(DEFAULT_THRESHOLD).toBe(0.8);
   });
 
   it("should have 60 second cooldown", async () => {

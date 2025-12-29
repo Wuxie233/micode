@@ -81,7 +81,7 @@ export function createSessionRecoveryHook(ctx: PluginInput) {
     sessionID: string,
     providerID?: string,
     modelID?: string,
-    agent?: string
+    agent?: string,
   ): Promise<void> {
     try {
       // Find last user message to resume from
@@ -122,7 +122,7 @@ export function createSessionRecoveryHook(ctx: PluginInput) {
     errorType: RecoverableErrorType,
     providerID?: string,
     modelID?: string,
-    agent?: string
+    agent?: string,
   ): Promise<boolean> {
     const recoveryKey = `${sessionID}:${errorType}`;
 

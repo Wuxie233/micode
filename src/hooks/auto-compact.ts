@@ -59,11 +59,7 @@ export function createAutoCompactHook(ctx: PluginInput) {
 
   const MAX_RETRIES = 3;
 
-  async function attemptRecovery(
-    sessionID: string,
-    providerID?: string,
-    modelID?: string
-  ): Promise<void> {
+  async function attemptRecovery(sessionID: string, providerID?: string, modelID?: string): Promise<void> {
     if (state.inProgress.has(sessionID)) return;
     state.inProgress.add(sessionID);
 
@@ -143,11 +139,11 @@ export function createAutoCompactHook(ctx: PluginInput) {
           })
           .catch(() => {});
       }
-    } catch (e) {
+    } catch (_e) {
       state.retryCount.set(sessionID, retries + 1);
 
       // Exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, retries), 10000);
+      const delay = Math.min(1000 * 2 ** retries, 10000);
       setTimeout(() => {
         state.inProgress.delete(sessionID);
         attemptRecovery(sessionID, providerID, modelID);
@@ -216,9 +212,7 @@ export function createAutoCompactHook(ctx: PluginInput) {
     },
   };
 
-  async function getLastAssistantInfo(
-    sessionID: string
-  ): Promise<{ providerID?: string; modelID?: string } | null> {
+  async function getLastAssistantInfo(sessionID: string): Promise<{ providerID?: string; modelID?: string } | null> {
     try {
       const resp = await ctx.client.session.messages({
         path: { id: sessionID },

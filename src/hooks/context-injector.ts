@@ -1,15 +1,9 @@
 import type { PluginInput } from "@opencode-ai/plugin";
-import { readFile } from "fs/promises";
-import { join, dirname, resolve } from "path";
+import { readFile } from "node:fs/promises";
+import { join, dirname, resolve } from "node:path";
 
 // Files to inject at project root level
-const ROOT_CONTEXT_FILES = [
-  "ARCHITECTURE.md",
-  "CODE_STYLE.md",
-  "AGENTS.md",
-  "CLAUDE.md",
-  "README.md",
-] as const;
+const ROOT_CONTEXT_FILES = ["ARCHITECTURE.md", "CODE_STYLE.md", "AGENTS.md", "CLAUDE.md", "README.md"] as const;
 
 // Files to collect when walking up directories
 const DIRECTORY_CONTEXT_FILES = ["AGENTS.md", "README.md"] as const;
@@ -128,7 +122,7 @@ export function createContextInjectorHook(ctx: PluginInput) {
     // Inject project root context into every chat
     "chat.params": async (
       _input: { sessionID: string },
-      output: { options?: Record<string, unknown>; system?: string }
+      output: { options?: Record<string, unknown>; system?: string },
     ) => {
       const files = await loadRootContextFiles();
       if (files.size === 0) return;
@@ -145,7 +139,7 @@ export function createContextInjectorHook(ctx: PluginInput) {
     // Inject directory-specific context when reading/editing files
     "tool.execute.after": async (
       input: { tool: string; args?: Record<string, unknown> },
-      output: { output?: string }
+      output: { output?: string },
     ) => {
       if (!FILE_ACCESS_TOOLS.includes(input.tool)) return;
 

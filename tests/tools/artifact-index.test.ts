@@ -1,8 +1,8 @@
 // tests/tools/artifact-index.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("ArtifactIndex", () => {
   let testDir: string;
@@ -20,10 +20,10 @@ describe("ArtifactIndex", () => {
     const { ArtifactIndex } = await import("../../src/tools/artifact-index");
     const index = new ArtifactIndex(testDir);
     await index.initialize();
-    
+
     const dbPath = join(testDir, "context.db");
     expect(Bun.file(dbPath).size).toBeGreaterThan(0);
-    
+
     await index.close();
   });
 
@@ -31,7 +31,7 @@ describe("ArtifactIndex", () => {
     const { ArtifactIndex } = await import("../../src/tools/artifact-index");
     const index = new ArtifactIndex(testDir);
     await index.initialize();
-    
+
     await index.indexHandoff({
       id: "test-1",
       sessionName: "auth-feature",
@@ -42,11 +42,11 @@ describe("ArtifactIndex", () => {
       learnings: "Use refresh tokens for long sessions",
       outcome: "SUCCEEDED",
     });
-    
+
     const results = await index.search("OAuth authentication");
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].type).toBe("handoff");
-    
+
     await index.close();
   });
 
@@ -54,7 +54,7 @@ describe("ArtifactIndex", () => {
     const { ArtifactIndex } = await import("../../src/tools/artifact-index");
     const index = new ArtifactIndex(testDir);
     await index.initialize();
-    
+
     await index.indexPlan({
       id: "plan-1",
       title: "API Refactoring Plan",
@@ -62,11 +62,11 @@ describe("ArtifactIndex", () => {
       overview: "Refactor REST API to GraphQL",
       approach: "Incremental migration with adapter layer",
     });
-    
+
     const results = await index.search("GraphQL migration");
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].type).toBe("plan");
-    
+
     await index.close();
   });
 
@@ -74,7 +74,7 @@ describe("ArtifactIndex", () => {
     const { ArtifactIndex } = await import("../../src/tools/artifact-index");
     const index = new ArtifactIndex(testDir);
     await index.initialize();
-    
+
     await index.indexLedger({
       id: "ledger-1",
       sessionName: "database-migration",
@@ -83,11 +83,11 @@ describe("ArtifactIndex", () => {
       stateNow: "Schema conversion in progress",
       keyDecisions: "Use pgloader for data migration",
     });
-    
+
     const results = await index.search("PostgreSQL migration");
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].type).toBe("ledger");
-    
+
     await index.close();
   });
 });

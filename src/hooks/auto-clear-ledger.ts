@@ -13,13 +13,13 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-4-turbo": 128_000,
   "gpt-4": 128_000,
   "gpt-5": 200_000,
-  "o1": 200_000,
-  "o3": 200_000,
-  "gemini": 1_000_000,
+  o1: 200_000,
+  o3: 200_000,
+  gemini: 1_000_000,
 };
 
 const DEFAULT_CONTEXT_LIMIT = 200_000;
-export const DEFAULT_THRESHOLD = 0.80;
+export const DEFAULT_THRESHOLD = 0.8;
 const MIN_TOKENS_FOR_CLEAR = 50_000;
 export const CLEAR_COOLDOWN_MS = 60_000;
 
@@ -44,11 +44,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
     clearInProgress: new Set(),
   };
 
-  async function checkAndClear(
-    sessionID: string,
-    providerID?: string,
-    modelID?: string
-  ): Promise<void> {
+  async function checkAndClear(sessionID: string, _providerID?: string, modelID?: string): Promise<void> {
     // Skip if clear in progress
     if (state.clearInProgress.has(sessionID)) return;
 
@@ -118,7 +114,9 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         await ctx.client.session.prompt({
           path: { id: ledgerSessionID },
           body: {
-            parts: [{ type: "text", text: "Update the continuity ledger with current session state before context clear." }],
+            parts: [
+              { type: "text", text: "Update the continuity ledger with current session state before context clear." },
+            ],
             agent: "ledger-creator",
           },
           query: { directory: ctx.directory },
@@ -127,7 +125,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         // Wait for ledger completion (poll for idle)
         let attempts = 0;
         while (attempts < 30) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const statusResp = await ctx.client.session.get({
             path: { id: ledgerSessionID },
             query: { directory: ctx.directory },
@@ -150,7 +148,12 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         await ctx.client.session.prompt({
           path: { id: handoffSessionID },
           body: {
-            parts: [{ type: "text", text: "Create a handoff document. Read the current ledger at thoughts/ledgers/ for context." }],
+            parts: [
+              {
+                type: "text",
+                text: "Create a handoff document. Read the current ledger at thoughts/ledgers/ for context.",
+              },
+            ],
             agent: "handoff-creator",
           },
           query: { directory: ctx.directory },
@@ -159,7 +162,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         // Wait for handoff completion
         let attempts = 0;
         while (attempts < 30) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const statusResp = await ctx.client.session.get({
             path: { id: handoffSessionID },
             query: { directory: ctx.directory },
@@ -210,7 +213,6 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
           },
         })
         .catch(() => {});
-
     } catch (e) {
       // Log error but don't interrupt user flow
       console.error("[auto-clear-ledger] Error:", e);

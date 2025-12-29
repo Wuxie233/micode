@@ -13,14 +13,14 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-4-turbo": 128_000,
   "gpt-4": 128_000,
   "gpt-5": 200_000,
-  "o1": 200_000,
-  "o3": 200_000,
+  o1: 200_000,
+  o3: 200_000,
   // Google
-  "gemini": 1_000_000,
+  gemini: 1_000_000,
 };
 
 const DEFAULT_CONTEXT_LIMIT = 200_000;
-const DEFAULT_THRESHOLD = 0.80; // 80% of context window
+const DEFAULT_THRESHOLD = 0.8; // 80% of context window
 const MIN_TOKENS_FOR_COMPACTION = 50_000;
 const COMPACTION_COOLDOWN_MS = 60_000; // 60 seconds
 
@@ -45,11 +45,7 @@ export function createPreemptiveCompactionHook(ctx: PluginInput) {
     compactionInProgress: new Set(),
   };
 
-  async function checkAndCompact(
-    sessionID: string,
-    providerID?: string,
-    modelID?: string
-  ): Promise<void> {
+  async function checkAndCompact(sessionID: string, providerID?: string, modelID?: string): Promise<void> {
     // Skip if compaction in progress
     if (state.compactionInProgress.has(sessionID)) return;
 
@@ -142,7 +138,7 @@ export function createPreemptiveCompactionHook(ctx: PluginInput) {
           })
           .catch(() => {});
       }
-    } catch (e) {
+    } catch (_e) {
       // Silent failure - don't interrupt user flow
     } finally {
       state.compactionInProgress.delete(sessionID);

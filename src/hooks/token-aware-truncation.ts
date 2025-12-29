@@ -1,13 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
 // Tools that benefit from truncation
-const TRUNCATABLE_TOOLS = [
-  "grep",
-  "Grep",
-  "glob",
-  "Glob",
-  "ast_grep_search",
-];
+const TRUNCATABLE_TOOLS = ["grep", "Grep", "glob", "Glob", "ast_grep_search"];
 
 // Token estimation (conservative: 4 chars = 1 token)
 const CHARS_PER_TOKEN = 4;
@@ -23,7 +17,7 @@ function estimateTokens(text: string): number {
 function truncateToTokenLimit(
   output: string,
   maxTokens: number,
-  preserveLines: number = PRESERVE_HEADER_LINES
+  preserveLines: number = PRESERVE_HEADER_LINES,
 ): string {
   const currentTokens = estimateTokens(output);
 
@@ -158,10 +152,7 @@ export function createTokenAwareTruncationHook(ctx: PluginInput) {
     },
 
     // Truncate tool output
-    "tool.execute.after": async (
-      input: { name: string; sessionID: string },
-      output: { output?: string }
-    ) => {
+    "tool.execute.after": async (input: { name: string; sessionID: string }, output: { output?: string }) => {
       // Only truncate specific tools
       if (!TRUNCATABLE_TOOLS.includes(input.name)) {
         return;

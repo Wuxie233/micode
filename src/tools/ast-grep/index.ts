@@ -22,12 +22,31 @@ export async function checkAstGrepAvailable(): Promise<{ available: boolean; mes
 }
 
 const LANGUAGES = [
-  "c", "cpp", "csharp", "css", "dart", "elixir", "go", "haskell", "html",
-  "java", "javascript", "json", "kotlin", "lua", "php", "python", "ruby",
-  "rust", "scala", "sql", "swift", "tsx", "typescript", "yaml",
+  "c",
+  "cpp",
+  "csharp",
+  "css",
+  "dart",
+  "elixir",
+  "go",
+  "haskell",
+  "html",
+  "java",
+  "javascript",
+  "json",
+  "kotlin",
+  "lua",
+  "php",
+  "python",
+  "ruby",
+  "rust",
+  "scala",
+  "sql",
+  "swift",
+  "tsx",
+  "typescript",
+  "yaml",
 ] as const;
-
-type Language = typeof LANGUAGES[number];
 
 interface Match {
   file: string;
@@ -89,7 +108,7 @@ function formatMatches(matches: Match[], isDryRun = false): string {
 
   const lines = shown.map((m) => {
     const loc = `${m.file}:${m.range.start.line}:${m.range.start.column}`;
-    const text = m.text.length > 100 ? m.text.slice(0, 100) + "..." : m.text;
+    const text = m.text.length > 100 ? `${m.text.slice(0, 100)}...` : m.text;
     if (isDryRun && m.replacement) {
       return `${loc}\n  - ${text}\n  + ${m.replacement}`;
     }
@@ -141,16 +160,7 @@ export const ast_grep_replace = tool({
     apply: tool.schema.boolean().optional().describe("Apply changes (default: false, dry-run)"),
   },
   execute: async (args) => {
-    const sgArgs = [
-      "run",
-      "-p",
-      args.pattern,
-      "-r",
-      args.rewrite,
-      "--lang",
-      args.lang,
-      "--json=compact",
-    ];
+    const sgArgs = ["run", "-p", args.pattern, "-r", args.rewrite, "--lang", args.lang, "--json=compact"];
 
     if (args.apply) {
       sgArgs.push("--update-all");
@@ -169,7 +179,7 @@ export const ast_grep_replace = tool({
     const output = formatMatches(result.matches, isDryRun);
 
     if (isDryRun && result.matches.length > 0) {
-      return output + "\n\n(Dry run - use apply=true to apply changes)";
+      return `${output}\n\n(Dry run - use apply=true to apply changes)`;
     }
     if (args.apply && result.matches.length > 0) {
       return `Applied ${result.matches.length} replacements:\n${output}`;

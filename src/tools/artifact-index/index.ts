@@ -1,9 +1,9 @@
 // src/tools/artifact-index/index.ts
 import { Database } from "bun:sqlite";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { mkdirSync, existsSync } from "fs";
-import { homedir } from "os";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { mkdirSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 
 const DEFAULT_DB_DIR = join(homedir(), ".config", "opencode", "artifact-index");
 const DB_NAME = "context.db";
@@ -61,18 +61,18 @@ export class ArtifactIndex {
     }
 
     this.db = new Database(this.dbPath);
-    
+
     // Load and execute schema
     const schemaPath = join(dirname(import.meta.path), "schema.sql");
     let schema: string;
-    
+
     try {
       schema = readFileSync(schemaPath, "utf-8");
     } catch {
       // Fallback: inline schema for when bundled
       schema = this.getInlineSchema();
     }
-    
+
     // Execute schema - use exec for multi-statement support
     this.db.exec(schema);
   }
@@ -120,15 +120,16 @@ export class ArtifactIndex {
     if (!this.db) throw new Error("Database not initialized");
 
     // Check for existing record by file_path to clean up old FTS entry
-    const existing = this.db.query<{ id: string }, [string]>(
-      `SELECT id FROM handoffs WHERE file_path = ?`
-    ).get(record.filePath);
+    const existing = this.db
+      .query<{ id: string }, [string]>(`SELECT id FROM handoffs WHERE file_path = ?`)
+      .get(record.filePath);
     if (existing) {
       this.db.run(`DELETE FROM handoffs_fts WHERE id = ?`, [existing.id]);
     }
 
     // Upsert handoff
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO handoffs (id, session_name, file_path, task_summary, what_worked, what_failed, learnings, outcome, indexed_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(file_path) DO UPDATE SET
@@ -140,27 +141,49 @@ export class ArtifactIndex {
         learnings = excluded.learnings,
         outcome = excluded.outcome,
         indexed_at = CURRENT_TIMESTAMP
-    `, [record.id, record.sessionName ?? null, record.filePath, record.taskSummary ?? null, record.whatWorked ?? null, record.whatFailed ?? null, record.learnings ?? null, record.outcome ?? null]);
+    `,
+      [
+        record.id,
+        record.sessionName ?? null,
+        record.filePath,
+        record.taskSummary ?? null,
+        record.whatWorked ?? null,
+        record.whatFailed ?? null,
+        record.learnings ?? null,
+        record.outcome ?? null,
+      ],
+    );
 
     // Insert new FTS entry
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO handoffs_fts (id, session_name, task_summary, what_worked, what_failed, learnings)
       VALUES (?, ?, ?, ?, ?, ?)
-    `, [record.id, record.sessionName ?? null, record.taskSummary ?? null, record.whatWorked ?? null, record.whatFailed ?? null, record.learnings ?? null]);
+    `,
+      [
+        record.id,
+        record.sessionName ?? null,
+        record.taskSummary ?? null,
+        record.whatWorked ?? null,
+        record.whatFailed ?? null,
+        record.learnings ?? null,
+      ],
+    );
   }
 
   async indexPlan(record: PlanRecord): Promise<void> {
     if (!this.db) throw new Error("Database not initialized");
 
     // Check for existing record by file_path to clean up old FTS entry
-    const existing = this.db.query<{ id: string }, [string]>(
-      `SELECT id FROM plans WHERE file_path = ?`
-    ).get(record.filePath);
+    const existing = this.db
+      .query<{ id: string }, [string]>(`SELECT id FROM plans WHERE file_path = ?`)
+      .get(record.filePath);
     if (existing) {
       this.db.run(`DELETE FROM plans_fts WHERE id = ?`, [existing.id]);
     }
 
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO plans (id, title, file_path, overview, approach, indexed_at)
       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(file_path) DO UPDATE SET
@@ -169,26 +192,32 @@ export class ArtifactIndex {
         overview = excluded.overview,
         approach = excluded.approach,
         indexed_at = CURRENT_TIMESTAMP
-    `, [record.id, record.title ?? null, record.filePath, record.overview ?? null, record.approach ?? null]);
+    `,
+      [record.id, record.title ?? null, record.filePath, record.overview ?? null, record.approach ?? null],
+    );
 
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO plans_fts (id, title, overview, approach)
       VALUES (?, ?, ?, ?)
-    `, [record.id, record.title ?? null, record.overview ?? null, record.approach ?? null]);
+    `,
+      [record.id, record.title ?? null, record.overview ?? null, record.approach ?? null],
+    );
   }
 
   async indexLedger(record: LedgerRecord): Promise<void> {
     if (!this.db) throw new Error("Database not initialized");
 
     // Check for existing record by file_path to clean up old FTS entry
-    const existing = this.db.query<{ id: string }, [string]>(
-      `SELECT id FROM ledgers WHERE file_path = ?`
-    ).get(record.filePath);
+    const existing = this.db
+      .query<{ id: string }, [string]>(`SELECT id FROM ledgers WHERE file_path = ?`)
+      .get(record.filePath);
     if (existing) {
       this.db.run(`DELETE FROM ledgers_fts WHERE id = ?`, [existing.id]);
     }
 
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO ledgers (id, session_name, file_path, goal, state_now, key_decisions, indexed_at)
       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(file_path) DO UPDATE SET
@@ -198,12 +227,30 @@ export class ArtifactIndex {
         state_now = excluded.state_now,
         key_decisions = excluded.key_decisions,
         indexed_at = CURRENT_TIMESTAMP
-    `, [record.id, record.sessionName ?? null, record.filePath, record.goal ?? null, record.stateNow ?? null, record.keyDecisions ?? null]);
+    `,
+      [
+        record.id,
+        record.sessionName ?? null,
+        record.filePath,
+        record.goal ?? null,
+        record.stateNow ?? null,
+        record.keyDecisions ?? null,
+      ],
+    );
 
-    this.db.run(`
+    this.db.run(
+      `
       INSERT INTO ledgers_fts (id, session_name, goal, state_now, key_decisions)
       VALUES (?, ?, ?, ?, ?)
-    `, [record.id, record.sessionName ?? null, record.goal ?? null, record.stateNow ?? null, record.keyDecisions ?? null]);
+    `,
+      [
+        record.id,
+        record.sessionName ?? null,
+        record.goal ?? null,
+        record.stateNow ?? null,
+        record.keyDecisions ?? null,
+      ],
+    );
   }
 
   async search(query: string, limit: number = 10): Promise<SearchResult[]> {
@@ -213,14 +260,16 @@ export class ArtifactIndex {
     const escapedQuery = this.escapeFtsQuery(query);
 
     // Search handoffs
-    const handoffs = this.db.query<{ id: string; file_path: string; task_summary: string; rank: number }, [string, number]>(`
+    const handoffs = this.db
+      .query<{ id: string; file_path: string; task_summary: string; rank: number }, [string, number]>(`
       SELECT h.id, h.file_path, h.task_summary, rank
       FROM handoffs_fts
       JOIN handoffs h ON handoffs_fts.id = h.id
       WHERE handoffs_fts MATCH ?
       ORDER BY rank
       LIMIT ?
-    `).all(escapedQuery, limit);
+    `)
+      .all(escapedQuery, limit);
 
     for (const row of handoffs) {
       results.push({
@@ -233,14 +282,16 @@ export class ArtifactIndex {
     }
 
     // Search plans
-    const plans = this.db.query<{ id: string; file_path: string; title: string; rank: number }, [string, number]>(`
+    const plans = this.db
+      .query<{ id: string; file_path: string; title: string; rank: number }, [string, number]>(`
       SELECT p.id, p.file_path, p.title, rank
       FROM plans_fts
       JOIN plans p ON plans_fts.id = p.id
       WHERE plans_fts MATCH ?
       ORDER BY rank
       LIMIT ?
-    `).all(escapedQuery, limit);
+    `)
+      .all(escapedQuery, limit);
 
     for (const row of plans) {
       results.push({
@@ -253,14 +304,16 @@ export class ArtifactIndex {
     }
 
     // Search ledgers
-    const ledgers = this.db.query<{ id: string; file_path: string; session_name: string; goal: string; rank: number }, [string, number]>(`
+    const ledgers = this.db
+      .query<{ id: string; file_path: string; session_name: string; goal: string; rank: number }, [string, number]>(`
       SELECT l.id, l.file_path, l.session_name, l.goal, rank
       FROM ledgers_fts
       JOIN ledgers l ON ledgers_fts.id = l.id
       WHERE ledgers_fts MATCH ?
       ORDER BY rank
       LIMIT ?
-    `).all(escapedQuery, limit);
+    `)
+      .all(escapedQuery, limit);
 
     for (const row of ledgers) {
       results.push({
@@ -284,8 +337,8 @@ export class ArtifactIndex {
     return query
       .replace(/['"]/g, "")
       .split(/\s+/)
-      .filter(term => term.length > 0)
-      .map(term => `"${term}"`)
+      .filter((term) => term.length > 0)
+      .map((term) => `"${term}"`)
       .join(" OR ");
   }
 

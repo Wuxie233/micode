@@ -12,7 +12,10 @@ Returns ranked results with file paths for further reading.`,
   args: {
     query: tool.schema.string().describe("Search query - describe what you're looking for"),
     limit: tool.schema.number().optional().describe("Max results to return (default: 10)"),
-    type: tool.schema.enum(["all", "handoff", "plan", "ledger"]).optional().describe("Filter by artifact type (default: all)"),
+    type: tool.schema
+      .enum(["all", "handoff", "plan", "ledger"])
+      .optional()
+      .describe("Filter by artifact type (default: all)"),
   },
   execute: async (args) => {
     try {
@@ -20,9 +23,7 @@ Returns ranked results with file paths for further reading.`,
       const results = await index.search(args.query, args.limit || 10);
 
       // Filter by type if specified
-      const filtered = args.type && args.type !== "all"
-        ? results.filter(r => r.type === args.type)
-        : results;
+      const filtered = args.type && args.type !== "all" ? results.filter((r) => r.type === args.type) : results;
 
       if (filtered.length === 0) {
         return `No results found for "${args.query}". Try broader search terms.`;

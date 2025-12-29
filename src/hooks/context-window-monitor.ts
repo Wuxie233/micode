@@ -1,7 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
 // Thresholds for context window warnings
-const WARNING_THRESHOLD = 0.70; // 70% - remind there's still room
+const WARNING_THRESHOLD = 0.7; // 70% - remind there's still room
 const CRITICAL_THRESHOLD = 0.85; // 85% - getting tight
 
 const DEFAULT_CONTEXT_LIMIT = 200_000;
@@ -13,9 +13,9 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "claude-haiku": 200_000,
   "gpt-4": 128_000,
   "gpt-5": 200_000,
-  "o1": 200_000,
-  "o3": 200_000,
-  "gemini": 1_000_000,
+  o1: 200_000,
+  o3: 200_000,
+  gemini: 1_000_000,
 };
 
 function getContextLimit(modelID: string): number {
@@ -59,7 +59,7 @@ export function createContextWindowMonitorHook(ctx: PluginInput) {
     // Inject context awareness into chat params
     "chat.params": async (
       input: { sessionID: string },
-      output: { system?: string; options?: Record<string, unknown> }
+      output: { system?: string; options?: Record<string, unknown> },
     ) => {
       const usageRatio = state.lastUsageRatio.get(input.sessionID);
 
