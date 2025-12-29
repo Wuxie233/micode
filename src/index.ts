@@ -23,6 +23,9 @@ import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
 // Background Task System
 import { BackgroundTaskManager, createBackgroundTaskTools } from "./tools/background-task";
 
+// Config loader
+import { loadMicodeConfig, mergeAgentConfigs } from "./config-loader";
+
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
   /\bthink\s*(hard|deeply|carefully|through)\b/i,
@@ -65,6 +68,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     console.warn(`[micode] ${astGrepStatus.message}`);
   }
 
+  // Load user config for model overrides
+  const userConfig = await loadMicodeConfig();
+  if (userConfig?.agents) {
+    console.log(`[micode] Loaded model overrides for: ${Object.keys(userConfig.agents).join(", ")}`);
+  }
+
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
 
@@ -104,10 +113,13 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         external_directory: "allow",
       };
 
+      // Merge user config overrides into plugin agents
+      const mergedAgents = mergeAgentConfigs(agents, userConfig);
+
       // Add our agents, demote built-in build/plan to subagent
       config.agent = {
-        Commander: agents[PRIMARY_AGENT_NAME],
-        ...Object.fromEntries(Object.entries(agents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
+        Commander: mergedAgents[PRIMARY_AGENT_NAME],
+        ...Object.fromEntries(Object.entries(mergedAgents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
         ...config.agent,
         build: { ...config.agent?.build, mode: "subagent" },
         plan: { ...config.agent?.plan, mode: "subagent" },
