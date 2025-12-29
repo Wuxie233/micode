@@ -18,6 +18,7 @@ import { createContextWindowMonitorHook } from "./hooks/context-window-monitor";
 import { createCommentCheckerHook } from "./hooks/comment-checker";
 import { createAutoClearLedgerHook } from "./hooks/auto-clear-ledger";
 import { createLedgerLoaderHook } from "./hooks/ledger-loader";
+import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
 
 // Background Task System
 import { BackgroundTaskManager, createBackgroundTaskTools } from "./tools/background-task";
@@ -78,6 +79,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const tokenAwareTruncationHook = createTokenAwareTruncationHook(ctx);
   const contextWindowMonitorHook = createContextWindowMonitorHook(ctx);
   const commentCheckerHook = createCommentCheckerHook(ctx);
+  const artifactAutoIndexHook = createArtifactAutoIndexHook(ctx);
 
   // Background Task System
   const backgroundTaskManager = new BackgroundTaskManager(ctx);
@@ -183,6 +185,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Directory-aware context injection for Read/Edit
       await contextInjectorHook["tool.execute.after"]({ tool: input.tool, args: input.args }, output);
+
+      // Auto-index artifacts when written to thoughts/ directories
+      await artifactAutoIndexHook["tool.execute.after"]({ tool: input.tool, args: input.args }, output);
     },
 
     event: async ({ event }) => {
