@@ -29,7 +29,7 @@ describe("config-loader", () => {
       configPath,
       JSON.stringify({
         agents: {
-          Commander: { model: "openai/gpt-4o" },
+          commander: { model: "openai/gpt-4o" },
           brainstormer: { model: "openai/gpt-4o", temperature: 0.5 },
         },
       }),
@@ -38,7 +38,7 @@ describe("config-loader", () => {
     const config = await loadMicodeConfig(testConfigDir);
 
     expect(config).not.toBeNull();
-    expect(config?.agents?.Commander?.model).toBe("openai/gpt-4o");
+    expect(config?.agents?.commander?.model).toBe("openai/gpt-4o");
     expect(config?.agents?.brainstormer?.model).toBe("openai/gpt-4o");
     expect(config?.agents?.brainstormer?.temperature).toBe(0.5);
   });
@@ -67,7 +67,7 @@ describe("config-loader", () => {
       configPath,
       JSON.stringify({
         agents: {
-          Commander: {
+          commander: {
             model: "openai/gpt-4o",
             temperature: 0.3,
             maxTokens: 8000,
@@ -81,12 +81,12 @@ describe("config-loader", () => {
     const config = await loadMicodeConfig(testConfigDir);
 
     expect(config).not.toBeNull();
-    expect(config?.agents?.Commander?.model).toBe("openai/gpt-4o");
-    expect(config?.agents?.Commander?.temperature).toBe(0.3);
-    expect(config?.agents?.Commander?.maxTokens).toBe(8000);
+    expect(config?.agents?.commander?.model).toBe("openai/gpt-4o");
+    expect(config?.agents?.commander?.temperature).toBe(0.3);
+    expect(config?.agents?.commander?.maxTokens).toBe(8000);
     // These should be filtered out
-    expect((config?.agents?.Commander as Record<string, unknown>)?.prompt).toBeUndefined();
-    expect((config?.agents?.Commander as Record<string, unknown>)?.tools).toBeUndefined();
+    expect((config?.agents?.commander as Record<string, unknown>)?.prompt).toBeUndefined();
+    expect((config?.agents?.commander as Record<string, unknown>)?.tools).toBeUndefined();
   });
 
   it("should handle agents: null", async () => {
@@ -115,7 +115,7 @@ describe("config-loader", () => {
       configPath,
       JSON.stringify({
         agents: {
-          Commander: "not-an-object",
+          commander: "not-an-object",
           brainstormer: null,
           planner: { model: "openai/gpt-4o" },
         },
@@ -126,7 +126,7 @@ describe("config-loader", () => {
 
     expect(config).not.toBeNull();
     // Non-object entries should be skipped, only valid ones kept
-    expect(config?.agents?.Commander).toBeUndefined();
+    expect(config?.agents?.commander).toBeUndefined();
     expect(config?.agents?.brainstormer).toBeUndefined();
     expect(config?.agents?.planner?.model).toBe("openai/gpt-4o");
   });
@@ -135,7 +135,7 @@ describe("config-loader", () => {
 describe("mergeAgentConfigs", () => {
   it("should merge user config into plugin agents", () => {
     const pluginAgents = {
-      Commander: {
+      commander: {
         description: "Main agent",
         mode: "primary" as const,
         model: "anthropic/claude-opus-4-5",
@@ -146,22 +146,22 @@ describe("mergeAgentConfigs", () => {
 
     const userConfig = {
       agents: {
-        Commander: { model: "openai/gpt-4o", temperature: 0.5 },
+        commander: { model: "openai/gpt-4o", temperature: 0.5 },
       },
     };
 
     const merged = mergeAgentConfigs(pluginAgents, userConfig);
 
-    expect(merged.Commander.model).toBe("openai/gpt-4o");
-    expect(merged.Commander.temperature).toBe(0.5);
+    expect(merged.commander.model).toBe("openai/gpt-4o");
+    expect(merged.commander.temperature).toBe(0.5);
     // Original properties should be preserved
-    expect(merged.Commander.description).toBe("Main agent");
-    expect(merged.Commander.prompt).toBe("System prompt");
+    expect(merged.commander.description).toBe("Main agent");
+    expect(merged.commander.prompt).toBe("System prompt");
   });
 
   it("should not modify agents without user overrides", () => {
     const pluginAgents = {
-      Commander: {
+      commander: {
         description: "Main agent",
         model: "anthropic/claude-opus-4-5",
       },
@@ -173,19 +173,19 @@ describe("mergeAgentConfigs", () => {
 
     const userConfig = {
       agents: {
-        Commander: { model: "openai/gpt-4o" },
+        commander: { model: "openai/gpt-4o" },
       },
     };
 
     const merged = mergeAgentConfigs(pluginAgents, userConfig);
 
-    expect(merged.Commander.model).toBe("openai/gpt-4o");
+    expect(merged.commander.model).toBe("openai/gpt-4o");
     expect(merged.brainstormer.model).toBe("anthropic/claude-opus-4-5");
   });
 
   it("should handle null user config", () => {
     const pluginAgents = {
-      Commander: {
+      commander: {
         description: "Main agent",
         model: "anthropic/claude-opus-4-5",
       },
@@ -193,6 +193,6 @@ describe("mergeAgentConfigs", () => {
 
     const merged = mergeAgentConfigs(pluginAgents, null);
 
-    expect(merged.Commander.model).toBe("anthropic/claude-opus-4-5");
+    expect(merged.commander.model).toBe("anthropic/claude-opus-4-5");
   });
 });

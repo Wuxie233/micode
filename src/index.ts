@@ -118,7 +118,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Add our agents, demote built-in build/plan to subagent
       config.agent = {
-        Commander: mergedAgents[PRIMARY_AGENT_NAME],
+        [PRIMARY_AGENT_NAME]: mergedAgents[PRIMARY_AGENT_NAME],
         ...Object.fromEntries(Object.entries(mergedAgents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
         ...config.agent,
         build: { ...config.agent?.build, mode: "subagent" },

@@ -4,7 +4,7 @@ This document guides AI assistants through the micode plugin installation proces
 
 ## Step 0: Ask User About Setup
 
-micode uses Claude Opus 4.5 for its primary agents (Commander, Brainstormer, project-initializer). Ask the user:
+micode uses Claude Opus 4.5 for its primary agents (commander, brainstormer, project-initializer). Ask the user:
 
 ### Question 1: Claude Subscription
 
@@ -22,8 +22,8 @@ micode uses Claude Opus 4.5 for its primary agents (Commander, Brainstormer, pro
 ```json
 {
   "agents": {
-    "Commander": { "model": "opencode/big-pickle" },
-    "Brainstormer": { "model": "opencode/big-pickle" },
+    "commander": { "model": "opencode/big-pickle" },
+    "brainstormer": { "model": "opencode/big-pickle" },
     "project-initializer": { "model": "opencode/big-pickle" }
   }
 }
@@ -98,7 +98,7 @@ opencode auth login
 ## Step 5: Verify Everything Works
 
 1. Run `opencode` in terminal
-2. Check that Commander agent is available
+2. Check that commander agent is available
 3. Try `/init` command to test project-initializer
 
 ## Step 6: Congratulate User
@@ -108,8 +108,8 @@ Say to user:
 > Congratulations! 🎉 You have successfully set up micode!
 >
 > **What you can do now:**
-> - Use **Commander** as your main orchestrator
-> - Use **Brainstormer** for design exploration
+> - Use **commander** as your main orchestrator
+> - Use **brainstormer** for design exploration
 > - Run `/init` to generate ARCHITECTURE.md and CODE_STYLE.md
 >
 > **Workflow:** Brainstorm → Research → Plan → Implement → Review
@@ -137,8 +137,8 @@ Never run this automatically without consent.
 
 | Agent | Model | Purpose |
 |-------|-------|---------|
-| Commander | claude-opus-4-5 | Main orchestrator |
-| Brainstormer | claude-opus-4-5 | Design exploration |
+| commander | claude-opus-4-5 | Main orchestrator |
+| brainstormer | claude-opus-4-5 | Design exploration |
 | project-initializer | claude-opus-4-5 | Generate docs |
 | codebase-locator | - | Find files |
 | codebase-analyzer | - | Analyze code |
@@ -168,8 +168,8 @@ To use different models, create `~/.config/opencode/micode.json`:
 ```json
 {
   "agents": {
-    "Commander": { "model": "your-preferred-model" },
-    "Brainstormer": { "model": "your-preferred-model" }
+    "commander": { "model": "your-preferred-model" },
+    "brainstormer": { "model": "your-preferred-model" }
   }
 }
 ```

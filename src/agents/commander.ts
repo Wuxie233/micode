@@ -117,4 +117,4 @@ export const primaryAgent: AgentConfig = {
   tools: { ask: true },
 };
 
-export const PRIMARY_AGENT_NAME = process.env.OPENCODE_AGENT_NAME || "Commander";
+export const PRIMARY_AGENT_NAME = process.env.OPENCODE_AGENT_NAME || "commander";

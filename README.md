@@ -195,8 +195,8 @@ Save/resume session state for continuity:
 
 | Agent | Mode | Model | Purpose |
 |-------|------|-------|---------|
-| Commander | primary | claude-opus-4-5 | Orchestrator, delegates to specialists |
-| Brainstormer | primary | claude-opus-4-5 | Design exploration through questioning |
+| commander | primary | claude-opus-4-5 | Orchestrator, delegates to specialists |
+| brainstormer | primary | claude-opus-4-5 | Design exploration through questioning |
 | project-initializer | subagent | claude-opus-4-5 | Generate ARCHITECTURE.md and CODE_STYLE.md |
 | codebase-locator | subagent | claude-sonnet | Find file locations |
 | codebase-analyzer | subagent | claude-sonnet | Deep code analysis |
