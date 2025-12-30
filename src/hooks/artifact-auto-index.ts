@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { getArtifactIndex } from "../tools/artifact-index";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
-const HANDOFF_PATH_PATTERN = /thoughts\/shared\/handoffs\/(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
 
 function parseLedger(content: string, filePath: string, sessionName: string) {
@@ -21,39 +20,6 @@ function parseLedger(content: string, filePath: string, sessionName: string) {
     goal: goalMatch?.[1] || "",
     stateNow: stateMatch?.[1] || "",
     keyDecisions: decisionsMatch?.[1]?.trim() || "",
-  };
-}
-
-function parseHandoff(content: string, filePath: string, fileName: string) {
-  // Extract session from frontmatter if present
-  const sessionMatch = content.match(/^session:\s*(.+)$/m);
-  const sessionName = sessionMatch?.[1] || fileName;
-
-  // Extract task summary
-  const taskMatch = content.match(/\*\*Working on:\*\*\s*([^\n]+)/);
-  const taskSummary = taskMatch?.[1] || "";
-
-  // Extract learnings
-  const learningsMatch = content.match(/## Learnings\n\n([\s\S]*?)(?=\n## |$)/);
-  const learnings = learningsMatch?.[1]?.trim() || "";
-
-  // Extract what worked
-  const workedMatch = content.match(/## What Worked\n\n([\s\S]*?)(?=\n## |$)/);
-  const whatWorked = workedMatch?.[1]?.trim() || learnings;
-
-  // Extract what failed
-  const failedMatch = content.match(/## What Failed\n\n([\s\S]*?)(?=\n## |$)/);
-  const whatFailed = failedMatch?.[1]?.trim() || "";
-
-  return {
-    id: `handoff-${fileName}`,
-    sessionName,
-    filePath,
-    taskSummary,
-    whatWorked,
-    whatFailed,
-    learnings,
-    outcome: "UNKNOWN" as const,
   };
 }
 
@@ -100,17 +66,6 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput) {
           const record = parseLedger(content, filePath, ledgerMatch[1]);
           await index.indexLedger(record);
           console.log(`[artifact-auto-index] Indexed ledger: ${filePath}`);
-          return;
-        }
-
-        // Check if it's a handoff
-        const handoffMatch = filePath.match(HANDOFF_PATH_PATTERN);
-        if (handoffMatch) {
-          const content = readFileSync(filePath, "utf-8");
-          const index = await getArtifactIndex();
-          const record = parseHandoff(content, filePath, handoffMatch[1]);
-          await index.indexHandoff(record);
-          console.log(`[artifact-auto-index] Indexed handoff: ${filePath}`);
           return;
         }
 
