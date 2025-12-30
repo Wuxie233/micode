@@ -1,6 +1,7 @@
 // src/hooks/auto-clear-ledger.ts
 import type { PluginInput } from "@opencode-ai/plugin";
 import { findCurrentLedger, formatLedgerInjection } from "./ledger-loader";
+import { getFileOps, clearFileOps, formatFileOpsForPrompt } from "./file-ops-tracker";
 
 // Model context limits (tokens)
 const MODEL_CONTEXT_LIMITS: Record<string, number> = {
@@ -103,7 +104,11 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         })
         .catch(() => {});
 
-      // Step 1: Spawn ledger-creator agent to update ledger
+      // Step 1: Get file operations and existing ledger (don't clear yet)
+      const fileOps = getFileOps(sessionID);
+      const existingLedger = await findCurrentLedger(ctx.directory);
+
+      // Step 2: Spawn ledger-creator agent to update ledger
       const ledgerSessionResp = await ctx.client.session.create({
         body: {},
         query: { directory: ctx.directory },
@@ -111,12 +116,24 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
       const ledgerSessionID = (ledgerSessionResp as { data?: { id?: string } }).data?.id;
 
       if (ledgerSessionID) {
+        // Build prompt with previous ledger and file ops
+        let promptText = "";
+
+        if (existingLedger) {
+          promptText += `<previous-ledger>\n${existingLedger.content}\n</previous-ledger>\n\n`;
+        }
+
+        promptText += formatFileOpsForPrompt(fileOps);
+        promptText += "\n\n<instruction>\n";
+        promptText += existingLedger
+          ? "Update the ledger with the current session state. Merge the file operations above with any existing ones in the previous ledger."
+          : "Create a new continuity ledger for this session.";
+        promptText += "\n</instruction>";
+
         await ctx.client.session.prompt({
           path: { id: ledgerSessionID },
           body: {
-            parts: [
-              { type: "text", text: "Update the continuity ledger with current session state before context clear." },
-            ],
+            parts: [{ type: "text", text: promptText }],
             agent: "ledger-creator",
           },
           query: { directory: ctx.directory },
@@ -124,6 +141,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
 
         // Wait for ledger completion (poll for idle)
         let attempts = 0;
+        let ledgerCompleted = false;
         while (attempts < 30) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
           const statusResp = await ctx.client.session.get({
@@ -131,46 +149,15 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
             query: { directory: ctx.directory },
           });
           if ((statusResp as { data?: { status?: string } }).data?.status === "idle") {
+            ledgerCompleted = true;
             break;
           }
           attempts++;
         }
-      }
 
-      // Step 2: Spawn handoff-creator agent
-      const handoffSessionResp = await ctx.client.session.create({
-        body: {},
-        query: { directory: ctx.directory },
-      });
-      const handoffSessionID = (handoffSessionResp as { data?: { id?: string } }).data?.id;
-
-      if (handoffSessionID) {
-        await ctx.client.session.prompt({
-          path: { id: handoffSessionID },
-          body: {
-            parts: [
-              {
-                type: "text",
-                text: "Create a handoff document. Read the current ledger at thoughts/ledgers/ for context.",
-              },
-            ],
-            agent: "handoff-creator",
-          },
-          query: { directory: ctx.directory },
-        });
-
-        // Wait for handoff completion
-        let attempts = 0;
-        while (attempts < 30) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          const statusResp = await ctx.client.session.get({
-            path: { id: handoffSessionID },
-            query: { directory: ctx.directory },
-          });
-          if ((statusResp as { data?: { status?: string } }).data?.status === "idle") {
-            break;
-          }
-          attempts++;
+        // Only clear file ops after ledger-creator successfully completed
+        if (ledgerCompleted) {
+          clearFileOps(sessionID);
         }
       }
 
@@ -207,7 +194,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         .showToast({
           body: {
             title: "Context Cleared",
-            message: "Ledger + handoff saved. Session ready to continue.",
+            message: "Ledger saved. Session ready to continue.",
             variant: "success",
             duration: 5000,
           },

@@ -19,6 +19,7 @@ import { createCommentCheckerHook } from "./hooks/comment-checker";
 import { createAutoClearLedgerHook } from "./hooks/auto-clear-ledger";
 import { createLedgerLoaderHook } from "./hooks/ledger-loader";
 import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
+import { createFileOpsTrackerHook } from "./hooks/file-ops-tracker";
 
 // Background Task System
 import { BackgroundTaskManager, createBackgroundTaskTools } from "./tools/background-task";
@@ -87,6 +88,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const contextWindowMonitorHook = createContextWindowMonitorHook(ctx);
   const commentCheckerHook = createCommentCheckerHook(ctx);
   const artifactAutoIndexHook = createArtifactAutoIndexHook(ctx);
+  const fileOpsTrackerHook = createFileOpsTrackerHook(ctx);
 
   // Background Task System
   const backgroundTaskManager = new BackgroundTaskManager(ctx);
@@ -201,6 +203,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Auto-index artifacts when written to thoughts/ directories
       await artifactAutoIndexHook["tool.execute.after"]({ tool: input.tool, args: input.args }, output);
+
+      // Track file operations for ledger
+      await fileOpsTrackerHook["tool.execute.after"](
+        { tool: input.tool, sessionID: input.sessionID, args: input.args },
+        output,
+      );
     },
 
     event: async ({ event }) => {
@@ -221,6 +229,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Background task manager event handling
       backgroundTaskManager.handleEvent(event);
+
+      // File ops tracker cleanup
+      await fileOpsTrackerHook.event({ event });
     },
   };
 };

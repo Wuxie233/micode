@@ -3,7 +3,7 @@ import { tool } from "@opencode-ai/plugin/tool";
 import { getArtifactIndex } from "./artifact-index";
 
 export const artifact_search = tool({
-  description: `Search past handoffs, plans, and ledgers for relevant precedent.
+  description: `Search past plans and ledgers for relevant precedent.
 Use this to find:
 - Similar problems you've solved before
 - Patterns and approaches that worked
@@ -12,10 +12,7 @@ Returns ranked results with file paths for further reading.`,
   args: {
     query: tool.schema.string().describe("Search query - describe what you're looking for"),
     limit: tool.schema.number().optional().describe("Max results to return (default: 10)"),
-    type: tool.schema
-      .enum(["all", "handoff", "plan", "ledger"])
-      .optional()
-      .describe("Filter by artifact type (default: all)"),
+    type: tool.schema.enum(["all", "plan", "ledger"]).optional().describe("Filter by artifact type (default: all)"),
   },
   execute: async (args) => {
     try {

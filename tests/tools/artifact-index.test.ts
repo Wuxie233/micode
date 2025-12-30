@@ -27,29 +27,6 @@ describe("ArtifactIndex", () => {
     await index.close();
   });
 
-  it("should index and search handoffs", async () => {
-    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
-    await index.initialize();
-
-    await index.indexHandoff({
-      id: "test-1",
-      sessionName: "auth-feature",
-      filePath: "/path/to/handoff.md",
-      taskSummary: "Implement OAuth authentication",
-      whatWorked: "JWT tokens work well",
-      whatFailed: "Session refresh had issues",
-      learnings: "Use refresh tokens for long sessions",
-      outcome: "SUCCEEDED",
-    });
-
-    const results = await index.search("OAuth authentication");
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0].type).toBe("handoff");
-
-    await index.close();
-  });
-
   it("should index and search plans", async () => {
     const { ArtifactIndex } = await import("../../src/tools/artifact-index");
     const index = new ArtifactIndex(testDir);
@@ -82,11 +59,34 @@ describe("ArtifactIndex", () => {
       goal: "Migrate from MySQL to PostgreSQL",
       stateNow: "Schema conversion in progress",
       keyDecisions: "Use pgloader for data migration",
+      filesRead: "src/db/schema.ts,src/db/migrations/001.sql",
+      filesModified: "src/db/config.ts",
     });
 
     const results = await index.search("PostgreSQL migration");
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].type).toBe("ledger");
+
+    await index.close();
+  });
+
+  it("should index ledger with file operations", async () => {
+    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
+    const index = new ArtifactIndex(testDir);
+    await index.initialize();
+
+    await index.indexLedger({
+      id: "ledger-2",
+      sessionName: "feature-work",
+      filePath: "/path/to/ledger2.md",
+      goal: "Implement new feature",
+      filesRead: "src/a.ts,src/b.ts",
+      filesModified: "src/c.ts",
+    });
+
+    // Verify it was indexed (search should find it)
+    const results = await index.search("feature");
+    expect(results.length).toBeGreaterThan(0);
 
     await index.close();
   });
