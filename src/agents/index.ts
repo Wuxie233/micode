@@ -7,8 +7,6 @@ import { plannerAgent } from "./planner";
 import { implementerAgent } from "./implementer";
 import { reviewerAgent } from "./reviewer";
 import { executorAgent } from "./executor";
-import { handoffCreatorAgent } from "./handoff-creator";
-import { handoffResumerAgent } from "./handoff-resumer";
 import { primaryAgent, PRIMARY_AGENT_NAME } from "./commander";
 import { projectInitializerAgent } from "./project-initializer";
 import { ledgerCreatorAgent } from "./ledger-creator";
@@ -24,8 +22,6 @@ export const agents: Record<string, AgentConfig> = {
   implementer: implementerAgent,
   reviewer: reviewerAgent,
   executor: executorAgent,
-  "handoff-creator": handoffCreatorAgent,
-  "handoff-resumer": handoffResumerAgent,
   "project-initializer": projectInitializerAgent,
   "ledger-creator": ledgerCreatorAgent,
   "artifact-searcher": artifactSearcherAgent,
@@ -42,8 +38,6 @@ export {
   implementerAgent,
   reviewerAgent,
   executorAgent,
-  handoffCreatorAgent,
-  handoffResumerAgent,
   projectInitializerAgent,
   ledgerCreatorAgent,
   artifactSearcherAgent,
