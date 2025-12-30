@@ -8,7 +8,7 @@ import { getArtifactIndex } from "../tools/artifact-index";
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
 
-function parseLedger(content: string, filePath: string, sessionName: string) {
+export function parseLedger(content: string, filePath: string, sessionName: string) {
   const goalMatch = content.match(/## Goal\n([^\n]+)/);
   const stateMatch = content.match(/### In Progress\n- \[ \] ([^\n]+)/);
   const decisionsMatch = content.match(/## Key Decisions\n([\s\S]*?)(?=\n## |$)/);

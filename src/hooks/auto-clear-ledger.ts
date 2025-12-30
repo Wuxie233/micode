@@ -1,7 +1,7 @@
 // src/hooks/auto-clear-ledger.ts
 import type { PluginInput } from "@opencode-ai/plugin";
 import { findCurrentLedger, formatLedgerInjection } from "./ledger-loader";
-import { getAndClearFileOps, formatFileOpsForPrompt } from "./file-ops-tracker";
+import { getFileOps, clearFileOps, formatFileOpsForPrompt } from "./file-ops-tracker";
 
 // Model context limits (tokens)
 const MODEL_CONTEXT_LIMITS: Record<string, number> = {
@@ -104,8 +104,8 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         })
         .catch(() => {});
 
-      // Step 1: Get file operations and existing ledger
-      const fileOps = getAndClearFileOps(sessionID);
+      // Step 1: Get file operations and existing ledger (don't clear yet)
+      const fileOps = getFileOps(sessionID);
       const existingLedger = await findCurrentLedger(ctx.directory);
 
       // Step 2: Spawn ledger-creator agent to update ledger
@@ -152,6 +152,9 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
           }
           attempts++;
         }
+
+        // Only clear file ops after ledger-creator successfully processed them
+        clearFileOps(sessionID);
       }
 
       // Step 3: Get first message ID for revert

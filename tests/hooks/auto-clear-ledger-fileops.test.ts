@@ -5,7 +5,9 @@ describe("auto-clear-ledger file ops integration", () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile("src/hooks/auto-clear-ledger.ts", "utf-8");
     expect(source).toContain('from "./file-ops-tracker"');
-    expect(source).toContain("getAndClearFileOps");
+    // Uses getFileOps first, then clearFileOps after success (not getAndClearFileOps)
+    expect(source).toContain("getFileOps");
+    expect(source).toContain("clearFileOps");
     expect(source).toContain("formatFileOpsForPrompt");
   });
 
