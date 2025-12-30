@@ -1,6 +1,7 @@
 // src/hooks/auto-clear-ledger.ts
 import type { PluginInput } from "@opencode-ai/plugin";
 import { findCurrentLedger, formatLedgerInjection } from "./ledger-loader";
+import { getAndClearFileOps, formatFileOpsForPrompt } from "./file-ops-tracker";
 
 // Model context limits (tokens)
 const MODEL_CONTEXT_LIMITS: Record<string, number> = {
@@ -103,7 +104,11 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         })
         .catch(() => {});
 
-      // Step 1: Spawn ledger-creator agent to update ledger
+      // Step 1: Get file operations and existing ledger
+      const fileOps = getAndClearFileOps(sessionID);
+      const existingLedger = await findCurrentLedger(ctx.directory);
+
+      // Step 2: Spawn ledger-creator agent to update ledger
       const ledgerSessionResp = await ctx.client.session.create({
         body: {},
         query: { directory: ctx.directory },
@@ -111,12 +116,24 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
       const ledgerSessionID = (ledgerSessionResp as { data?: { id?: string } }).data?.id;
 
       if (ledgerSessionID) {
+        // Build prompt with previous ledger and file ops
+        let promptText = "";
+
+        if (existingLedger) {
+          promptText += `<previous-ledger>\n${existingLedger.content}\n</previous-ledger>\n\n`;
+        }
+
+        promptText += formatFileOpsForPrompt(fileOps);
+        promptText += "\n\n<instruction>\n";
+        promptText += existingLedger
+          ? "Update the ledger with the current session state. Merge the file operations above with any existing ones in the previous ledger."
+          : "Create a new continuity ledger for this session.";
+        promptText += "\n</instruction>";
+
         await ctx.client.session.prompt({
           path: { id: ledgerSessionID },
           body: {
-            parts: [
-              { type: "text", text: "Update the continuity ledger with current session state before context clear." },
-            ],
+            parts: [{ type: "text", text: promptText }],
             agent: "ledger-creator",
           },
           query: { directory: ctx.directory },
@@ -137,7 +154,7 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         }
       }
 
-      // Step 2: Get first message ID for revert
+      // Step 3: Get first message ID for revert
       const firstMessage = messages[0] as Record<string, unknown> | undefined;
       const firstMessageID = (firstMessage?.info as Record<string, unknown> | undefined)?.id as string | undefined;
 
@@ -145,14 +162,14 @@ export function createAutoClearLedgerHook(ctx: PluginInput) {
         throw new Error("Could not find first message ID for revert");
       }
 
-      // Step 3: Revert session to first message
+      // Step 4: Revert session to first message
       await ctx.client.session.revert({
         path: { id: sessionID },
         body: { messageID: firstMessageID },
         query: { directory: ctx.directory },
       });
 
-      // Step 4: Inject ledger context
+      // Step 5: Inject ledger context
       const ledger = await findCurrentLedger(ctx.directory);
       if (ledger) {
         const injection = formatLedgerInjection(ledger);
