@@ -154,10 +154,9 @@ Creates/updates `thoughts/ledgers/CONTINUITY_{session-name}.md` with:
 **Auto-injection:** When starting a session, the most recent ledger is automatically injected into the system prompt.
 
 **Auto-clear:** At 80% context usage, the system automatically:
-1. Updates the ledger
-2. Creates a handoff document
-3. Clears the session
-4. Injects the ledger into the fresh context
+1. Updates the ledger with current state and file operations
+2. Clears the session
+3. Injects the ledger into the fresh context
 
 #### Artifact Search
 
@@ -170,18 +169,9 @@ Search past work to find relevant precedent:
 
 Searches across:
 - Ledgers (`thoughts/ledgers/`)
-- Handoffs (`thoughts/shared/handoffs/`)
 - Plans (`thoughts/shared/plans/`)
 
 **Auto-indexing:** Artifacts are automatically indexed when created.
-
-#### Handoff
-
-Save/resume session state for continuity:
-
-- `handoff-creator`: Save current session (reads ledger for context)
-- `handoff-resumer`: Resume from handoff
-- Output: `thoughts/shared/handoffs/`
 
 ## Commands
 
@@ -189,7 +179,7 @@ Save/resume session state for continuity:
 |---------|-------------|
 | `/init` | Initialize project with ARCHITECTURE.md and CODE_STYLE.md |
 | `/ledger` | Create or update continuity ledger for session state |
-| `/search` | Search past handoffs, plans, and ledgers |
+| `/search` | Search past plans and ledgers |
 
 ## Agents
 
@@ -207,8 +197,6 @@ Save/resume session state for continuity:
 | reviewer | subagent | claude-opus-4-5 | Review correctness and style |
 | ledger-creator | subagent | claude-sonnet | Create/update continuity ledgers |
 | artifact-searcher | subagent | claude-sonnet | Search past work for precedent |
-| handoff-creator | subagent | claude-opus-4-5 | Save session state |
-| handoff-resumer | subagent | claude-opus-4-5 | Resume from handoff |
 
 ## Tools
 
@@ -217,7 +205,7 @@ Save/resume session state for continuity:
 | `ast_grep_search` | AST-aware code pattern search |
 | `ast_grep_replace` | AST-aware code pattern replacement |
 | `look_at` | Extract file structure for large files |
-| `artifact_search` | Search past handoffs, plans, and ledgers |
+| `artifact_search` | Search past plans and ledgers |
 | `background_task` | Run long-running tasks in background |
 | `background_output` | Check background task status/output |
 | `background_cancel` | Cancel background tasks |
@@ -229,7 +217,7 @@ Save/resume session state for continuity:
 |------|-------------|
 | Think Mode | Keywords like "think hard" enable 32k token thinking budget |
 | Ledger Loader | Injects continuity ledger into system prompt |
-| Auto-Clear Ledger | At 80% context, saves ledger + handoff and clears session |
+| Auto-Clear Ledger | At 80% context, saves ledger and clears session |
 | Artifact Auto-Index | Indexes artifacts when written to thoughts/ directories |
 | Auto-Compact | Summarizes session when hitting token limits |
 | Context Injector | Injects ARCHITECTURE.md, CODE_STYLE.md, .cursorrules |
@@ -276,8 +264,7 @@ micode/
     ├── ledgers/        # Continuity ledgers
     └── shared/
         ├── designs/    # Brainstorm outputs
-        ├── plans/      # Implementation plans
-        └── handoffs/   # Session handoffs
+        └── plans/      # Implementation plans
 ```
 
 ## Development
