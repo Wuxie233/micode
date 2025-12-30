@@ -10,8 +10,29 @@ const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
 
 function parseLedger(content: string, filePath: string, sessionName: string) {
   const goalMatch = content.match(/## Goal\n([^\n]+)/);
-  const stateMatch = content.match(/- Now: ([^\n]+)/);
+  const stateMatch = content.match(/### In Progress\n- \[ \] ([^\n]+)/);
   const decisionsMatch = content.match(/## Key Decisions\n([\s\S]*?)(?=\n## |$)/);
+
+  // Parse file operations from new ledger format
+  const fileOpsSection = content.match(/## File Operations\n([\s\S]*?)(?=\n## |$)/);
+  let filesRead = "";
+  let filesModified = "";
+
+  if (fileOpsSection) {
+    const readMatch = fileOpsSection[1].match(/### Read\n([\s\S]*?)(?=\n### |$)/);
+    const modifiedMatch = fileOpsSection[1].match(/### Modified\n([\s\S]*?)(?=\n### |$)/);
+
+    if (readMatch) {
+      // Extract paths from markdown list items like "- `path`"
+      const paths = readMatch[1].match(/`([^`]+)`/g);
+      filesRead = paths ? paths.map((p) => p.replace(/`/g, "")).join(",") : "";
+    }
+
+    if (modifiedMatch) {
+      const paths = modifiedMatch[1].match(/`([^`]+)`/g);
+      filesModified = paths ? paths.map((p) => p.replace(/`/g, "")).join(",") : "";
+    }
+  }
 
   return {
     id: `ledger-${sessionName}`,
@@ -20,6 +41,8 @@ function parseLedger(content: string, filePath: string, sessionName: string) {
     goal: goalMatch?.[1] || "",
     stateNow: stateMatch?.[1] || "",
     keyDecisions: decisionsMatch?.[1]?.trim() || "",
+    filesRead,
+    filesModified,
   };
 }
 
