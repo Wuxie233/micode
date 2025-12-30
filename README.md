@@ -135,28 +135,55 @@ Each task gets its own implement→review loop:
 
 ### 4. Session Continuity
 
-Maintain context across long sessions and context clears with the ledger system:
+Maintain context across long sessions and context clears with structured compaction:
 
 #### Ledger System
 
-The **continuity ledger** captures essential session state:
+The **continuity ledger** serves as both session state and compaction summary. Based on [Factory.ai's structured compaction research](https://factory.ai/blog/context-compression), which found that structured summarization with deterministic file tracking retains more useful context.
 
 ```
 /ledger
 ```
 
 Creates/updates `thoughts/ledgers/CONTINUITY_{session-name}.md` with:
-- Goal and constraints
-- Key decisions with rationale
-- Current state (Done/Now/Next)
-- Working set (branch, key files)
 
-**Auto-injection:** When starting a session, the most recent ledger is automatically injected into the system prompt.
+```markdown
+# Session: {name}
+Updated: {timestamp}
+
+## Goal
+## Constraints
+## Progress
+### Done
+- [x] {Completed items}
+### In Progress
+- [ ] {Current work}
+### Blocked
+- {Issues, if any}
+## Key Decisions
+- **{Decision}**: {Rationale}
+## Next Steps
+1. {Ordered list}
+## File Operations
+### Read
+- `{paths read since last compaction}`
+### Modified
+- `{paths written/edited since last compaction}`
+## Critical Context
+- {Data, examples, references needed to continue}
+```
+
+**Key features:**
+
+- **Iterative merging** - Updates preserve existing information, adding new progress rather than regenerating from scratch
+- **Deterministic file tracking** - Read/write/edit operations tracked automatically via tool call interception, not LLM extraction
+- **Auto-injection** - Most recent ledger injected into system prompt on session start
 
 **Auto-clear:** At 80% context usage, the system automatically:
-1. Updates the ledger with current state and file operations
-2. Clears the session
-3. Injects the ledger into the fresh context
+1. Captures file operations tracked since last clear
+2. Updates ledger with current state (iterative merge with previous)
+3. Clears the session
+4. Injects the updated ledger into fresh context
 
 #### Artifact Search
 
@@ -217,7 +244,8 @@ Searches across:
 |------|-------------|
 | Think Mode | Keywords like "think hard" enable 32k token thinking budget |
 | Ledger Loader | Injects continuity ledger into system prompt |
-| Auto-Clear Ledger | At 80% context, saves ledger and clears session |
+| Auto-Clear Ledger | At 80% context, saves ledger with file ops and clears session |
+| File Ops Tracker | Tracks read/write/edit tool calls for deterministic file operation logging |
 | Artifact Auto-Index | Indexes artifacts when written to thoughts/ directories |
 | Auto-Compact | Summarizes session when hitting token limits |
 | Context Injector | Injects ARCHITECTURE.md, CODE_STYLE.md, .cursorrules |
@@ -328,3 +356,4 @@ Built on techniques from:
 
 - **[oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)** - OpenCode plugin architecture, agent orchestration patterns, and trusted publishing setup
 - **[HumanLayer ACE-FCA](https://github.com/humanlayer/12-factor-agents)** - Advanced Context Engineering for Coding Agents, structured workflows, and the research → plan → implement methodology
+- **[Factory.ai Context Compression](https://factory.ai/blog/context-compression)** - Structured compaction research showing that anchored iterative summarization with deterministic file tracking outperforms generic compression
