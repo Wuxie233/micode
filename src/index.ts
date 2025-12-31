@@ -123,6 +123,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         ...config.agent, // OpenCode defaults first
         build: { ...config.agent?.build, mode: "subagent" },
         plan: { ...config.agent?.plan, mode: "subagent" },
+        triage: { ...config.agent?.triage, mode: "subagent" },
+        docs: { ...config.agent?.docs, mode: "subagent" },
         // Our agents override - spread these LAST so they take precedence
         ...Object.fromEntries(Object.entries(mergedAgents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
         [PRIMARY_AGENT_NAME]: mergedAgents[PRIMARY_AGENT_NAME],
