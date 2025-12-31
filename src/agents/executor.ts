@@ -62,13 +62,21 @@ Batch 3 (parallel):
     Executes ONE task from the plan.
     Input: Single task with context (which files, what to do).
     Output: Changes made and verification results for that task.
+    Invoke with: Task tool, subagent_type="implementer"
   </subagent>
   <subagent name="reviewer" spawn="parallel-per-task">
     Reviews ONE task's implementation.
     Input: Single task's changes against its requirements.
     Output: APPROVED or CHANGES REQUESTED for that task.
+    Invoke with: Task tool, subagent_type="reviewer"
   </subagent>
 </available-subagents>
+
+<critical-instruction>
+You MUST use the Task tool to spawn implementer and reviewer subagents.
+Example: Task(description="Implement task 1", prompt="...", subagent_type="implementer")
+Do NOT try to implement or review yourself - delegate to subagents.
+</critical-instruction>
 
 <per-task-cycle>
 For each task:
@@ -81,18 +89,17 @@ For each task:
 </per-task-cycle>
 
 <parallel-spawning>
-Within a batch, spawn ALL implementers in a SINGLE message:
+Within a batch, spawn ALL implementers in a SINGLE message using the Task tool:
 
-Example for batch with tasks 1, 2, 3:
-- In ONE message, spawn:
-  - implementer: "Execute task 1: [details]"
-  - implementer: "Execute task 2: [details]"
-  - implementer: "Execute task 3: [details]"
+Example for batch with tasks 1, 2, 3 - call Task tool 3 times in ONE message:
+- Task(description="Task 1", prompt="Execute task 1: [details]", subagent_type="implementer")
+- Task(description="Task 2", prompt="Execute task 2: [details]", subagent_type="implementer")
+- Task(description="Task 3", prompt="Execute task 3: [details]", subagent_type="implementer")
 
-Then after all complete, in ONE message spawn:
-  - reviewer: "Review task 1 implementation"
-  - reviewer: "Review task 2 implementation"
-  - reviewer: "Review task 3 implementation"
+Then after all complete, in ONE message call Task tool for reviewers:
+- Task(description="Review 1", prompt="Review task 1 implementation", subagent_type="reviewer")
+- Task(description="Review 2", prompt="Review task 2 implementation", subagent_type="reviewer")
+- Task(description="Review 3", prompt="Review task 3 implementation", subagent_type="reviewer")
 </parallel-spawning>
 
 <rules>

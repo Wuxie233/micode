@@ -66,16 +66,24 @@ const PROMPT = `
     <subagent name="codebase-locator" spawn="multiple">
       Fast file/pattern finder. Spawn multiple with different queries.
       Examples: "Find all entry points", "Find all config files", "Find test directories"
+      Invoke with: Task tool, subagent_type="codebase-locator"
     </subagent>
     <subagent name="codebase-analyzer" spawn="multiple">
       Deep module analyzer. Spawn multiple for different areas.
       Examples: "Analyze src/core", "Analyze api layer", "Analyze database module"
+      Invoke with: Task tool, subagent_type="codebase-analyzer"
     </subagent>
     <subagent name="pattern-finder" spawn="multiple">
       Pattern extractor. Spawn for different pattern types.
       Examples: "Find naming patterns", "Find error handling patterns", "Find async patterns"
+      Invoke with: Task tool, subagent_type="pattern-finder"
     </subagent>
   </available-subagents>
+
+  <critical-instruction>
+  You MUST use the Task tool to spawn subagents. Call multiple Task tools in a SINGLE message for parallelism.
+  Example: Task(description="Find entry points", prompt="Find all entry points and main files", subagent_type="codebase-locator")
+  </critical-instruction>
 
   <language-detection>
     <rule>Identify language(s) by examining file extensions and config files</rule>
@@ -170,22 +178,19 @@ const PROMPT = `
 
   <execution-example>
     <step description="Start with maximum parallelism">
-      In a SINGLE message, spawn:
-      - codebase-locator: "Find all entry points and main files"
-      - codebase-locator: "Find all config files (linters, formatters, build)"
-      - codebase-locator: "Find test directories and test files"
-      - codebase-analyzer: "Analyze the directory structure and organization"
-      - pattern-finder: "Find naming conventions used across the codebase"
-
-      AND run tools:
+      In a SINGLE message, call Task tool multiple times AND run other tools:
+      - Task(description="Find entry points", prompt="Find all entry points and main files", subagent_type="codebase-locator")
+      - Task(description="Find configs", prompt="Find all config files (linters, formatters, build)", subagent_type="codebase-locator")
+      - Task(description="Find tests", prompt="Find test directories and test files", subagent_type="codebase-locator")
+      - Task(description="Analyze structure", prompt="Analyze the directory structure and organization", subagent_type="codebase-analyzer")
+      - Task(description="Find patterns", prompt="Find naming conventions used across the codebase", subagent_type="pattern-finder")
       - Glob: package.json, pyproject.toml, go.mod, Cargo.toml, etc.
       - Glob: README*, ARCHITECTURE*, docs/*
-      - Bash: ls -la (root directory)
     </step>
 
     <step description="Parallel deep analysis">
-      Based on discovery, in a SINGLE message spawn:
-      - codebase-analyzer for each major module found
+      Based on discovery, in a SINGLE message:
+      - Task for each major module: subagent_type="codebase-analyzer"
       - Read multiple source files simultaneously
       - Read multiple test files simultaneously
     </step>
