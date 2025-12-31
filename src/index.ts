@@ -118,13 +118,14 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       // Merge user config overrides into plugin agents
       const mergedAgents = mergeAgentConfigs(agents, userConfig);
 
-      // Add our agents, demote built-in build/plan to subagent
+      // Add our agents - our agents override OpenCode defaults, demote built-in build/plan to subagent
       config.agent = {
-        [PRIMARY_AGENT_NAME]: mergedAgents[PRIMARY_AGENT_NAME],
-        ...Object.fromEntries(Object.entries(mergedAgents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
-        ...config.agent,
+        ...config.agent, // OpenCode defaults first
         build: { ...config.agent?.build, mode: "subagent" },
         plan: { ...config.agent?.plan, mode: "subagent" },
+        // Our agents override - spread these LAST so they take precedence
+        ...Object.fromEntries(Object.entries(mergedAgents).filter(([k]) => k !== PRIMARY_AGENT_NAME)),
+        [PRIMARY_AGENT_NAME]: mergedAgents[PRIMARY_AGENT_NAME],
       };
 
       // Add MCP servers (plugin servers override defaults)
