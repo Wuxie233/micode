@@ -15,4 +15,20 @@ describe("btca tool", () => {
       }
     });
   });
+
+  describe("btca_ask tool", () => {
+    it("should be a valid tool with correct schema", async () => {
+      const { btca_ask } = await import("../../src/tools/btca");
+
+      expect(btca_ask).toBeDefined();
+      expect(btca_ask.description).toContain("source code");
+    });
+
+    it("should require tech and question parameters", async () => {
+      const { btca_ask } = await import("../../src/tools/btca");
+
+      expect(btca_ask.args).toHaveProperty("tech");
+      expect(btca_ask.args).toHaveProperty("question");
+    });
+  });
 });
