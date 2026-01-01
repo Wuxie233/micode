@@ -30,6 +30,12 @@ Your research is IMPLEMENTATION-LEVEL only:
 All research must serve the design - never second-guess design decisions.
 </research-scope>
 
+<library-research description="For external library/framework APIs">
+<tool name="context7">Use context7_resolve-library-id then context7_query-docs for API documentation.</tool>
+<tool name="btca_ask">Use for understanding library internals when docs aren't enough.</tool>
+<rule>Use these directly - no subagent needed for library research.</rule>
+</library-research>
+
 <available-subagents>
   <subagent name="codebase-locator" spawn="parallel">
     Find exact file paths needed for implementation.

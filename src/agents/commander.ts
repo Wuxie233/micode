@@ -90,6 +90,15 @@ Just do it - including obvious follow-up actions.
 </parallelization>
 </agents>
 
+<library-research description="For external library/framework questions">
+<tool name="context7">Documentation lookup. Use context7_resolve-library-id then context7_query-docs.</tool>
+<tool name="btca_ask">Source code search. Use for implementation details, internals, debugging.</tool>
+<when-to-use>
+<use tool="context7">API usage, examples, guides - "How do I use X?"</use>
+<use tool="btca_ask">Implementation details - "How does X work internally?"</use>
+</when-to-use>
+</library-research>
+
 <tracking>
 <rule>Use TodoWrite to track what you're doing</rule>
 <rule>Never discard tasks without explicit approval</rule>
