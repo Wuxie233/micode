@@ -6,6 +6,7 @@ import { agents, PRIMARY_AGENT_NAME } from "./agents";
 
 // Tools
 import { ast_grep_search, ast_grep_replace, checkAstGrepAvailable } from "./tools/ast-grep";
+import { btca_ask, checkBtcaAvailable } from "./tools/btca";
 import { look_at } from "./tools/look-at";
 import { artifact_search } from "./tools/artifact-search";
 
@@ -69,6 +70,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     console.warn(`[micode] ${astGrepStatus.message}`);
   }
 
+  const btcaStatus = await checkBtcaAvailable();
+  if (!btcaStatus.available) {
+    console.warn(`[micode] ${btcaStatus.message}`);
+  }
+
   // Load user config for model overrides
   const userConfig = await loadMicodeConfig();
   if (userConfig?.agents) {
@@ -99,6 +105,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     tool: {
       ast_grep_search,
       ast_grep_replace,
+      btca_ask,
       look_at,
       artifact_search,
       ...backgroundTaskTools,

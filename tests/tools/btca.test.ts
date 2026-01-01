@@ -31,4 +31,14 @@ describe("btca tool", () => {
       expect(btca_ask.args).toHaveProperty("question");
     });
   });
+
+  describe("btca registration", () => {
+    it("should export checkBtcaAvailable and btca_ask", async () => {
+      const btcaModule = await import("../../src/tools/btca");
+
+      expect(btcaModule.checkBtcaAvailable).toBeDefined();
+      expect(typeof btcaModule.checkBtcaAvailable).toBe("function");
+      expect(btcaModule.btca_ask).toBeDefined();
+    });
+  });
 });
