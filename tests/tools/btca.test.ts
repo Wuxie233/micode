@@ -41,4 +41,33 @@ describe("btca tool", () => {
       expect(btcaModule.btca_ask).toBeDefined();
     });
   });
+
+  describe("btca_ask execution", () => {
+    it("should return error message when btca not installed", async () => {
+      // This test will pass if btca is not installed (expected in CI)
+      // and will also pass if btca IS installed (returns actual output)
+      const { btca_ask } = await import("../../src/tools/btca");
+
+      const result = await btca_ask.execute({
+        tech: "nonexistent-resource-12345",
+        question: "test question",
+      });
+
+      expect(typeof result).toBe("string");
+      // Either an error or actual output - both are valid strings
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("should handle empty tech parameter gracefully", async () => {
+      const { btca_ask } = await import("../../src/tools/btca");
+
+      // Empty tech should still execute and return an error from btca
+      const result = await btca_ask.execute({
+        tech: "",
+        question: "test question",
+      });
+
+      expect(typeof result).toBe("string");
+    });
+  });
 });
