@@ -14,8 +14,8 @@ export async function checkBtcaAvailable(): Promise<{ available: boolean; messag
     available: false,
     message:
       "btca CLI not found. Library source code search will not work.\n" +
-      "Install from: https://github.com/anthropics/btca\n" +
-      "  cargo install btca",
+      "Install from: https://github.com/davis7dotsh/better-context\n" +
+      "  bun add -g btca",
   };
 }
 
@@ -53,7 +53,8 @@ async function runBtca(args: string[]): Promise<{ output: string; error?: string
     if (err.message?.includes("ENOENT")) {
       return {
         output: "",
-        error: "btca CLI not found. Install from: https://github.com/anthropics/btca\n" + "  cargo install btca",
+        error:
+          "btca CLI not found. Install from: https://github.com/davis7dotsh/better-context\n" + "  bun add -g btca",
       };
     }
     return { output: "", error: err.message };
