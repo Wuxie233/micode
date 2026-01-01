@@ -15,7 +15,6 @@ export interface BackgroundTask {
     toolCalls: number;
     lastTool?: string;
     lastUpdate: Date;
-    lastMessage?: string;
   };
 }
 
