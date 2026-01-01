@@ -25,3 +25,37 @@ export interface BackgroundTaskInput {
   parentSessionID: string;
   parentMessageID: string;
 }
+
+// API Response Types
+export interface SessionCreateResponse {
+  data?: {
+    id?: string;
+  };
+}
+
+export interface SessionGetResponse {
+  data?: {
+    status?: "idle" | "running" | "error";
+  };
+}
+
+export interface MessagePart {
+  type: string;
+  text?: string;
+}
+
+export interface MessageInfo {
+  role?: "user" | "assistant";
+  sessionID?: string;
+  type?: string;
+  name?: string;
+}
+
+export interface SessionMessage {
+  info?: MessageInfo;
+  parts?: MessagePart[];
+}
+
+export interface SessionMessagesResponse {
+  data?: SessionMessage[];
+}
