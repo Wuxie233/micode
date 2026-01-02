@@ -59,16 +59,27 @@ Set block=true to wait for completion (with timeout).`,
         const maxWait = Math.min(timeout || 60, 600) * 1000;
         const startTime = Date.now();
 
-        while (task.status === "running" && Date.now() - startTime < maxWait) {
+        while (Date.now() - startTime < maxWait) {
+          // Re-fetch task to get updated status
+          const currentTask = manager.getTask(task_id);
+          if (!currentTask || currentTask.status !== "running") {
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
 
+      // Re-fetch task for final status
+      const finalTask = manager.getTask(task_id);
+      if (!finalTask) {
+        return `Task not found: ${task_id}`;
+      }
+
       // Format status
-      let output = manager.formatTaskStatus(task);
+      let output = manager.formatTaskStatus(finalTask);
 
       // Include result if completed
-      if (task.status === "completed") {
+      if (finalTask.status === "completed") {
         const result = await manager.getTaskResult(task_id);
         if (result) {
           output += `\n### Result\n${result}\n`;
