@@ -85,6 +85,7 @@ export class BackgroundTaskManager {
         query: { directory: this.ctx.directory },
       })
       .catch((error) => {
+        console.error(`[background-task] Failed to prompt session ${sessionID}:`, error);
         task.status = "error";
         task.error = error instanceof Error ? error.message : String(error);
         task.completedAt = new Date();
