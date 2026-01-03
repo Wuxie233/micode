@@ -37,6 +37,32 @@ describe("RingBuffer", () => {
       const lines = buffer.read(0);
       expect(lines).toEqual(["a", "b", "c"]);
     });
+
+    it("should normalize negative offset to 0", () => {
+      const buffer = new RingBuffer(100);
+      buffer.append("a\nb\nc");
+
+      const lines = buffer.read(-5, 2);
+      expect(lines).toEqual(["a", "b"]);
+    });
+
+    it("should handle empty string input", () => {
+      const buffer = new RingBuffer(100);
+      buffer.append("");
+
+      expect(buffer.length).toBe(1);
+      const lines = buffer.read(0);
+      expect(lines).toEqual([""]);
+    });
+
+    it("should handle unicode characters", () => {
+      const buffer = new RingBuffer(100);
+      buffer.append("Hello 世界\n🎉 emoji\nкириллица");
+
+      expect(buffer.length).toBe(3);
+      const lines = buffer.read(0);
+      expect(lines).toEqual(["Hello 世界", "🎉 emoji", "кириллица"]);
+    });
   });
 
   describe("search", () => {

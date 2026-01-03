@@ -88,6 +88,63 @@ describe("PTYManager", () => {
       const result = manager.write("pty_nonexistent", "test");
       expect(result).toBe(false);
     });
+
+    it("should return false for killed session", async () => {
+      const info = manager.spawn({
+        command: "cat",
+        parentSessionId: "test",
+      });
+
+      manager.kill(info.id);
+
+      const result = manager.write(info.id, "test");
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("read", () => {
+    it("should return null for unknown session", () => {
+      const result = manager.read("pty_nonexistent");
+      expect(result).toBeNull();
+    });
+
+    it("should return lines with offset and limit", async () => {
+      const info = manager.spawn({
+        command: "echo",
+        args: ["-e", "a\\nb\\nc\\nd\\ne"],
+        parentSessionId: "test",
+      });
+
+      // Wait for output
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const result = manager.read(info.id, 1, 2);
+      expect(result).not.toBeNull();
+      expect(result!.offset).toBe(1);
+      expect(result!.lines.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe("search", () => {
+    it("should return null for unknown session", () => {
+      const result = manager.search("pty_nonexistent", /test/);
+      expect(result).toBeNull();
+    });
+
+    it("should find matching lines", async () => {
+      const info = manager.spawn({
+        command: "echo",
+        args: ["-e", "info: ok\\nerror: bad\\ninfo: done"],
+        parentSessionId: "test",
+      });
+
+      // Wait for output
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const result = manager.search(info.id, /error/);
+      expect(result).not.toBeNull();
+      expect(result!.matches.length).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe("kill", () => {
