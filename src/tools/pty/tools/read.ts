@@ -60,7 +60,7 @@ export function createPtyReadTool(manager: PTYManager) {
         throw new Error(`PTY session '${args.id}' not found. Use pty_list to see active sessions.`);
       }
 
-      const offset = args.offset ?? 0;
+      const offset = Math.max(0, args.offset ?? 0);
       const limit = args.limit ?? DEFAULT_LIMIT;
 
       if (args.pattern) {
