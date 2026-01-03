@@ -265,7 +265,7 @@ Searches across:
 
 ### Background Task Pattern
 
-All agents use the **fire-poll-collect** pattern for parallel work:
+Research agents (brainstormer, planner, project-initializer) use the **fire-poll-collect** pattern. Executor uses **fire-and-check** (starts reviewers as implementers complete).
 
 ```
 # FIRE: Launch all in ONE message
@@ -273,9 +273,9 @@ task_1 = background_task(agent="locator", prompt="...")
 task_2 = background_task(agent="analyzer", prompt="...")
 
 # POLL: Check until complete
-background_list()  # repeat until all show "completed"
+background_list()  # repeat until all show "completed" or "error"
 
-# COLLECT: Get results
+# COLLECT: Get results (skip errored tasks)
 background_output(task_id=task_1)
 background_output(task_id=task_2)
 ```

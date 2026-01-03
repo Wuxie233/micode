@@ -60,8 +60,8 @@ const PROMPT = `
 
     <phase name="2-collect" description="Poll and collect all results">
       <description>Poll background_list until all tasks complete, then collect with background_output</description>
-      <action>Poll background_list until all tasks show "completed"</action>
-      <action>Call background_output for each completed task</action>
+      <action>Poll background_list until all tasks show "completed" or "error"</action>
+      <action>Call background_output for each completed task (skip errored)</action>
       <action>Process tool results from phase 1</action>
     </phase>
 
@@ -229,8 +229,8 @@ const PROMPT = `
 
     <step description="COLLECT: Poll and gather all results">
       First poll until all tasks complete:
-      - background_list()  // repeat until all show "completed"
-      Then collect ALL results:
+      - background_list()  // repeat until all show "completed" or "error"
+      Then collect results (skip errored tasks):
       - background_output(task_id=task_id_1)
       - background_output(task_id=task_id_2)
       - background_output(task_id=task_id_3)

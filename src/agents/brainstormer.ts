@@ -52,10 +52,10 @@ This is DESIGN ONLY. The planner agent handles detailed implementation plans.
     background_task(agent="pattern-finder", prompt="Find patterns for [similar functionality]", description="Find patterns")
   </fire-example>
   <poll>
-    background_list()  // repeat until all show "completed"
+    background_list()  // repeat until all show "completed" or "error"
   </poll>
   <collect>
-    background_output(task_id=...) for each completed task
+    background_output(task_id=...) for each completed task (skip errored tasks)
   </collect>
   <focus>purpose, constraints, success criteria</focus>
 </phase>
