@@ -25,6 +25,9 @@ import { createFileOpsTrackerHook } from "./hooks/file-ops-tracker";
 // Background Task System
 import { BackgroundTaskManager, createBackgroundTaskTools } from "./tools/background-task";
 
+// PTY System
+import { PTYManager, createPtyTools } from "./tools/pty";
+
 // Config loader
 import { loadMicodeConfig, mergeAgentConfigs } from "./config-loader";
 
@@ -100,6 +103,10 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const backgroundTaskManager = new BackgroundTaskManager(ctx);
   const backgroundTaskTools = createBackgroundTaskTools(backgroundTaskManager);
 
+  // PTY System
+  const ptyManager = new PTYManager();
+  const ptyTools = createPtyTools(ptyManager);
+
   return {
     // Tools
     tool: {
@@ -109,6 +116,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       look_at,
       artifact_search,
       ...backgroundTaskTools,
+      ...ptyTools,
     },
 
     config: async (config) => {
@@ -227,6 +235,14 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         const props = event.properties as { info?: { id?: string } } | undefined;
         if (props?.info?.id) {
           thinkModeState.delete(props.info.id);
+        }
+      }
+
+      // PTY cleanup on session delete
+      if (event.type === "session.deleted") {
+        const props = event.properties as { info?: { id?: string } } | undefined;
+        if (props?.info?.id) {
+          ptyManager.cleanupBySession(props.info.id);
         }
       }
 
