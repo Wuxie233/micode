@@ -36,7 +36,7 @@ Examples:
  * Handles: \n, \r, \t, \xNN (hex), \uNNNN (unicode), \\
  */
 function parseEscapeSequences(input: string): string {
-  return input.replace(/\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|[nrt\\])/g, (match, seq: string) => {
+  return input.replace(/\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|[nrt0\\])/g, (match, seq: string) => {
     if (seq.startsWith("x")) {
       return String.fromCharCode(parseInt(seq.slice(1), 16));
     }
@@ -50,6 +50,8 @@ function parseEscapeSequences(input: string): string {
         return "\r";
       case "t":
         return "\t";
+      case "0":
+        return "\0";
       case "\\":
         return "\\";
       default:
