@@ -9,8 +9,9 @@ https://github.com/user-attachments/assets/85236ad3-e78a-4ff7-a840-620f6ea2f512
 
 ## Quick Start
 
+Add to `~/.config/opencode/opencode.json`:
+
 ```json
-// ~/.config/opencode/opencode.json
 { "plugin": ["micode"] }
 ```
 
@@ -34,7 +35,7 @@ Transform designs into implementation plans with bite-sized tasks (2-5 min each)
 Execute in git worktree for isolation. The **Executor** orchestrates implementer→reviewer cycles with parallel execution via fire-and-check pattern.
 
 ### Session Continuity
-Maintain context across sessions with structured compaction. Run `/ledger` to create/update `thoughts/ledgers/CONTINUITY_{session}.md`. Auto-clears at 60% context usage.
+Maintain context across sessions with structured compaction. Run `/ledger` to create/update `thoughts/ledgers/CONTINUITY_{session}.md`. Preemptive compaction at 60%, auto-clear at 80%.
 
 ## Commands
 
@@ -91,7 +92,7 @@ Maintain context across sessions with structured compaction. Run `/ledger` to cr
 
 - **Think Mode** - Keywords like "think hard" enable 32k token thinking budget
 - **Ledger Loader** - Injects continuity ledger into system prompt
-- **Auto-Clear Ledger** - At 60% context, saves ledger and clears session
+- **Auto-Clear Ledger** - At 80% context, saves ledger and clears session
 - **File Ops Tracker** - Tracks read/write/edit for deterministic logging
 - **Artifact Auto-Index** - Indexes artifacts in thoughts/ directories
 - **Context Injector** - Injects ARCHITECTURE.md, CODE_STYLE.md
