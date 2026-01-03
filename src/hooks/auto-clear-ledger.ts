@@ -4,7 +4,7 @@ import { findCurrentLedger, formatLedgerInjection } from "./ledger-loader";
 import { getFileOps, clearFileOps, formatFileOpsForPrompt } from "./file-ops-tracker";
 import { getContextLimit } from "../utils/model-limits";
 
-export const DEFAULT_THRESHOLD = 0.8;
+export const DEFAULT_THRESHOLD = 0.6; // 60% of context window
 const MIN_TOKENS_FOR_CLEAR = 50_000;
 export const CLEAR_COOLDOWN_MS = 60_000;
 
