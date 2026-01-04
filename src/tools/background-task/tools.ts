@@ -103,7 +103,14 @@ Returns immediately with current status. Use background_list to poll for complet
         return "No background tasks.";
       }
 
+      const completed = tasks.filter((t) => t.status === "completed").length;
+      const errored = tasks.filter((t) => t.status === "error").length;
+      const running = tasks.filter((t) => t.status === "running").length;
+      const total = tasks.length;
+      const allDone = running === 0;
+
       let output = "## Background Tasks\n\n";
+      output += `**Status: ${completed + errored}/${total} done${allDone ? " ✓ ALL COMPLETE" : ` (${running} still running)`}**\n\n`;
       output += "| ID | Description | Agent | Status | Duration |\n";
       output += "|----|-------------|-------|--------|----------|\n";
 
@@ -113,6 +120,10 @@ Returns immediately with current status. Use background_list to poll for complet
           : `${Math.round((Date.now() - task.startedAt.getTime()) / 1000)}s`;
 
         output += `| ${task.id} | ${task.description} | ${task.agent} | ${task.status} | ${duration} |\n`;
+      }
+
+      if (allDone) {
+        output += "\n**→ All tasks complete. Proceed to collect results with background_output.**";
       }
 
       return output;

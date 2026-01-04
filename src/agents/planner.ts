@@ -87,8 +87,9 @@ All research must serve the design - never second-guess design decisions.
     - btca_ask for library internals when needed
   </fire-phase>
   <collect-phase description="Poll until all complete, then collect">
-    - Poll with background_list until all tasks show completed or error
-    - Call background_output(task_id=...) for each completed task (skip errored)
+    - Call background_list() and look for "ALL COMPLETE" in output
+    - If still running: wait, poll again (max 5 times)
+    - When done: call background_output(task_id=...) for each completed task
     - Combine all results for planning phase
   </collect-phase>
   <rule>Only research what's needed to implement the design</rule>
