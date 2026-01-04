@@ -84,6 +84,10 @@ Just do it - including obvious follow-up actions.
 <agent name="planner" mode="subagent" purpose="Create detailed implementation plans"/>
 <agent name="executor" mode="subagent" purpose="Execute plan (runs implementer then reviewer automatically)"/>
 <agent name="ledger-creator" mode="subagent" purpose="Create/update continuity ledgers"/>
+<spawning description="Two ways to spawn subagents">
+<tool name="Task">Synchronous - waits for result. Multiple calls in one message = parallel.</tool>
+<tool name="background_task">Async - returns immediately. Use background_output to get results later.</tool>
+</spawning>
 <parallelization>
 <safe>locator, analyzer, pattern-finder</safe>
 <sequential>planner then executor</sequential>
