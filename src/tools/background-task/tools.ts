@@ -97,6 +97,8 @@ Returns immediately with current status. Use background_list to poll for complet
     description: `List all background tasks and their status.`,
     args: {},
     execute: async () => {
+      // Refresh status of running tasks before returning
+      await manager.refreshTaskStatus();
       const tasks = manager.getAllTasks();
 
       if (tasks.length === 0) {
@@ -119,7 +121,11 @@ Returns immediately with current status. Use background_list to poll for complet
           ? `${Math.round((task.completedAt.getTime() - task.startedAt.getTime()) / 1000)}s`
           : `${Math.round((Date.now() - task.startedAt.getTime()) / 1000)}s`;
 
-        output += `| ${task.id} | ${task.description} | ${task.agent} | ${task.status} | ${duration} | ${task.sessionID} |\n`;
+        // Show session status for debugging
+        const sessionStatus = (task as { _sessionStatus?: string })._sessionStatus || "?";
+        const statusDisplay = task.status === "running" ? `${task.status} (${sessionStatus})` : task.status;
+
+        output += `| ${task.id} | ${task.description} | ${task.agent} | ${statusDisplay} | ${duration} | ${task.sessionID} |\n`;
       }
 
       if (allDone) {

@@ -144,6 +144,42 @@ export class BackgroundTaskManager {
     return Array.from(this.tasks.values());
   }
 
+  /**
+   * Poll all running tasks and update their status.
+   * Called by background_list to ensure fresh status.
+   */
+  async refreshTaskStatus(): Promise<void> {
+    const runningTasks = this.getRunningTasks();
+
+    for (const task of runningTasks) {
+      try {
+        const resp = await this.ctx.client.session.get({
+          path: { id: task.sessionID },
+          query: { directory: this.ctx.directory },
+        });
+
+        const sessionData = resp as SessionGetResponse;
+        const status = sessionData.data?.status;
+
+        if (status === "idle") {
+          task.status = "completed";
+          task.completedAt = new Date();
+          await this.getTaskResult(task.id);
+        } else if (status === "error") {
+          task.status = "error";
+          task.error = "Session error";
+          task.completedAt = new Date();
+        }
+        // Store last known session status for debugging
+        (task as BackgroundTask & { _sessionStatus?: string })._sessionStatus = status;
+      } catch (error) {
+        task.status = "error";
+        task.error = error instanceof Error ? error.message : "Failed to check session";
+        task.completedAt = new Date();
+      }
+    }
+  }
+
   getRunningTasks(): BackgroundTask[] {
     return this.getAllTasks().filter((t) => t.status === "running");
   }
