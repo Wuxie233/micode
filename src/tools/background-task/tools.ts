@@ -111,15 +111,15 @@ Returns immediately with current status. Use background_list to poll for complet
 
       let output = "## Background Tasks\n\n";
       output += `**Status: ${completed + errored}/${total} done${allDone ? " ✓ ALL COMPLETE" : ` (${running} still running)`}**\n\n`;
-      output += "| ID | Description | Agent | Status | Duration |\n";
-      output += "|----|-------------|-------|--------|----------|\n";
+      output += "| ID | Description | Agent | Status | Duration | Session |\n";
+      output += "|----|-------------|-------|--------|----------|---------|";
 
       for (const task of tasks) {
         const duration = task.completedAt
           ? `${Math.round((task.completedAt.getTime() - task.startedAt.getTime()) / 1000)}s`
           : `${Math.round((Date.now() - task.startedAt.getTime()) / 1000)}s`;
 
-        output += `| ${task.id} | ${task.description} | ${task.agent} | ${task.status} | ${duration} |\n`;
+        output += `| ${task.id} | ${task.description} | ${task.agent} | ${task.status} | ${duration} | ${task.sessionID} |\n`;
       }
 
       if (allDone) {
