@@ -1,6 +1,15 @@
 import { tool } from "@opencode-ai/plugin/tool";
 import type { BackgroundTaskManager } from "./manager";
 
+// Extended tool context with metadata for UI navigation
+type ToolContextWithMetadata = {
+  sessionID: string;
+  messageID?: string;
+  agent: string;
+  abort: AbortSignal;
+  metadata?: (input: { title?: string; metadata?: Record<string, unknown> }) => void;
+};
+
 export function createBackgroundTaskTools(manager: BackgroundTaskManager) {
   const background_task = tool({
     description: `Launch a task to run in the background using a subagent.
@@ -12,7 +21,8 @@ Useful for: parallel research, concurrent implementation, async reviews.`,
       prompt: tool.schema.string().describe("Full prompt/instructions for the background agent"),
       agent: tool.schema.string().describe("Agent to use (e.g., 'codebase-analyzer', 'implementer')"),
     },
-    execute: async (args, ctx) => {
+    execute: async (args, toolContext) => {
+      const ctx = toolContext as ToolContextWithMetadata;
       try {
         const task = await manager.launch({
           description: args.description,
@@ -20,6 +30,12 @@ Useful for: parallel research, concurrent implementation, async reviews.`,
           agent: args.agent,
           parentSessionID: ctx.sessionID,
           parentMessageID: ctx.messageID || "",
+        });
+
+        // Set metadata for OpenCode UI session navigation (ctrl+x + arrow keys)
+        ctx.metadata?.({
+          title: args.description,
+          metadata: { sessionId: task.sessionID },
         });
 
         return `## Background Task Launched
