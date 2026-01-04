@@ -256,6 +256,8 @@ export class BackgroundTaskManager {
         const sessionData = resp as SessionGetResponse;
         const status = sessionData.data?.status;
 
+        console.log(`[background-task] Poll ${task.id}: session=${task.sessionID} status=${status}`);
+
         if (status === "idle") {
           // Task completed
           task.status = "completed";
