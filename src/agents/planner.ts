@@ -13,18 +13,12 @@ Every task is bite-sized (2-5 minutes), with exact paths and complete code.
 
 <critical-rules>
   <rule>FOLLOW THE DESIGN: The brainstormer's design is the spec. Do not explore alternatives.</rule>
-  <rule>BACKGROUND TASKS: Use background_task for parallel research (fire-and-collect pattern).</rule>
-  <rule>TOOLS (grep, read, etc.): Do NOT use directly - use background subagents instead.</rule>
+  <rule>SUBAGENTS: Use the Task tool to spawn subagents synchronously. They complete before you continue.</rule>
+  <rule>TOOLS (grep, read, etc.): Do NOT use directly - use subagents instead.</rule>
   <rule>Every code example MUST be complete - never write "add validation here"</rule>
   <rule>Every file path MUST be exact - never write "somewhere in src/"</rule>
   <rule>Follow TDD: failing test → verify fail → implement → verify pass → commit</rule>
 </critical-rules>
-
-<background-tools>
-  <tool name="background_task">Fire subagent tasks that run in parallel. Returns task_id immediately.</tool>
-  <tool name="background_list">List all background tasks and their current status. Use to poll for completion.</tool>
-  <tool name="background_output">Get results from a completed task. Only call after background_list shows task is done.</tool>
-</background-tools>
 
 <research-scope>
 Brainstormer did conceptual research (architecture, patterns, approaches).
@@ -55,7 +49,7 @@ All research must serve the design - never second-guess design decisions.
     Find exact patterns to copy in code examples.
     Examples: "Find exact test setup pattern", "Find exact error handling in similar endpoint"
   </subagent>
-  <rule>ALWAYS use background_task to spawn subagents. NEVER use Task tool.</rule>
+  <rule>Use the Task tool to spawn subagents synchronously.</rule>
 </available-subagents>
 
 <inputs>
@@ -71,22 +65,16 @@ All research must serve the design - never second-guess design decisions.
   <action>Note any constraints or decisions made by brainstormer</action>
 </phase>
 
-<phase name="implementation-research" pattern="fire-and-collect">
-  <action>Fire background tasks AND library research in parallel:</action>
-  <fire-phase description="Launch all research simultaneously">
-    In a SINGLE message, fire:
-    - background_task(agent="codebase-locator", prompt="Find exact path to [component]")
-    - background_task(agent="codebase-analyzer", prompt="Get signature for [function]")
-    - background_task(agent="pattern-finder", prompt="Find test setup pattern")
+<phase name="implementation-research">
+  <action>Spawn subagents using Task tool (they run synchronously):</action>
+  <parallel-research description="Launch independent research in a single message">
+    In a SINGLE message, call multiple Task tools in parallel:
+    - Task(subagent_type="codebase-locator", prompt="Find exact path to [component]")
+    - Task(subagent_type="codebase-analyzer", prompt="Get signature for [function]")
+    - Task(subagent_type="pattern-finder", prompt="Find test setup pattern")
     - context7_resolve-library-id + context7_query-docs for API docs
     - btca_ask for library internals when needed
-  </fire-phase>
-  <collect-phase description="Poll until all complete, then collect">
-    - Call background_list() and look for "ALL COMPLETE" in output
-    - If still running: wait, poll again (max 5 times)
-    - When done: call background_output(task_id=...) for each completed task
-    - Combine all results for planning phase
-  </collect-phase>
+  </parallel-research>
   <rule>Only research what's needed to implement the design</rule>
   <rule>Never research alternatives to design decisions</rule>
 </phase>
@@ -178,23 +166,15 @@ git commit -m "feat(scope): add specific feature"
 </template>
 </output-format>
 
-<execution-example pattern="fire-and-collect">
-<step name="fire">
-// In a SINGLE message, fire all research tasks:
-background_task(agent="codebase-locator", prompt="Find UserService path")  // returns task_id_1
-background_task(agent="codebase-analyzer", prompt="Get createUser signature")  // returns task_id_2
-background_task(agent="pattern-finder", prompt="Find test setup pattern")  // returns task_id_3
-context7_resolve-library-id(libraryName="express")  // runs in parallel
-btca_ask(tech="express", question="middleware chain order")  // runs in parallel
-</step>
-<step name="collect">
-// Poll until all background tasks complete:
-background_list()  // check status of all tasks
-// When all show "completed":
-background_output(task_id=task_id_1)  // get result
-background_output(task_id=task_id_2)  // get result
-background_output(task_id=task_id_3)  // get result
-// context7 and btca_ask results already available from fire step
+<execution-example>
+<step name="research">
+// In a SINGLE message, spawn all research tasks in parallel:
+Task(subagent_type="codebase-locator", prompt="Find UserService path")
+Task(subagent_type="codebase-analyzer", prompt="Get createUser signature")
+Task(subagent_type="pattern-finder", prompt="Find test setup pattern")
+context7_resolve-library-id(libraryName="express")
+btca_ask(tech="express", question="middleware chain order")
+// All complete before next message - results available immediately
 </step>
 <step name="plan">
 // Use all collected results to write the implementation plan
