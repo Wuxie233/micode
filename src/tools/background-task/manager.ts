@@ -140,6 +140,15 @@ export class BackgroundTaskManager {
     return this.tasks.get(taskId);
   }
 
+  findBySession(sessionID: string): BackgroundTask | undefined {
+    for (const task of this.tasks.values()) {
+      if (task.sessionID === sessionID) {
+        return task;
+      }
+    }
+    return undefined;
+  }
+
   getAllTasks(): BackgroundTask[] {
     return Array.from(this.tasks.values());
   }
@@ -357,6 +366,35 @@ export class BackgroundTaskManager {
 
   handleEvent(event: { type: string; properties?: unknown }): void {
     const props = event.properties as Record<string, unknown> | undefined;
+
+    // Primary completion detection: session.idle event
+    if (event.type === "session.idle") {
+      const sessionID = props?.sessionID as string | undefined;
+      if (!sessionID) return;
+
+      const task = this.findBySession(sessionID);
+      if (!task || task.status !== "running") return;
+
+      task.status = "completed";
+      task.completedAt = new Date();
+      this.fetchTaskResult(task).then((result) => {
+        task.result = result;
+      });
+      this.markForNotification(task);
+
+      this.ctx.client.tui
+        .showToast({
+          body: {
+            title: "Background Task Complete",
+            message: task.description,
+            variant: "success",
+            duration: 5000,
+          },
+        })
+        .catch((error) => {
+          console.error(`[background-task] Failed to show toast for task ${task.id}:`, error);
+        });
+    }
 
     // Track tool usage for progress
     if (event.type === "message.part.updated") {
