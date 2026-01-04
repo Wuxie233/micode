@@ -7,10 +7,11 @@ describe("background-task response types", () => {
     expect(source).toContain("SessionCreateResponse");
   });
 
-  it("should have SessionGetResponse type", async () => {
+  it("should have SessionStatusResponse type", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile("src/tools/background-task/types.ts", "utf-8");
-    expect(source).toContain("SessionGetResponse");
+    // We use session.status() API to check task completion, not session.get()
+    expect(source).toContain("SessionStatusResponse");
   });
 
   it("should have SessionMessagesResponse type", async () => {
@@ -24,7 +25,7 @@ describe("background-task response types", () => {
     const source = await fs.readFile("src/tools/background-task/manager.ts", "utf-8");
     // Should import the response types
     expect(source).toContain("SessionCreateResponse");
-    expect(source).toContain("SessionGetResponse");
+    expect(source).toContain("SessionStatusResponse");
     expect(source).toContain("SessionMessagesResponse");
   });
 });

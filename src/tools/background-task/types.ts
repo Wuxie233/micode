@@ -26,16 +26,23 @@ export interface BackgroundTaskInput {
   parentMessageID: string;
 }
 
-// API Response Types
+// API Response Types - SDK wraps responses in { data: T } format
 export interface SessionCreateResponse {
   data?: {
     id?: string;
   };
 }
 
-export interface SessionGetResponse {
+// SessionStatus from OpenCode SDK - status is a discriminated union with 'type' field
+export type SessionStatus =
+  | { type: "idle" }
+  | { type: "retry"; attempt: number; message: string; next: number }
+  | { type: "busy" };
+
+// session.status() returns { data: map of sessionID -> SessionStatus }
+export interface SessionStatusResponse {
   data?: {
-    status?: "idle" | "running" | "error";
+    [sessionID: string]: SessionStatus;
   };
 }
 

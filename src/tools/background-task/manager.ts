@@ -3,7 +3,7 @@ import type {
   BackgroundTask,
   BackgroundTaskInput,
   SessionCreateResponse,
-  SessionGetResponse,
+  SessionStatusResponse,
   SessionMessagesResponse,
 } from "./types";
 
@@ -150,33 +150,32 @@ export class BackgroundTaskManager {
    */
   async refreshTaskStatus(): Promise<void> {
     const runningTasks = this.getRunningTasks();
+    if (runningTasks.length === 0) return;
 
-    for (const task of runningTasks) {
-      try {
-        const resp = await this.ctx.client.session.get({
-          path: { id: task.sessionID },
-          query: { directory: this.ctx.directory },
-        });
+    try {
+      // Get all session statuses in one call
+      const resp = await this.ctx.client.session.status({
+        query: { directory: this.ctx.directory },
+      });
 
-        const sessionData = resp as SessionGetResponse;
-        const status = sessionData.data?.status;
+      const statusResp = resp as SessionStatusResponse;
+      const statusMap = statusResp.data || {};
 
-        if (status === "idle") {
+      for (const task of runningTasks) {
+        const sessionStatus = statusMap[task.sessionID];
+        const statusType = sessionStatus?.type;
+
+        if (statusType === "idle") {
           task.status = "completed";
           task.completedAt = new Date();
           await this.getTaskResult(task.id);
-        } else if (status === "error") {
-          task.status = "error";
-          task.error = "Session error";
-          task.completedAt = new Date();
         }
         // Store last known session status for debugging
-        (task as BackgroundTask & { _sessionStatus?: string })._sessionStatus = status;
-      } catch (error) {
-        task.status = "error";
-        task.error = error instanceof Error ? error.message : "Failed to check session";
-        task.completedAt = new Date();
+        (task as BackgroundTask & { _sessionStatus?: string })._sessionStatus = statusType;
       }
+    } catch (error) {
+      console.error("[background-task] Failed to refresh task status:", error);
+      // Don't mark all tasks as error - they may still be running
     }
   }
 
@@ -281,20 +280,22 @@ export class BackgroundTaskManager {
       return;
     }
 
-    for (const task of runningTasks) {
-      try {
-        // Check session status
-        const resp = await this.ctx.client.session.get({
-          path: { id: task.sessionID },
-          query: { directory: this.ctx.directory },
-        });
+    try {
+      // Get all session statuses in one call
+      const resp = await this.ctx.client.session.status({
+        query: { directory: this.ctx.directory },
+      });
 
-        const sessionData = resp as SessionGetResponse;
-        const status = sessionData.data?.status;
+      const statusResp = resp as SessionStatusResponse;
+      const statusMap = statusResp.data || {};
 
-        console.log(`[background-task] Poll ${task.id}: session=${task.sessionID} status=${status}`);
+      for (const task of runningTasks) {
+        const sessionStatus = statusMap[task.sessionID];
+        const statusType = sessionStatus?.type;
 
-        if (status === "idle") {
+        console.log(`[background-task] Poll ${task.id}: session=${task.sessionID} status=${statusType}`);
+
+        if (statusType === "idle") {
           // Task completed
           task.status = "completed";
           task.completedAt = new Date();
@@ -314,15 +315,10 @@ export class BackgroundTaskManager {
               console.error(`[background-task] Failed to show toast for task ${task.id}:`, error);
             });
         }
-      } catch (error) {
-        console.error(`[background-task] Failed to poll task ${task.id}:`, error);
-        if (task.status === "running") {
-          task.status = "error";
-          task.error = "Session lost";
-          task.completedAt = new Date();
-          this.markForNotification(task);
-        }
       }
+    } catch (error) {
+      console.error("[background-task] Failed to poll tasks:", error);
+      // Don't mark tasks as error - they may still be running, just can't check
     }
   }
 
