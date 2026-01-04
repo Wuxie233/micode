@@ -80,9 +80,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Load user config for model overrides
   const userConfig = await loadMicodeConfig();
-  if (userConfig?.agents) {
-    console.log(`[micode] Loaded model overrides for: ${Object.keys(userConfig.agents).join(", ")}`);
-  }
 
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();

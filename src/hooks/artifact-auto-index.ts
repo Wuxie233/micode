@@ -88,7 +88,6 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput) {
           const index = await getArtifactIndex();
           const record = parseLedger(content, filePath, ledgerMatch[1]);
           await index.indexLedger(record);
-          console.log(`[artifact-auto-index] Indexed ledger: ${filePath}`);
           return;
         }
 
@@ -99,7 +98,6 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput) {
           const index = await getArtifactIndex();
           const record = parsePlan(content, filePath, planMatch[1]);
           await index.indexPlan(record);
-          console.log(`[artifact-auto-index] Indexed plan: ${filePath}`);
           return;
         }
       } catch (e) {
