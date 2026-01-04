@@ -2,24 +2,18 @@
   "name": "micode",
   "version": "0.7.0",
   "description": "OpenCode plugin with Brainstorm-Research-Plan-Implement workflow",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "type": "module",
   "files": [
-    "dist",
+    "src",
     "INSTALL_CLAUDE.md"
   ],
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun --format esm && tsc --emitDeclarationOnly",
-    "clean": "rm -rf dist",
+    "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run clean && bun run build",
+    "prepublishOnly": "bun run typecheck",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "format": "biome format --write .",
