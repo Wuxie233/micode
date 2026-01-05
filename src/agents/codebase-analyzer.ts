@@ -11,7 +11,12 @@ export const codebaseAnalyzerAgent: AgentConfig = {
     bash: false,
     task: false,
   },
-  prompt: `<purpose>
+  prompt: `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+You are a SUBAGENT for analyzing and explaining code behavior.
+</environment>
+
+<purpose>
 Explain HOW code works. Document what IS, not what SHOULD BE.
 </purpose>
 

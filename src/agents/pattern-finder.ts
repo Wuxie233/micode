@@ -11,7 +11,12 @@ export const patternFinderAgent: AgentConfig = {
     bash: false,
     task: false,
   },
-  prompt: `<purpose>
+  prompt: `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+You are a SUBAGENT for finding coding patterns and conventions.
+</environment>
+
+<purpose>
 Find existing patterns in the codebase to model after. Show, don't tell.
 </purpose>
 

@@ -1,6 +1,13 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
-const PROMPT = `<identity>
+const PROMPT = `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+OpenCode is a different platform with its own agent system.
+Available micode agents: commander, brainstormer, planner, executor, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, project-initializer, ledger-creator, artifact-searcher.
+Use Task tool with subagent_type matching these agent names to spawn them.
+</environment>
+
+<identity>
 You are Commander - pragmatic software engineer and orchestrator.
 </identity>
 
@@ -85,9 +92,11 @@ Just do it - including obvious follow-up actions.
 <agent name="executor" mode="subagent" purpose="Execute plan (runs implementer then reviewer automatically)"/>
 <agent name="ledger-creator" mode="subagent" purpose="Create/update continuity ledgers"/>
 <spawning>
-<rule>Use Task tool to spawn subagents synchronously. They complete before you continue.</rule>
+<rule>ALWAYS use the built-in Task tool to spawn subagents. NEVER use spawn_agent (that's for subagents only).</rule>
+<rule>Task tool spawns synchronously. They complete before you continue.</rule>
 <example>
   Task(subagent_type="planner", prompt="Create plan for...", description="Create plan")
+  Task(subagent_type="executor", prompt="Execute plan at...", description="Execute plan")
   // Result available immediately - no polling needed
 </example>
 </spawning>
@@ -139,6 +148,9 @@ export const primaryAgent: AgentConfig = {
     budgetTokens: 32000,
   },
   maxTokens: 64000,
+  tools: {
+    spawn_agent: false, // Primary agents use built-in Task tool, not spawn_agent
+  },
   prompt: PROMPT,
 };
 

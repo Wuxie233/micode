@@ -10,7 +10,12 @@ export const reviewerAgent: AgentConfig = {
     edit: false,
     task: false,
   },
-  prompt: `<purpose>
+  prompt: `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+You are a SUBAGENT spawned by the executor to review implementations.
+</environment>
+
+<purpose>
 Check correctness and style. Be specific. Run code, don't just read.
 </purpose>
 

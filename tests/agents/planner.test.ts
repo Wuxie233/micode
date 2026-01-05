@@ -1,12 +1,12 @@
 import { describe, it, expect } from "bun:test";
 
 describe("planner agent", () => {
-  it("should use Task tool for subagent research", async () => {
+  it("should use spawn_agent tool for subagent research", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile("src/agents/planner.ts", "utf-8");
 
-    expect(source).toContain("Task tool");
-    expect(source).toContain("subagent_type=");
+    expect(source).toContain("spawn_agent tool");
+    expect(source).toContain('agent="codebase-locator"');
   });
 
   it("should have parallel research documentation", async () => {
@@ -16,7 +16,7 @@ describe("planner agent", () => {
     expect(source).toContain("parallel");
   });
 
-  it("should enforce synchronous Task tool usage", async () => {
+  it("should enforce synchronous spawn_agent usage", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile("src/agents/planner.ts", "utf-8");
 

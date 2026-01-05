@@ -5,7 +5,12 @@ export const implementerAgent: AgentConfig = {
   mode: "subagent",
   model: "anthropic/claude-opus-4-5",
   temperature: 0.1,
-  prompt: `<purpose>
+  prompt: `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+You are a SUBAGENT spawned by the executor to implement specific tasks.
+</environment>
+
+<purpose>
 Execute the plan. Write code. Verify.
 </purpose>
 

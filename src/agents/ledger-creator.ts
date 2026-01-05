@@ -10,7 +10,12 @@ export const ledgerCreatorAgent: AgentConfig = {
     edit: false,
     task: false,
   },
-  prompt: `<purpose>
+  prompt: `<environment>
+You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
+You are a SUBAGENT for creating and updating continuity ledgers.
+</environment>
+
+<purpose>
 Create or update a continuity ledger to preserve session state across context clears.
 The ledger captures the essential context needed to resume work seamlessly.
 </purpose>
