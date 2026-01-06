@@ -140,7 +140,8 @@ ${summaryText}
         query: { directory: ctx.directory },
       });
 
-      // Wait for the session.compacted event to confirm completion
+      // Wait for the summary message to be created (message.updated with summary: true)
+      // This confirms compaction is complete
       await waitForCompaction(sessionID);
 
       state.lastCompactTime.set(sessionID, Date.now());
@@ -179,20 +180,6 @@ ${summaryText}
     event: async ({ event }: { event: { type: string; properties?: unknown } }) => {
       const props = event.properties as Record<string, unknown> | undefined;
 
-      // Handle compaction completion
-      if (event.type === "session.compacted") {
-        const sessionID = props?.sessionID as string | undefined;
-        if (sessionID) {
-          const pending = state.pendingCompactions.get(sessionID);
-          if (pending) {
-            clearTimeout(pending.timeoutId);
-            state.pendingCompactions.delete(sessionID);
-            pending.resolve();
-          }
-        }
-        return;
-      }
-
       // Cleanup on session delete
       if (event.type === "session.deleted") {
         const sessionInfo = props?.info as { id?: string } | undefined;
@@ -209,15 +196,26 @@ ${summaryText}
         return;
       }
 
-      // Monitor usage on assistant message completion
+      // Monitor message events
       if (event.type === "message.updated") {
         const info = props?.info as Record<string, unknown> | undefined;
         const sessionID = info?.sessionID as string | undefined;
 
         if (!sessionID || info?.role !== "assistant") return;
 
-        // Skip if this is already a summary message
-        if (info?.summary === true) return;
+        // Check if this is a summary message - signals compaction complete
+        if (info?.summary === true) {
+          const pending = state.pendingCompactions.get(sessionID);
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            state.pendingCompactions.delete(sessionID);
+            pending.resolve();
+          }
+          return;
+        }
+
+        // Skip triggering compaction if we're already waiting for one
+        if (state.pendingCompactions.has(sessionID)) return;
 
         const tokens = info?.tokens as { input?: number; cache?: { read?: number } } | undefined;
         const inputTokens = tokens?.input || 0;
