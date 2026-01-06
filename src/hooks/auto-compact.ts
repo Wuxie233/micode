@@ -133,6 +133,10 @@ ${summaryText}
         })
         .catch(() => {});
 
+      // Set up listener BEFORE calling summarize to avoid race condition
+      // (summary message event could fire before we start listening)
+      const compactionPromise = waitForCompaction(sessionID);
+
       // Start the compaction - this returns immediately while compaction runs async
       await ctx.client.session.summarize({
         path: { id: sessionID },
@@ -141,8 +145,7 @@ ${summaryText}
       });
 
       // Wait for the summary message to be created (message.updated with summary: true)
-      // This confirms compaction is complete
-      await waitForCompaction(sessionID);
+      await compactionPromise;
 
       state.lastCompactTime.set(sessionID, Date.now());
 
