@@ -44,7 +44,7 @@ describe("config-loader integration", () => {
     expect(merged["project-initializer"].prompt).toBeDefined();
 
     // Check other agents still have defaults
-    expect(merged["commander"].model).toBe("anthropic/claude-opus-4-5");
+    expect(merged["commander"].model).toBe("openai/gpt-5.2-codex");
   });
 
   it("should preserve all agent properties when merging", () => {
