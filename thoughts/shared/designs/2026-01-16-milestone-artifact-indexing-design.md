@@ -13,7 +13,7 @@ We need a milestone-driven artifact indexing strategy that supports reliable sea
 - Legacy plan/ledger indexing remains untouched.
 
 # Approach
-Introduce a classifier that selects exactly one artifact type per milestone-driven artifact using clear criteria. The selected type is stored alongside metadata, and the milestone identifier is saved in the artifact metadata for downstream filtering and retrieval.
+Introduce a classifier that selects exactly one artifact type per milestone-driven artifact using clear criteria. The selected type is stored alongside metadata, and the milestone identifier is saved in the artifact metadata for downstream filtering and retrieval. No milestone summary links are generated as part of this flow.
 
 # Architecture
 Artifacts are stored in SQLite with a classifier-driven type field and metadata payload. The indexing pipeline is isolated from legacy plan/ledger indexing to avoid behavioral changes.
@@ -25,7 +25,7 @@ Artifacts are stored in SQLite with a classifier-driven type field and metadata 
 - Search/query layer that filters by milestone metadata.
 
 # Metadata Fields
-- milestone_id
+- milestone_id (stored in metadata for filtering and retrieval)
 - artifact_type
 - source_session_id
 - created_at
@@ -34,19 +34,22 @@ Artifacts are stored in SQLite with a classifier-driven type field and metadata 
 # Data Flow
 1. Artifact ingested for a milestone.
 2. Classification agent selects one type using criteria:
+   - Feature: milestone content includes scoped implementation details, requirements, or capability changes.
+   - Decision: milestone content captures a resolved choice, trade-off, or rationale.
+   - Session: milestone content is primarily meeting notes, status updates, or discussion without a decision.
    - Prefer feature over decision over session when multiple criteria match.
 3. Artifact metadata is persisted with the milestone identifier.
 4. Artifact is written to SQLite for indexing and search.
 
 # Error Handling
-- If classification fails, fall back to storing the artifact as a session artifact.
+- If classification fails, fall back to storing the artifact as a session artifact (mandatory).
 - Log the classification failure for follow-up without blocking ingestion.
 
 # Testing Strategy
-- Classification agent chooses a single type and respects the feature > decision > session tie-break.
-- End-to-end flow persists milestone metadata and stores artifacts in SQLite.
-- Search filters by milestone metadata and returns only indexed artifacts.
-- Error paths cover classifier failures and the session fallback behavior.
+- Classification tests verify criteria for feature/decision/session and the tie-break behavior.
+- Flow tests validate ingest → classify → persist metadata → SQLite storage.
+- Search tests confirm milestone metadata filtering and indexed-only results.
+- Error path tests cover classifier failures, required session fallback, and logging.
 
 # Open Questions
 - What criteria should the classifier use to distinguish feature versus decision when both are plausible?
