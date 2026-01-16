@@ -143,7 +143,7 @@ export function createContextInjectorHook(ctx: PluginInput) {
     ) => {
       if (!FILE_ACCESS_TOOLS.includes(input.tool)) return;
 
-      const filePath = input.args?.file_path as string | undefined;
+      const filePath = input.args?.filePath as string | undefined;
       if (!filePath) return;
 
       try {
