@@ -1,15 +1,11 @@
-import type { PluginInput } from "@opencode-ai/plugin";
-import { getContextLimit } from "../utils/model-limits";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-// Compact when this percentage of context is used
-const COMPACT_THRESHOLD = 0.5;
+import type { PluginInput } from "@opencode-ai/plugin";
 
-const LEDGER_DIR = "thoughts/ledgers";
-
-// Timeout for waiting for compaction to complete (2 minutes)
-const COMPACTION_TIMEOUT_MS = 120_000;
+import { config } from "../utils/config";
+import { extractErrorMessage } from "../utils/errors";
+import { getContextLimit } from "../utils/model-limits";
 
 interface PendingCompaction {
   resolve: () => void;
@@ -22,9 +18,6 @@ interface AutoCompactState {
   lastCompactTime: Map<string, number>;
   pendingCompactions: Map<string, PendingCompaction>;
 }
-
-// Cooldown between compaction attempts (prevent rapid re-triggering)
-const COMPACT_COOLDOWN_MS = 30_000; // 30 seconds
 
 export function createAutoCompactHook(ctx: PluginInput) {
   const state: AutoCompactState = {
@@ -65,13 +58,13 @@ export function createAutoCompactHook(ctx: PluginInput) {
       if (!summaryText.trim()) return;
 
       // Create ledger directory if needed
-      const ledgerDir = join(ctx.directory, LEDGER_DIR);
+      const ledgerDir = join(ctx.directory, config.paths.ledgerDir);
       await mkdir(ledgerDir, { recursive: true });
 
       // Write ledger file - summary is already structured (Factory.ai/pi-mono format)
       const timestamp = new Date().toISOString();
       const sessionName = sessionID.slice(0, 8); // Use first 8 chars of session ID
-      const ledgerPath = join(ledgerDir, `CONTINUITY_${sessionName}.md`);
+      const ledgerPath = join(ledgerDir, `${config.paths.ledgerPrefix}${sessionName}.md`);
 
       // Add metadata header, then the structured summary as-is
       const ledgerContent = `---
@@ -94,7 +87,7 @@ ${summaryText}
       const timeoutId = setTimeout(() => {
         state.pendingCompactions.delete(sessionID);
         reject(new Error("Compaction timed out"));
-      }, COMPACTION_TIMEOUT_MS);
+      }, config.compaction.timeoutMs);
 
       state.pendingCompactions.set(sessionID, { resolve, reject, timeoutId });
     });
@@ -112,7 +105,7 @@ ${summaryText}
 
     // Check cooldown
     const lastCompact = state.lastCompactTime.get(sessionID) || 0;
-    if (Date.now() - lastCompact < COMPACT_COOLDOWN_MS) {
+    if (Date.now() - lastCompact < config.compaction.cooldownMs) {
       return;
     }
 
@@ -120,7 +113,7 @@ ${summaryText}
 
     try {
       const usedPercent = Math.round(usageRatio * 100);
-      const thresholdPercent = Math.round(COMPACT_THRESHOLD * 100);
+      const thresholdPercent = Math.round(config.compaction.threshold * 100);
 
       await ctx.client.tui
         .showToast({
@@ -128,7 +121,7 @@ ${summaryText}
             title: "Auto Compacting",
             message: `Context at ${usedPercent}% (threshold: ${thresholdPercent}%). Summarizing...`,
             variant: "warning",
-            duration: 3000,
+            duration: config.timeouts.toastWarningMs,
           },
         })
         .catch(() => {});
@@ -158,19 +151,19 @@ ${summaryText}
             title: "Compaction Complete",
             message: "Session summarized and ledger updated.",
             variant: "success",
-            duration: 3000,
+            duration: config.timeouts.toastSuccessMs,
           },
         })
         .catch(() => {});
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = extractErrorMessage(e);
       await ctx.client.tui
         .showToast({
           body: {
             title: "Compaction Failed",
             message: errorMsg.slice(0, 100),
             variant: "error",
-            duration: 5000,
+            duration: config.timeouts.toastErrorMs,
           },
         })
         .catch(() => {});
@@ -233,7 +226,7 @@ ${summaryText}
         const usageRatio = totalUsed / contextLimit;
 
         // Trigger compaction if over threshold
-        if (usageRatio >= COMPACT_THRESHOLD) {
+        if (usageRatio >= config.compaction.threshold) {
           triggerCompaction(sessionID, providerID, modelID, usageRatio);
         }
       }

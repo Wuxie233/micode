@@ -1,23 +1,17 @@
 import type { PluginInput } from "@opencode-ai/plugin";
+import { config } from "../utils/config";
 
 // Tools that benefit from truncation
 const TRUNCATABLE_TOOLS = ["grep", "Grep", "glob", "Glob", "ast_grep_search"];
 
-// Token estimation (conservative: 4 chars = 1 token)
-const CHARS_PER_TOKEN = 4;
-const DEFAULT_CONTEXT_LIMIT = 200_000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 50_000;
-const SAFETY_MARGIN = 0.5; // Keep 50% headroom
-const PRESERVE_HEADER_LINES = 3;
-
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+  return Math.ceil(text.length / config.tokens.charsPerToken);
 }
 
 function truncateToTokenLimit(
   output: string,
   maxTokens: number,
-  preserveLines: number = PRESERVE_HEADER_LINES,
+  preserveLines: number = config.tokens.preserveHeaderLines,
 ): string {
   const currentTokens = estimateTokens(output);
 
@@ -85,7 +79,7 @@ export function createTokenAwareTruncationHook(ctx: PluginInput) {
 
       const messages = (resp as { data?: unknown[] }).data;
       if (!Array.isArray(messages) || messages.length === 0) {
-        return { used: 0, limit: DEFAULT_CONTEXT_LIMIT };
+        return { used: 0, limit: config.tokens.defaultContextLimit };
       }
 
       // Find last assistant message with usage info
@@ -96,7 +90,7 @@ export function createTokenAwareTruncationHook(ctx: PluginInput) {
       }) as Record<string, unknown> | undefined;
 
       if (!lastAssistant) {
-        return { used: 0, limit: DEFAULT_CONTEXT_LIMIT };
+        return { used: 0, limit: config.tokens.defaultContextLimit };
       }
 
       const info = lastAssistant.info as Record<string, unknown> | undefined;
@@ -107,25 +101,25 @@ export function createTokenAwareTruncationHook(ctx: PluginInput) {
       const used = inputTokens + cacheRead;
 
       // Get model limit (simplified - use default for now)
-      const limit = DEFAULT_CONTEXT_LIMIT;
+      const limit = config.tokens.defaultContextLimit;
 
       const result = { used, limit };
       state.sessionTokenUsage.set(sessionID, result);
       return result;
     } catch {
-      return state.sessionTokenUsage.get(sessionID) || { used: 0, limit: DEFAULT_CONTEXT_LIMIT };
+      return state.sessionTokenUsage.get(sessionID) || { used: 0, limit: config.tokens.defaultContextLimit };
     }
   }
 
   function calculateMaxOutputTokens(used: number, limit: number): number {
     const remaining = limit - used;
-    const available = Math.floor(remaining * SAFETY_MARGIN);
+    const available = Math.floor(remaining * config.tokens.safetyMargin);
 
     if (available <= 0) {
       return 0;
     }
 
-    return Math.min(available, DEFAULT_MAX_OUTPUT_TOKENS);
+    return Math.min(available, config.tokens.defaultMaxOutputTokens);
   }
 
   return {
@@ -180,8 +174,8 @@ export function createTokenAwareTruncationHook(ctx: PluginInput) {
       } catch {
         // On error, apply static truncation as fallback
         const currentTokens = estimateTokens(output.output);
-        if (currentTokens > DEFAULT_MAX_OUTPUT_TOKENS) {
-          output.output = truncateToTokenLimit(output.output, DEFAULT_MAX_OUTPUT_TOKENS);
+        if (currentTokens > config.tokens.defaultMaxOutputTokens) {
+          output.output = truncateToTokenLimit(output.output, config.tokens.defaultMaxOutputTokens);
         }
       }
     },

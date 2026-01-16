@@ -4,6 +4,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 import { readFileSync } from "node:fs";
 import { getArtifactIndex } from "../tools/artifact-index";
+import { log } from "../utils/logger";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
@@ -102,7 +103,7 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput) {
         }
       } catch (e) {
         // Silent failure - don't interrupt user flow
-        console.error(`[artifact-auto-index] Error indexing ${filePath}:`, e);
+        log.error("artifact-auto-index", `Error indexing ${filePath}`, e);
       }
     },
   };

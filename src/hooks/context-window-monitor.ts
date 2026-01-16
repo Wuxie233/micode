@@ -1,16 +1,11 @@
 import type { PluginInput } from "@opencode-ai/plugin";
+import { config } from "../utils/config";
 import { getContextLimit } from "../utils/model-limits";
-
-// Thresholds for context window warnings
-const WARNING_THRESHOLD = 0.7; // 70% - remind there's still room
-const CRITICAL_THRESHOLD = 0.85; // 85% - getting tight
 
 interface MonitorState {
   lastWarningTime: Map<string, number>;
   lastUsageRatio: Map<string, number>;
 }
-
-const WARNING_COOLDOWN_MS = 120_000; // 2 minutes between warnings
 
 export function createContextWindowMonitorHook(ctx: PluginInput) {
   const state: MonitorState = {
@@ -21,11 +16,11 @@ export function createContextWindowMonitorHook(ctx: PluginInput) {
   function getEncouragementMessage(usageRatio: number): string {
     const remaining = Math.round((1 - usageRatio) * 100);
 
-    if (usageRatio < WARNING_THRESHOLD) {
+    if (usageRatio < config.contextWindow.warningThreshold) {
       return ""; // No message needed
     }
 
-    if (usageRatio < CRITICAL_THRESHOLD) {
+    if (usageRatio < config.contextWindow.criticalThreshold) {
       return `Context: ${remaining}% remaining. Plenty of room - don't rush.`;
     }
 
@@ -40,7 +35,7 @@ export function createContextWindowMonitorHook(ctx: PluginInput) {
     ) => {
       const usageRatio = state.lastUsageRatio.get(input.sessionID);
 
-      if (usageRatio && usageRatio >= WARNING_THRESHOLD) {
+      if (usageRatio && usageRatio >= config.contextWindow.warningThreshold) {
         const message = getEncouragementMessage(usageRatio);
         if (message && output.system) {
           output.system = `${output.system}\n\n<context-status>${message}</context-status>`;
@@ -80,13 +75,13 @@ export function createContextWindowMonitorHook(ctx: PluginInput) {
         state.lastUsageRatio.set(sessionID, usageRatio);
 
         // Show toast warning if threshold crossed
-        if (usageRatio >= WARNING_THRESHOLD) {
+        if (usageRatio >= config.contextWindow.warningThreshold) {
           const lastWarning = state.lastWarningTime.get(sessionID) || 0;
-          if (Date.now() - lastWarning > WARNING_COOLDOWN_MS) {
+          if (Date.now() - lastWarning > config.contextWindow.warningCooldownMs) {
             state.lastWarningTime.set(sessionID, Date.now());
 
             const remaining = Math.round((1 - usageRatio) * 100);
-            const variant = usageRatio >= CRITICAL_THRESHOLD ? "warning" : "info";
+            const variant = usageRatio >= config.contextWindow.criticalThreshold ? "warning" : "info";
 
             await ctx.client.tui
               .showToast({
@@ -94,7 +89,7 @@ export function createContextWindowMonitorHook(ctx: PluginInput) {
                   title: "Context Window",
                   message: `${remaining}% remaining (${Math.round(totalUsed / 1000)}K / ${Math.round(contextLimit / 1000)}K tokens)`,
                   variant,
-                  duration: 4000,
+                  duration: config.timeouts.toastWarningMs,
                 },
               })
               .catch(() => {});

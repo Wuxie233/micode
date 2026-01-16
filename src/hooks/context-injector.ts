@@ -1,12 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 import { readFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
-
-// Files to inject at project root level (AGENTS.md and CLAUDE.md handled by OpenCode natively)
-const ROOT_CONTEXT_FILES = ["ARCHITECTURE.md", "CODE_STYLE.md", "README.md"] as const;
-
-// Files to collect when walking up directories (AGENTS.md handled by OpenCode natively)
-const DIRECTORY_CONTEXT_FILES = ["README.md"] as const;
+import { config } from "../utils/config";
 
 // Tools that trigger directory-aware context injection
 const FILE_ACCESS_TOOLS = ["Read", "read", "Edit", "edit"];
@@ -18,8 +13,6 @@ interface ContextCache {
   lastRootCheck: number;
 }
 
-const CACHE_TTL = 30_000; // 30 seconds
-
 export function createContextInjectorHook(ctx: PluginInput) {
   const cache: ContextCache = {
     rootContent: new Map(),
@@ -30,14 +23,14 @@ export function createContextInjectorHook(ctx: PluginInput) {
   async function loadRootContextFiles(): Promise<Map<string, string>> {
     const now = Date.now();
 
-    if (now - cache.lastRootCheck < CACHE_TTL && cache.rootContent.size > 0) {
+    if (now - cache.lastRootCheck < config.limits.contextCacheTtlMs && cache.rootContent.size > 0) {
       return cache.rootContent;
     }
 
     cache.rootContent.clear();
     cache.lastRootCheck = now;
 
-    for (const filename of ROOT_CONTEXT_FILES) {
+    for (const filename of config.paths.rootContextFiles) {
       try {
         const filepath = join(ctx.directory, filename);
         const content = await readFile(filepath, "utf-8");
@@ -67,7 +60,7 @@ export function createContextInjectorHook(ctx: PluginInput) {
 
     // Walk up from file directory to project root
     while (currentDir.startsWith(projectRoot) || currentDir === projectRoot) {
-      for (const filename of DIRECTORY_CONTEXT_FILES) {
+      for (const filename of config.paths.dirContextFiles) {
         const contextPath = join(currentDir, filename);
         const relPath = currentDir.replace(projectRoot, "").replace(/^\//, "") || ".";
         const key = `${relPath}/${filename}`;
@@ -98,7 +91,7 @@ export function createContextInjectorHook(ctx: PluginInput) {
     cache.directoryContent.set(cacheKey, collected);
 
     // Limit cache size
-    if (cache.directoryContent.size > 100) {
+    if (cache.directoryContent.size > config.limits.contextCacheMaxSize) {
       const firstKey = cache.directoryContent.keys().next().value;
       if (firstKey) cache.directoryContent.delete(firstKey);
     }

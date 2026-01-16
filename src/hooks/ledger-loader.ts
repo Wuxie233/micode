@@ -2,9 +2,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-
-const LEDGER_DIR = "thoughts/ledgers";
-const LEDGER_PREFIX = "CONTINUITY_";
+import { config } from "../utils/config";
 
 export interface LedgerInfo {
   sessionName: string;
@@ -13,11 +11,11 @@ export interface LedgerInfo {
 }
 
 export async function findCurrentLedger(directory: string): Promise<LedgerInfo | null> {
-  const ledgerDir = join(directory, LEDGER_DIR);
+  const ledgerDir = join(directory, config.paths.ledgerDir);
 
   try {
     const files = await readdir(ledgerDir);
-    const ledgerFiles = files.filter((f) => f.startsWith(LEDGER_PREFIX) && f.endsWith(".md"));
+    const ledgerFiles = files.filter((f) => f.startsWith(config.paths.ledgerPrefix) && f.endsWith(".md"));
 
     if (ledgerFiles.length === 0) return null;
 
@@ -40,7 +38,7 @@ export async function findCurrentLedger(directory: string): Promise<LedgerInfo |
 
     const filePath = join(ledgerDir, latestFile);
     const content = await readFile(filePath, "utf-8");
-    const sessionName = latestFile.replace(LEDGER_PREFIX, "").replace(".md", "");
+    const sessionName = latestFile.replace(config.paths.ledgerPrefix, "").replace(".md", "");
 
     return { sessionName, filePath, content };
   } catch {

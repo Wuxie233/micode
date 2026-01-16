@@ -63,9 +63,7 @@ For parallel execution, call spawn_agent multiple times in ONE message.`,
 
         // Find the last assistant message
         const messages = messagesResp.data || [];
-        const lastAssistant = messages
-          .filter((m) => m.info?.role === "assistant")
-          .pop();
+        const lastAssistant = messages.filter((m) => m.info?.role === "assistant").pop();
 
         const result =
           lastAssistant?.parts
