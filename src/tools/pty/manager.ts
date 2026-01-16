@@ -20,13 +20,19 @@ export class PTYManager {
     const env = { ...process.env, ...opts.env } as Record<string, string>;
     const title = opts.title ?? (`${opts.command} ${args.join(" ")}`.trim() || `Terminal ${id.slice(-4)}`);
 
-    const ptyProcess: IPty = spawn(opts.command, args, {
-      name: "xterm-256color",
-      cols: 120,
-      rows: 40,
-      cwd: workdir,
-      env,
-    });
+    let ptyProcess: IPty;
+    try {
+      ptyProcess = spawn(opts.command, args, {
+        name: "xterm-256color",
+        cols: 120,
+        rows: 40,
+        cwd: workdir,
+        env,
+      });
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      throw new Error(`Failed to spawn PTY for command "${opts.command}": ${errorMsg}`);
+    }
 
     const buffer = new RingBuffer();
     const session: PTYSession = {

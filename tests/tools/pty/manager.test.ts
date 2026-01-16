@@ -48,6 +48,18 @@ describe("PTYManager", () => {
 
       expect(info.title).toBe("Dev Server");
     });
+
+    it("should throw descriptive error when command not found", () => {
+      expect(() => {
+        manager.spawn({
+          command: "nonexistent_command_xyz_12345",
+          parentSessionId: "test-session",
+        });
+      }).toThrow(/Failed to spawn PTY.*nonexistent_command_xyz_12345/);
+    });
+
+    // Note: bun-pty does not throw for invalid workdir - it silently uses cwd instead
+    // This is a limitation of the underlying library, not something we can catch
   });
 
   describe("list", () => {
