@@ -4,7 +4,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const octtoAgent: AgentConfig = {
   description: "Runs interactive browser-based brainstorming sessions using branch-based exploration",
   mode: "primary",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.7,
   prompt: `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).

@@ -4,7 +4,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const artifactSearcherAgent: AgentConfig = {
   description: "Searches past handoffs, plans, and ledgers for relevant precedent",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.3,
   tools: {
     edit: false,

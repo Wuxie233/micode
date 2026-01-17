@@ -1,13 +1,44 @@
 // src/config-loader.ts
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 // Minimal type for provider validation - only what we need
 export interface ProviderInfo {
   id: string;
   models: Record<string, unknown>;
+}
+
+/**
+ * Load available models from opencode.json config file (synchronous)
+ * Returns a Set of "provider/model" strings
+ */
+export function loadAvailableModels(configDir?: string): Set<string> {
+  const availableModels = new Set<string>();
+  const baseDir = configDir ?? join(homedir(), ".config", "opencode");
+
+  try {
+    const configPath = join(baseDir, "opencode.json");
+    const content = readFileSync(configPath, "utf-8");
+    const config = JSON.parse(content) as { provider?: Record<string, { models?: Record<string, unknown> }> };
+
+    if (config.provider) {
+      for (const [providerId, providerConfig] of Object.entries(config.provider)) {
+        if (providerConfig.models) {
+          for (const modelId of Object.keys(providerConfig.models)) {
+            availableModels.add(`${providerId}/${modelId}`);
+          }
+        }
+      }
+    }
+  } catch {
+    // Config doesn't exist or can't be parsed - return empty set
+  }
+
+  return availableModels;
 }
 
 // Safe properties that users can override
@@ -66,15 +97,20 @@ export async function loadMicodeConfig(configDir?: string): Promise<MicodeConfig
 
 /**
  * Merge user config overrides into plugin agent configs
- * User overrides take precedence for safe properties only
+ * Model overrides are validated against available models from opencode.json
+ * Invalid models are logged and skipped (agent uses opencode default)
  */
 export function mergeAgentConfigs(
   pluginAgents: Record<string, AgentConfig>,
   userConfig: MicodeConfig | null,
+  availableModels?: Set<string>,
 ): Record<string, AgentConfig> {
   if (!userConfig?.agents) {
     return pluginAgents;
   }
+
+  // Load available models if not provided
+  const models = availableModels ?? loadAvailableModels();
 
   const merged: Record<string, AgentConfig> = {};
 
@@ -82,10 +118,32 @@ export function mergeAgentConfigs(
     const userOverride = userConfig.agents[name];
 
     if (userOverride) {
-      merged[name] = {
-        ...agentConfig,
-        ...userOverride,
-      };
+      // Validate model if specified
+      if (userOverride.model) {
+        if (models.has(userOverride.model)) {
+          // Model is valid - apply all overrides
+          merged[name] = {
+            ...agentConfig,
+            ...userOverride,
+          };
+        } else {
+          // Model is invalid - log warning and apply other overrides only
+          console.warn(
+            `[micode] Model "${userOverride.model}" for agent "${name}" is not available. Using opencode default.`,
+          );
+          const { model: _ignored, ...safeOverrides } = userOverride;
+          merged[name] = {
+            ...agentConfig,
+            ...safeOverrides,
+          };
+        }
+      } else {
+        // No model specified - apply all overrides
+        merged[name] = {
+          ...agentConfig,
+          ...userOverride,
+        };
+      }
     } else {
       merged[name] = agentConfig;
     }

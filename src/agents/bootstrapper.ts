@@ -4,7 +4,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const bootstrapperAgent: AgentConfig = {
   description: "Analyzes a request and creates exploration branches with scopes for octto brainstorming",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.5,
   prompt: `<purpose>
 Analyze the user's request and create 2-4 exploration branches.

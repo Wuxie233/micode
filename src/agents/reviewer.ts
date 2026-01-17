@@ -3,7 +3,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const reviewerAgent: AgentConfig = {
   description: "Reviews implementation for correctness and style",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.3,
   tools: {
     write: false,

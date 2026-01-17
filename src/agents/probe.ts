@@ -4,7 +4,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const probeAgent: AgentConfig = {
   description: "Evaluates octto branch Q&A and decides whether to ask more or complete with finding",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.5,
   prompt: `<purpose>
 You evaluate a brainstorming branch's Q&A history and decide:

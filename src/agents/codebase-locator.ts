@@ -3,7 +3,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const codebaseLocatorAgent: AgentConfig = {
   description: "Finds WHERE files live in the codebase",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.1,
   tools: {
     write: false,
