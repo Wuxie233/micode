@@ -1,36 +1,44 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
+
+import { artifactSearcherAgent } from "./artifact-searcher";
+import { bootstrapperAgent } from "./bootstrapper";
 import { brainstormerAgent } from "./brainstormer";
-import { codebaseLocatorAgent } from "./codebase-locator";
 import { codebaseAnalyzerAgent } from "./codebase-analyzer";
+import { codebaseLocatorAgent } from "./codebase-locator";
+import { PRIMARY_AGENT_NAME, primaryAgent } from "./commander";
+import { executorAgent } from "./executor";
+import { implementerAgent } from "./implementer";
+import { ledgerCreatorAgent } from "./ledger-creator";
+import { octtoAgent } from "./octto";
 import { patternFinderAgent } from "./pattern-finder";
 import { plannerAgent } from "./planner";
-import { implementerAgent } from "./implementer";
-import { reviewerAgent } from "./reviewer";
-import { executorAgent } from "./executor";
-import { primaryAgent, PRIMARY_AGENT_NAME } from "./commander";
+import { probeAgent } from "./probe";
 import { projectInitializerAgent } from "./project-initializer";
-import { ledgerCreatorAgent } from "./ledger-creator";
-import { artifactSearcherAgent } from "./artifact-searcher";
+import { reviewerAgent } from "./reviewer";
 
 export const agents: Record<string, AgentConfig> = {
-  [PRIMARY_AGENT_NAME]: primaryAgent,
-  brainstormer: brainstormerAgent,
-  "codebase-locator": codebaseLocatorAgent,
-  "codebase-analyzer": codebaseAnalyzerAgent,
-  "pattern-finder": patternFinderAgent,
-  planner: plannerAgent,
-  implementer: implementerAgent,
-  reviewer: reviewerAgent,
-  executor: executorAgent,
-  "project-initializer": projectInitializerAgent,
-  "ledger-creator": ledgerCreatorAgent,
-  "artifact-searcher": artifactSearcherAgent,
+  [PRIMARY_AGENT_NAME]: { ...primaryAgent, model: "openai/gpt-5.2-codex" },
+  brainstormer: { ...brainstormerAgent, model: "openai/gpt-5.2-codex" },
+  bootstrapper: { ...bootstrapperAgent, model: "openai/gpt-5.2-codex" },
+  "codebase-locator": { ...codebaseLocatorAgent, model: "openai/gpt-5.2-codex" },
+  "codebase-analyzer": { ...codebaseAnalyzerAgent, model: "openai/gpt-5.2-codex" },
+  "pattern-finder": { ...patternFinderAgent, model: "openai/gpt-5.2-codex" },
+  planner: { ...plannerAgent, model: "openai/gpt-5.2-codex" },
+  implementer: { ...implementerAgent, model: "openai/gpt-5.2-codex" },
+  reviewer: { ...reviewerAgent, model: "openai/gpt-5.2-codex" },
+  executor: { ...executorAgent, model: "openai/gpt-5.2-codex" },
+  "project-initializer": { ...projectInitializerAgent, model: "openai/gpt-5.2-codex" },
+  "ledger-creator": { ...ledgerCreatorAgent, model: "openai/gpt-5.2-codex" },
+  "artifact-searcher": { ...artifactSearcherAgent, model: "openai/gpt-5.2-codex" },
+  octto: { ...octtoAgent, model: "openai/gpt-5.2-codex" },
+  probe: { ...probeAgent, model: "openai/gpt-5.2-codex" },
 };
 
 export {
   primaryAgent,
   PRIMARY_AGENT_NAME,
   brainstormerAgent,
+  bootstrapperAgent,
   codebaseLocatorAgent,
   codebaseAnalyzerAgent,
   patternFinderAgent,
@@ -41,4 +49,6 @@ export {
   projectInitializerAgent,
   ledgerCreatorAgent,
   artifactSearcherAgent,
+  octtoAgent,
+  probeAgent,
 };

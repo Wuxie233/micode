@@ -3,7 +3,6 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 export const patternFinderAgent: AgentConfig = {
   description: "Finds existing patterns and examples to model after",
   mode: "subagent",
-  model: "openai/gpt-5.2-codex",
   temperature: 0.2,
   tools: {
     write: false,

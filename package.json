@@ -2,17 +2,18 @@
   "name": "micode",
   "version": "0.8.4",
   "description": "OpenCode plugin with Brainstorm-Research-Plan-Implement workflow",
-  "module": "src/index.ts",
-  "main": "src/index.ts",
+  "module": "dist/index.js",
+  "main": "dist/index.js",
   "types": "src/index.ts",
   "type": "module",
   "files": [
     "src",
+    "dist",
     "INSTALL_CLAUDE.md"
   ],
   "scripts": {
     "prepare": "lefthook install",
-    "build": "tsc --noEmit",
+    "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run typecheck",
     "test": "bun test",
@@ -39,7 +40,7 @@
     "url": "https://github.com/vtemian/micode/issues"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.1.6",
+    "@opencode-ai/plugin": "1.1.23",
     "bun-pty": "^0.4.5",
     "valibot": "^1.2.0"
   },

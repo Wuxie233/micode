@@ -4,7 +4,7 @@ import type { McpLocalConfig } from "@opencode-ai/sdk";
 // Agents
 import { agents, PRIMARY_AGENT_NAME } from "./agents";
 // Config loader
-import { loadMicodeConfig, mergeAgentConfigs, validateAgentModels } from "./config-loader";
+import { loadMicodeConfig, mergeAgentConfigs } from "./config-loader";
 import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
 // Hooks
 import { createAutoCompactHook } from "./hooks/auto-compact";
@@ -73,20 +73,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     console.warn(`[micode] ${btcaStatus.message}`);
   }
 
-  // Load user config for model overrides
-  let userConfig = await loadMicodeConfig();
-
-  // Validate configured models against available providers
-  if (userConfig?.agents) {
-    try {
-      const providersResponse = await ctx.client.provider.list();
-      if (providersResponse.data?.all) {
-        userConfig = validateAgentModels(userConfig, providersResponse.data.all);
-      }
-    } catch (e) {
-      console.warn("[micode] Failed to validate model configuration:", e);
-    }
-  }
+  // Load user config for temperature/maxTokens overrides (model overrides not supported)
+  const userConfig = await loadMicodeConfig();
 
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
@@ -111,10 +99,25 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Octto (browser-based brainstorming) tools
   const octtoSessionStore = createSessionStore();
-  const octtoTools = createOcttoTools(octtoSessionStore, ctx.client);
 
   // Track octto sessions per opencode session for cleanup
   const octtoSessionsMap = new Map<string, Set<string>>();
+
+  const octtoTools = createOcttoTools(octtoSessionStore, ctx.client, {
+    onCreated: (parentSessionId, octtoSessionId) => {
+      const sessions = octtoSessionsMap.get(parentSessionId) ?? new Set<string>();
+      sessions.add(octtoSessionId);
+      octtoSessionsMap.set(parentSessionId, sessions);
+    },
+    onEnded: (parentSessionId, octtoSessionId) => {
+      const sessions = octtoSessionsMap.get(parentSessionId);
+      if (!sessions) return;
+      sessions.delete(octtoSessionId);
+      if (sessions.size === 0) {
+        octtoSessionsMap.delete(parentSessionId);
+      }
+    },
+  });
 
   return {
     // Tools

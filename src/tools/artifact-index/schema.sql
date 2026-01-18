@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS ledgers (
     indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Milestone artifacts table
+CREATE TABLE IF NOT EXISTS milestone_artifacts (
+    id TEXT PRIMARY KEY,
+    milestone_id TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    source_session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tags TEXT,
+    payload TEXT NOT NULL,
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- FTS5 virtual tables for full-text search (standalone, manually synced)
 CREATE VIRTUAL TABLE IF NOT EXISTS plans_fts USING fts5(
     id,
@@ -41,4 +53,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS ledgers_fts USING fts5(
     goal,
     state_now,
     key_decisions
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS milestone_artifacts_fts USING fts5(
+    id,
+    milestone_id,
+    artifact_type,
+    payload,
+    tags,
+    source_session_id
 );

@@ -1,7 +1,7 @@
 // src/config-loader.test.ts
 import { describe, expect, test } from "bun:test";
-import type { AgentConfig } from "@opencode-ai/sdk";
-import { validateAgentModels, type MicodeConfig, type ProviderInfo } from "./config-loader";
+
+import { type MicodeConfig, type ProviderInfo, validateAgentModels } from "./config-loader";
 
 // Helper to create a minimal ProviderInfo for testing
 function createProvider(id: string, modelIds: string[]): ProviderInfo {
@@ -10,14 +10,6 @@ function createProvider(id: string, modelIds: string[]): ProviderInfo {
     models[modelId] = { id: modelId };
   }
   return { id, models };
-}
-
-// Helper to create minimal AgentConfig
-function createAgentConfig(model: string): AgentConfig {
-  return {
-    model,
-    systemPrompt: "test",
-  } as AgentConfig;
 }
 
 describe("validateAgentModels", () => {
@@ -34,11 +26,6 @@ describe("validateAgentModels", () => {
       createProvider("anthropic", ["claude-3", "claude-2"]),
     ];
 
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-3.5"),
-      brainstormer: createAgentConfig("anthropic/claude-2"),
-    };
-
     const result = validateAgentModels(userConfig, providers);
 
     expect(result.agents?.commander?.model).toBe("openai/gpt-4");
@@ -54,10 +41,6 @@ describe("validateAgentModels", () => {
 
     const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
 
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
-    };
-
     const result = validateAgentModels(userConfig, providers);
 
     // Model should be removed, falling back to default
@@ -72,10 +55,6 @@ describe("validateAgentModels", () => {
     };
 
     const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4", "gpt-3.5"])];
-
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
-    };
 
     const result = validateAgentModels(userConfig, providers);
 
@@ -96,10 +75,6 @@ describe("validateAgentModels", () => {
 
     const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
 
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
-    };
-
     const result = validateAgentModels(userConfig, providers);
 
     // Model removed but other properties preserved
@@ -112,10 +87,6 @@ describe("validateAgentModels", () => {
     const userConfig: MicodeConfig = {};
 
     const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
-
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
-    };
 
     const result = validateAgentModels(userConfig, providers);
 
@@ -130,10 +101,6 @@ describe("validateAgentModels", () => {
     };
 
     const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
-
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
-    };
 
     const result = validateAgentModels(userConfig, providers);
 
@@ -151,14 +118,25 @@ describe("validateAgentModels", () => {
 
     const providers: ProviderInfo[] = [];
 
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-4"),
+    const result = validateAgentModels(userConfig, providers);
+
+    // No providers available, config should remain unchanged
+    expect(result).toEqual(userConfig);
+  });
+
+  test("handles providers with no models", () => {
+    const userConfig: MicodeConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4" },
+      },
     };
+
+    const providers: ProviderInfo[] = [{ id: "openai", models: {} }];
 
     const result = validateAgentModels(userConfig, providers);
 
-    // No providers available, model should be removed
-    expect(result.agents?.commander?.model).toBeUndefined();
+    // No provider models available, config should remain unchanged
+    expect(result).toEqual(userConfig);
   });
 
   test("validates multiple agents with mixed valid/invalid models", () => {
@@ -175,13 +153,6 @@ describe("validateAgentModels", () => {
       createProvider("openai", ["gpt-4", "gpt-3.5"]),
       createProvider("anthropic", ["claude-3"]),
     ];
-
-    const defaultAgents: Record<string, AgentConfig> = {
-      commander: createAgentConfig("openai/gpt-3.5"),
-      brainstormer: createAgentConfig("openai/gpt-3.5"),
-      planner: createAgentConfig("openai/gpt-3.5"),
-      reviewer: createAgentConfig("anthropic/claude-3"),
-    };
 
     const result = validateAgentModels(userConfig, providers);
 

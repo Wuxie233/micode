@@ -1,9 +1,8 @@
 // src/tools/artifact-index/index.ts
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 const DEFAULT_DB_DIR = join(homedir(), ".config", "opencode", "artifact-index");
 const DB_NAME = "context.db";
@@ -27,12 +26,34 @@ export interface LedgerRecord {
   filesModified?: string;
 }
 
+export interface MilestoneArtifactRecord {
+  id: string;
+  milestoneId: string;
+  artifactType: string;
+  sourceSessionId?: string;
+  createdAt?: string;
+  tags?: string[];
+  payload: string;
+}
+
 export interface SearchResult {
   type: "plan" | "ledger";
   id: string;
   filePath: string;
   title?: string;
   summary?: string;
+  score: number;
+}
+
+export interface MilestoneArtifactSearchResult {
+  type: "milestone";
+  id: string;
+  milestoneId: string;
+  artifactType: string;
+  sourceSessionId?: string;
+  createdAt?: string;
+  tags: string[];
+  payload: string;
   score: number;
 }
 
@@ -91,8 +112,26 @@ export class ArtifactIndex {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS milestone_artifacts (
+        id TEXT PRIMARY KEY,
+        milestone_id TEXT NOT NULL,
+        artifact_type TEXT NOT NULL,
+        source_session_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        tags TEXT,
+        payload TEXT NOT NULL,
+        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
       CREATE VIRTUAL TABLE IF NOT EXISTS plans_fts USING fts5(id, title, overview, approach);
       CREATE VIRTUAL TABLE IF NOT EXISTS ledgers_fts USING fts5(id, session_name, goal, state_now, key_decisions);
+      CREATE VIRTUAL TABLE IF NOT EXISTS milestone_artifacts_fts USING fts5(
+        id,
+        milestone_id,
+        artifact_type,
+        payload,
+        tags,
+        source_session_id
+      );
     `;
   }
 
@@ -237,6 +276,116 @@ export class ArtifactIndex {
     results.sort((a, b) => b.score - a.score);
 
     return results.slice(0, limit);
+  }
+
+  async indexMilestoneArtifact(record: MilestoneArtifactRecord): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    const tags = JSON.stringify(record.tags ?? []);
+    const createdAt = record.createdAt ?? new Date().toISOString();
+    const existing = this.db.query("SELECT id FROM milestone_artifacts WHERE id = ?").get(record.id) as
+      | { id: string }
+      | undefined;
+
+    if (existing) {
+      this.db.run("DELETE FROM milestone_artifacts_fts WHERE id = ?", [existing.id]);
+    }
+
+    this.db.run(
+      `INSERT INTO milestone_artifacts (
+          id,
+          milestone_id,
+          artifact_type,
+          source_session_id,
+          created_at,
+          tags,
+          payload,
+          indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          milestone_id = excluded.milestone_id,
+          artifact_type = excluded.artifact_type,
+          source_session_id = excluded.source_session_id,
+          created_at = excluded.created_at,
+          tags = excluded.tags,
+          payload = excluded.payload,
+          indexed_at = CURRENT_TIMESTAMP`,
+      [
+        record.id,
+        record.milestoneId,
+        record.artifactType,
+        record.sourceSessionId ?? null,
+        createdAt,
+        tags,
+        record.payload,
+      ],
+    );
+
+    this.db.run(
+      `INSERT INTO milestone_artifacts_fts (
+          id,
+          milestone_id,
+          artifact_type,
+          payload,
+          tags,
+          source_session_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [record.id, record.milestoneId, record.artifactType, record.payload, tags, record.sourceSessionId ?? ""],
+    );
+  }
+
+  async searchMilestoneArtifacts(
+    query: string,
+    options: { milestoneId?: string; artifactType?: string; limit?: number } = {},
+  ): Promise<MilestoneArtifactSearchResult[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    const escapedQuery = this.escapeFtsQuery(query);
+    const milestoneId = options.milestoneId ?? null;
+    const artifactType = options.artifactType ?? null;
+    const limit = options.limit ?? 10;
+
+    const rows = this.db
+      .query(
+        `SELECT
+          milestone_artifacts.id,
+          milestone_artifacts.milestone_id,
+          milestone_artifacts.artifact_type,
+          milestone_artifacts.source_session_id,
+          milestone_artifacts.created_at,
+          milestone_artifacts.tags,
+          milestone_artifacts.payload,
+          milestone_artifacts_fts.rank
+        FROM milestone_artifacts_fts
+        JOIN milestone_artifacts ON milestone_artifacts.id = milestone_artifacts_fts.id
+        WHERE milestone_artifacts_fts MATCH ?
+          AND (? IS NULL OR milestone_artifacts.milestone_id = ?)
+          AND (? IS NULL OR milestone_artifacts.artifact_type = ?)
+        ORDER BY milestone_artifacts_fts.rank
+        LIMIT ?`,
+      )
+      .all(escapedQuery, milestoneId, milestoneId, artifactType, artifactType, limit) as Array<{
+      id: string;
+      milestone_id: string;
+      artifact_type: string;
+      source_session_id: string | null;
+      created_at: string | null;
+      tags: string | null;
+      payload: string;
+      rank: number;
+    }>;
+
+    return rows.map((row) => ({
+      type: "milestone",
+      id: row.id,
+      milestoneId: row.milestone_id,
+      artifactType: row.artifact_type,
+      sourceSessionId: row.source_session_id ?? undefined,
+      createdAt: row.created_at ?? undefined,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      payload: row.payload,
+      score: -row.rank,
+    }));
   }
 
   private escapeFtsQuery(query: string): string {
