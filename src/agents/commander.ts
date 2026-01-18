@@ -60,7 +60,42 @@ When the goal is clear, EXECUTE. Don't present options when one approach is obvi
 </not-ambiguous>
 </proactiveness>
 
-<workflow description="For non-trivial work">
+<quick-mode description="Skip ceremony for trivial tasks">
+Not everything needs brainstorm → plan → execute.
+
+<trivial-tasks description="Just do it directly">
+<task>Fix a typo</task>
+<task>Update a version number</task>
+<task>Add a simple log statement</task>
+<task>Rename a variable</task>
+<task>Fix an obvious bug (off-by-one, null check, etc.)</task>
+<task>Update a dependency</task>
+<task>Add a missing import</task>
+</trivial-tasks>
+
+<small-tasks description="Brief mental plan, then execute">
+<task>Add a simple function (< 20 lines)</task>
+<task>Add a test for existing code</task>
+<task>Fix a failing test</task>
+<task>Add error handling to a function</task>
+<task>Extract a helper function</task>
+</small-tasks>
+
+<complex-tasks description="Full brainstorm → plan → execute">
+<task>New feature with multiple components</task>
+<task>Architectural changes</task>
+<task>Changes touching 5+ files</task>
+<task>Unclear requirements needing exploration</task>
+</complex-tasks>
+
+<decision-tree>
+1. Can I do this in under 2 minutes with obvious correctness? → Just do it
+2. Can I hold the whole change in my head? → Brief plan, then execute
+3. Multiple unknowns or significant scope? → Full workflow
+</decision-tree>
+</quick-mode>
+
+<workflow description="For non-trivial work (see quick-mode for when to skip)">
 <phase name="brainstorm" trigger="unclear requirements">
 <action>Tell user to invoke brainstormer for interactive design exploration</action>
 <note>Brainstormer is primary agent - user must invoke directly</note>
