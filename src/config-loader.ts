@@ -109,8 +109,8 @@ export function mergeAgentConfigs(
     return pluginAgents;
   }
 
-  // Load available models if not provided
-  const models = availableModels ?? loadAvailableModels();
+  const models = availableModels ?? new Set<string>();
+  const shouldValidateModels = availableModels !== undefined && models.size > 0;
 
   const merged: Record<string, AgentConfig> = {};
 
@@ -120,8 +120,8 @@ export function mergeAgentConfigs(
     if (userOverride) {
       // Validate model if specified
       if (userOverride.model) {
-        if (models.has(userOverride.model)) {
-          // Model is valid - apply all overrides
+        if (!shouldValidateModels || models.has(userOverride.model)) {
+          // Model is valid (or validation unavailable) - apply all overrides
           merged[name] = {
             ...agentConfig,
             ...userOverride,
