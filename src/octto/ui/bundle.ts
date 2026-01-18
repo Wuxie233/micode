@@ -1142,10 +1142,10 @@ export function getHtmlBundle(): string {
       const multiple = q.config.multiple ? 'multiple' : '';
       const accept = q.config.accept ? q.config.accept.join(',') : 'image/*';
       html += '<div class="file-upload">';
-      html += '<input type="file" id="image_' + q.id + '" accept="' + accept + '" ' + multiple + ' onchange="previewImages('' + q.id + '')">';
+      html += '<input type="file" id="image_' + q.id + '" accept="' + accept + '" ' + multiple + ' onchange="previewImages(\\'' + q.id + '\\')">';
       html += '<div id="preview_' + q.id + '" class="image-preview"></div>';
       html += '</div>';
-      html += '<div class="btn-group"><button onclick="submitImages('' + q.id + '')" class="btn btn-primary">Upload</button></div>';
+      html += '<div class="btn-group"><button onclick="submitImages(\\'' + q.id + '\\')" class="btn btn-primary">Upload</button></div>';
       return html;
     }
 

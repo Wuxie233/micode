@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "prepare": "lefthook install",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun --external bun-pty",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run typecheck",
     "test": "bun test",
