@@ -63,6 +63,12 @@ export const config = {
     planPattern: /thoughts\/shared\/plans\/.*\.md$/,
     /** Pattern to match ledger files */
     ledgerPattern: /thoughts\/ledgers\/CONTINUITY_.*\.md$/,
+    /** Directory for mindmodel files */
+    mindmodelDir: ".mindmodel",
+    /** Mindmodel manifest filename */
+    mindmodelManifest: "manifest.yaml",
+    /** Mindmodel system file */
+    mindmodelSystem: "system.md",
   },
 
   /**
