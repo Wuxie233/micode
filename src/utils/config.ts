@@ -126,4 +126,18 @@ export const config = {
     /** Allow overriding bind address for remote access */
     allowRemoteBind: false,
   },
+
+  /**
+   * Mindmodel v2 settings
+   */
+  mindmodel: {
+    /** Override log file within .mindmodel/ */
+    overrideLogFile: "overrides.log",
+    /** Maximum automatic retries on constraint violation */
+    reviewMaxRetries: 1,
+    /** Enable/disable constraint review */
+    reviewEnabled: true,
+    /** Category groups for v2 structure */
+    categoryGroups: ["stack", "architecture", "patterns", "style", "components", "domain", "ops"] as readonly string[],
+  },
 } as const;
