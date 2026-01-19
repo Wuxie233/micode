@@ -79,4 +79,48 @@ categories:
     expect(examples[0].content).toContain("Button content");
     expect(examples[1].content).toContain("Fetch content");
   });
+
+  it("should return null when manifest has invalid content", async () => {
+    const mindmodelDir = join(testDir, ".mindmodel");
+    mkdirSync(mindmodelDir, { recursive: true });
+
+    writeFileSync(
+      join(mindmodelDir, "manifest.yaml"),
+      `
+name: test
+categories: []
+`,
+    );
+
+    const mindmodel = await loadMindmodel(testDir);
+    expect(mindmodel).toBeNull();
+  });
+
+  it("should skip gracefully when loading examples with non-existent category path", async () => {
+    const mindmodelDir = join(testDir, ".mindmodel");
+    mkdirSync(join(mindmodelDir, "components"), { recursive: true });
+
+    writeFileSync(
+      join(mindmodelDir, "manifest.yaml"),
+      `
+name: test
+version: 1
+categories:
+  - path: components/button.md
+    description: Button patterns
+  - path: components/missing.md
+    description: Missing file
+`,
+    );
+
+    writeFileSync(join(mindmodelDir, "components/button.md"), "# Button\nButton content");
+    // Note: components/missing.md is intentionally not created
+
+    const mindmodel = await loadMindmodel(testDir);
+    const examples = await loadExamples(mindmodel!, ["components/button.md", "components/missing.md"]);
+
+    // Should only return the existing file, skipping the missing one
+    expect(examples).toHaveLength(1);
+    expect(examples[0].path).toBe("components/button.md");
+  });
 });

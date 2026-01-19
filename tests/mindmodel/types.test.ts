@@ -29,4 +29,11 @@ categories: []
 `;
     expect(() => parseManifest(yaml)).toThrow();
   });
+
+  it("should throw on malformed YAML", () => {
+    const yaml = `name: test
+categories:
+  - path: [invalid nested`;
+    expect(() => parseManifest(yaml)).toThrow();
+  });
 });

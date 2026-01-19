@@ -45,4 +45,10 @@ describe("mindmodel classifier", () => {
 
     expect(result).toEqual([]);
   });
+
+  it("should parse response wrapped in markdown code block", () => {
+    const response = '```json\n["components/form.md"]\n```';
+    const result = parseClassifierResponse(response, manifest);
+    expect(result).toEqual(["components/form.md"]);
+  });
 });
