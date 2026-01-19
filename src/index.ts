@@ -299,9 +299,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "chat.params": async (input, output) => {
-      // Inject mindmodel examples (before other context)
-      await mindmodelInjectorHook["chat.params"](input, output);
-
       // Inject ledger context first (highest priority)
       await ledgerLoaderHook["chat.params"](input, output);
 
@@ -409,8 +406,17 @@ IMPORTANT:
       );
     },
 
-    // Filter out CLAUDE.md/AGENTS.md from system prompt for our agents
-    "experimental.chat.system.transform": async (_input, output) => {
+    // Extract task from messages for mindmodel injection
+    "experimental.chat.messages.transform": async (input, output) => {
+      await mindmodelInjectorHook["experimental.chat.messages.transform"](input, output);
+    },
+
+    // Transform system prompt: inject mindmodel examples, filter CLAUDE.md/AGENTS.md
+    "experimental.chat.system.transform": async (input, output) => {
+      // Inject mindmodel examples first (highest priority)
+      await mindmodelInjectorHook["experimental.chat.system.transform"](input, output);
+
+      // Filter out CLAUDE.md/AGENTS.md from system prompt for our agents
       output.system = output.system.filter((s) => {
         // Keep entries that don't come from CLAUDE.md or AGENTS.md
         if (s.startsWith("Instructions from:")) {

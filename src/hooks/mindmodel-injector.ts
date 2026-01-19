@@ -13,29 +13,21 @@ import { log } from "../utils/logger";
 
 type ClassifyFn = (prompt: string) => Promise<string>;
 
-interface ChatMessage {
-  role: string;
-  content: string | Array<{ type: string; text?: string }>;
+interface MessagePart {
+  type: string;
+  text?: string;
 }
 
-function extractTaskFromMessages(messages: ChatMessage[]): string {
-  // Get the last user message
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  if (!lastUserMessage) return "";
-
-  if (typeof lastUserMessage.content === "string") {
-    return lastUserMessage.content;
-  }
-
-  // Handle array content (multimodal)
-  return lastUserMessage.content
-    .filter((p) => p.type === "text" && p.text)
-    .map((p) => p.text)
-    .join(" ");
+interface MessageWithParts {
+  info: { role: string };
+  parts: MessagePart[];
 }
 
 export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: ClassifyFn) {
   let cachedMindmodel: LoadedMindmodel | null | undefined;
+
+  // Cache pending injection per session (between hooks)
+  const pendingInjection = new Map<string, string>();
 
   async function getMindmodel(): Promise<LoadedMindmodel | null> {
     if (cachedMindmodel === undefined) {
@@ -44,10 +36,23 @@ export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: Classi
     return cachedMindmodel;
   }
 
+  function extractTaskFromMessages(messages: MessageWithParts[]): string {
+    // Get the last user message
+    const lastUserMessage = [...messages].reverse().find((m) => m.info.role === "user");
+    if (!lastUserMessage) return "";
+
+    // Extract text from parts
+    return lastUserMessage.parts
+      .filter((p) => p.type === "text" && p.text)
+      .map((p) => p.text)
+      .join(" ");
+  }
+
   return {
-    "chat.params": async (
-      input: { sessionID: string; messages?: ChatMessage[] },
-      output: { options?: Record<string, unknown>; system?: string },
+    // Hook 1: Extract task from messages and prepare injection
+    "experimental.chat.messages.transform": async (
+      input: { sessionID: string },
+      output: { messages: MessageWithParts[] },
     ) => {
       try {
         const mindmodel = await getMindmodel();
@@ -56,10 +61,9 @@ export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: Classi
           return;
         }
 
-        const messages = input.messages ?? [];
-        const task = extractTaskFromMessages(messages);
+        const task = extractTaskFromMessages(output.messages);
         if (!task) {
-          log.info("mindmodel", "No task extracted from messages, skipping");
+          log.info("mindmodel", "No task extracted from messages");
           return;
         }
 
@@ -86,18 +90,28 @@ export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: Classi
 
         const formatted = formatExamplesForInjection(examples);
 
-        // Inject into system prompt
-        if (output.system) {
-          output.system = formatted + "\n\n" + output.system;
-        } else {
-          output.system = formatted;
-        }
-
-        log.info("mindmodel", `Injected ${examples.length} examples into system prompt`);
+        // Cache for the system transform hook
+        pendingInjection.set(input.sessionID, formatted);
+        log.info("mindmodel", `Prepared ${examples.length} examples for injection`);
       } catch (error) {
-        // Graceful degradation - log warning but don't crash the hook chain
-        log.warn("mindmodel", `Failed to inject examples: ${error instanceof Error ? error.message : "unknown error"}`);
+        log.warn(
+          "mindmodel",
+          `Failed to prepare examples: ${error instanceof Error ? error.message : "unknown error"}`,
+        );
       }
+    },
+
+    // Hook 2: Inject into system prompt
+    "experimental.chat.system.transform": async (input: { sessionID: string }, output: { system: string[] }) => {
+      const injection = pendingInjection.get(input.sessionID);
+      if (!injection) return;
+
+      // Clear the pending injection
+      pendingInjection.delete(input.sessionID);
+
+      // Prepend to system prompt
+      output.system.unshift(injection);
+      log.info("mindmodel", "Injected examples into system prompt");
     },
   };
 }

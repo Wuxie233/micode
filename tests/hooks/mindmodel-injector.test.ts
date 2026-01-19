@@ -52,16 +52,34 @@ categories:
     );
   }
 
+  // Helper to simulate the two-hook flow
+  async function runInjectionFlow(
+    hook: ReturnType<typeof import("../../src/hooks/mindmodel-injector").createMindmodelInjectorHook>,
+    sessionID: string,
+    messages: Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>,
+  ): Promise<string[]> {
+    // Step 1: Extract task from messages
+    const messagesOutput = { messages };
+    await hook["experimental.chat.messages.transform"]({ sessionID }, messagesOutput);
+
+    // Step 2: Inject into system prompt
+    const systemOutput = { system: ["existing system prompt"] };
+    await hook["experimental.chat.system.transform"]({ sessionID }, systemOutput);
+
+    return systemOutput.system;
+  }
+
   it("should not inject if no .mindmodel directory exists", async () => {
     const { createMindmodelInjectorHook } = await import("../../src/hooks/mindmodel-injector");
 
     const ctx = createMockCtx(testDir);
     const hook = createMindmodelInjectorHook(ctx as any, async () => "[]");
 
-    const output = { system: "existing system prompt" };
-    await hook["chat.params"]({ sessionID: "test" }, output);
+    const system = await runInjectionFlow(hook, "test", [
+      { info: { role: "user" }, parts: [{ type: "text", text: "Hello" }] },
+    ]);
 
-    expect(output.system).toBe("existing system prompt");
+    expect(system).toEqual(["existing system prompt"]);
   });
 
   it("should inject examples when classifier returns categories", async () => {
@@ -74,18 +92,14 @@ categories:
     const mockClassify = async () => '["components/form.md"]';
     const hook = createMindmodelInjectorHook(ctx as any, mockClassify);
 
-    const output = { system: "existing prompt" };
-    await hook["chat.params"](
-      {
-        sessionID: "test",
-        messages: [{ role: "user", content: "Add a contact form" }],
-      },
-      output,
-    );
+    const system = await runInjectionFlow(hook, "test", [
+      { info: { role: "user" }, parts: [{ type: "text", text: "Add a contact form" }] },
+    ]);
 
-    expect(output.system).toContain("mindmodel-examples");
-    expect(output.system).toContain("Form");
-    expect(output.system).toContain("<Form onSubmit");
+    expect(system.length).toBe(2);
+    expect(system[0]).toContain("mindmodel-examples");
+    expect(system[0]).toContain("Form");
+    expect(system[0]).toContain("<Form onSubmit");
   });
 
   it("should not inject if classifier returns empty array", async () => {
@@ -97,17 +111,11 @@ categories:
     const mockClassify = async () => "[]";
     const hook = createMindmodelInjectorHook(ctx as any, mockClassify);
 
-    const output = { system: "existing prompt" };
-    await hook["chat.params"](
-      {
-        sessionID: "test",
-        messages: [{ role: "user", content: "What time is it?" }],
-      },
-      output,
-    );
+    const system = await runInjectionFlow(hook, "test", [
+      { info: { role: "user" }, parts: [{ type: "text", text: "What time is it?" }] },
+    ]);
 
-    expect(output.system).toBe("existing prompt");
-    expect(output.system).not.toContain("mindmodel-examples");
+    expect(system).toEqual(["existing system prompt"]);
   });
 
   it("should extract task from multimodal message content", async () => {
@@ -119,25 +127,19 @@ categories:
     const mockClassify = async () => '["components/button.md"]';
     const hook = createMindmodelInjectorHook(ctx as any, mockClassify);
 
-    const output = { system: "existing prompt" };
-    await hook["chat.params"](
+    const system = await runInjectionFlow(hook, "test", [
       {
-        sessionID: "test",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", image_url: "data:image/png;base64,..." },
-              { type: "text", text: "Add a button component" },
-            ],
-          },
+        info: { role: "user" },
+        parts: [
+          { type: "image" }, // No text field for image
+          { type: "text", text: "Add a button component" },
         ],
       },
-      output,
-    );
+    ]);
 
-    expect(output.system).toContain("mindmodel-examples");
-    expect(output.system).toContain("Button");
+    expect(system.length).toBe(2);
+    expect(system[0]).toContain("mindmodel-examples");
+    expect(system[0]).toContain("Button");
   });
 
   it("should cache mindmodel and call loadMindmodel only once", async () => {
@@ -154,28 +156,18 @@ categories:
     const hook = createMindmodelInjectorHook(ctx as any, mockClassify);
 
     // First call
-    const output1 = { system: "prompt1" };
-    await hook["chat.params"](
-      {
-        sessionID: "test1",
-        messages: [{ role: "user", content: "Add a button" }],
-      },
-      output1,
-    );
+    const system1 = await runInjectionFlow(hook, "test1", [
+      { info: { role: "user" }, parts: [{ type: "text", text: "Add a button" }] },
+    ]);
 
     // Second call
-    const output2 = { system: "prompt2" };
-    await hook["chat.params"](
-      {
-        sessionID: "test2",
-        messages: [{ role: "user", content: "Add another button" }],
-      },
-      output2,
-    );
+    const system2 = await runInjectionFlow(hook, "test2", [
+      { info: { role: "user" }, parts: [{ type: "text", text: "Add another button" }] },
+    ]);
 
     // Both should have injected content (proving mindmodel was loaded)
-    expect(output1.system).toContain("mindmodel-examples");
-    expect(output2.system).toContain("mindmodel-examples");
+    expect(system1[0]).toContain("mindmodel-examples");
+    expect(system2[0]).toContain("mindmodel-examples");
 
     // Classifier should have been called twice (once per request)
     expect(classifyCallCount).toBe(2);
