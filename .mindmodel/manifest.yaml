@@ -1,0 +1,51 @@
+name: micode
+version: 2
+categories:
+  - path: stack/backend.md
+    description: Backend runtime and plugin foundations
+    group: stack
+  - path: stack/database.md
+    description: SQLite usage and local persistence
+    group: stack
+  - path: stack/dependencies.md
+    description: Approved external and internal dependencies
+    group: stack
+  - path: architecture/layers.md
+    description: Layering and dependency direction
+    group: architecture
+  - path: architecture/organization.md
+    description: Directory and module organization
+    group: architecture
+  - path: patterns/error-handling.md
+    description: Error handling conventions
+    group: patterns
+  - path: patterns/logging.md
+    description: Logging practices and logger usage
+    group: patterns
+  - path: patterns/validation.md
+    description: Validation with schemas
+    group: patterns
+  - path: patterns/data-fetching.md
+    description: Loading and parsing data files
+    group: patterns
+  - path: patterns/testing.md
+    description: Testing patterns with bun:test
+    group: patterns
+  - path: style/naming.md
+    description: Naming conventions for files and symbols
+    group: style
+  - path: style/imports.md
+    description: Import ordering and module boundaries
+    group: style
+  - path: style/types.md
+    description: TypeScript type usage guidelines
+    group: style
+  - path: components/shared.md
+    description: Shared hooks, tools, and utilities
+    group: components
+  - path: domain/concepts.md
+    description: Domain terminology and workflows
+    group: domain
+  - path: ops/database.md
+    description: Operational database setup and lifecycle
+    group: ops

@@ -51,22 +51,38 @@ export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: Classi
     ) => {
       try {
         const mindmodel = await getMindmodel();
-        if (!mindmodel) return;
+        if (!mindmodel) {
+          log.info("mindmodel", "No .mindmodel/ found, skipping injection");
+          return;
+        }
 
         const messages = input.messages ?? [];
         const task = extractTaskFromMessages(messages);
-        if (!task) return;
+        if (!task) {
+          log.info("mindmodel", "No task extracted from messages, skipping");
+          return;
+        }
+
+        log.info("mindmodel", `Classifying task: "${task.slice(0, 100)}..."`);
 
         // Classify the task
         const classifierPrompt = buildClassifierPrompt(task, mindmodel.manifest);
         const classifierResponse = await classifyFn(classifierPrompt);
         const categories = parseClassifierResponse(classifierResponse, mindmodel.manifest);
 
-        if (categories.length === 0) return;
+        if (categories.length === 0) {
+          log.info("mindmodel", "No matching categories found");
+          return;
+        }
+
+        log.info("mindmodel", `Matched categories: ${categories.join(", ")}`);
 
         // Load and format examples
         const examples = await loadExamples(mindmodel, categories);
-        if (examples.length === 0) return;
+        if (examples.length === 0) {
+          log.info("mindmodel", "No examples found for categories");
+          return;
+        }
 
         const formatted = formatExamplesForInjection(examples);
 
@@ -76,6 +92,8 @@ export function createMindmodelInjectorHook(ctx: PluginInput, classifyFn: Classi
         } else {
           output.system = formatted;
         }
+
+        log.info("mindmodel", `Injected ${examples.length} examples into system prompt`);
       } catch (error) {
         // Graceful degradation - log warning but don't crash the hook chain
         log.warn("mindmodel", `Failed to inject examples: ${error instanceof Error ? error.message : "unknown error"}`);
