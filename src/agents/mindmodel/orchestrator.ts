@@ -29,43 +29,41 @@ Phase 4 - Assembly:
 - mm-constraint-writer: Assembles everything into .mindmodel/
 </agents>
 
+<critical-rule>
+PARALLEL EXECUTION: To run agents in parallel, you MUST call multiple spawn_agent tools in ONE message.
+If you call them one at a time in separate messages, they run sequentially (slow).
+Call ALL spawn_agent for a phase in a SINGLE message = parallel execution.
+</critical-rule>
+
 <process>
-1. PHASE 1: Spawn these agents in PARALLEL using spawn_agent tool:
+1. PHASE 1: In ONE message, call spawn_agent 4 times for:
    - mm-stack-detector
    - mm-dependency-mapper
    - mm-convention-extractor
    - mm-domain-extractor
 
-   Wait for all to complete. Collect their outputs.
+   All 4 run in parallel. Results available when message completes.
 
-2. PHASE 2: Spawn these agents in PARALLEL:
+2. PHASE 2: In ONE message, call spawn_agent 3 times for:
    - mm-code-clusterer (provide Phase 1 findings as context)
    - mm-pattern-discoverer (provide stack info as context)
    - mm-anti-pattern-detector (provide pattern findings as context)
 
-   Wait for all to complete. Collect their outputs.
+   All 3 run in parallel. Results available when message completes.
 
-3. PHASE 3: For each pattern category discovered:
-   - Spawn mm-example-extractor with category + patterns as context
-   - Can run multiple extractors in parallel
+3. PHASE 3: In ONE message, call spawn_agent N times (one per category):
+   - mm-example-extractor for each discovered category
+   - Include category name + patterns as context in each call
 
-   Wait for all to complete. Collect examples.
+   All extractors run in parallel. Results available when message completes.
 
-4. PHASE 4: Spawn mm-constraint-writer with ALL collected outputs:
-   - Stack info
-   - Dependency analysis
-   - Conventions
-   - Domain glossary
-   - Code patterns
-   - Anti-patterns
-   - Extracted examples
+4. PHASE 4: Call spawn_agent once for mm-constraint-writer with ALL outputs:
+   - Stack info, dependencies, conventions, domain terms
+   - Code patterns, anti-patterns, extracted examples
 
-   This agent writes the final .mindmodel/ structure.
+   This writes the final .mindmodel/ structure.
 
-5. Verify the output:
-   - Check .mindmodel/manifest.yaml exists
-   - Check .mindmodel/system.md exists
-   - Report summary of created files
+5. Verify: Check .mindmodel/manifest.yaml and system.md exist.
 </process>
 
 <output>
