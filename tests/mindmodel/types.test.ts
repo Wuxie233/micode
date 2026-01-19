@@ -37,3 +37,34 @@ categories:
     expect(() => parseManifest(yaml)).toThrow();
   });
 });
+
+describe("ManifestSchemaV2", () => {
+  it("should parse manifest with nested category structure", () => {
+    const yaml = `
+name: test-project
+version: 2
+categories:
+  - path: stack/frontend.md
+    description: Frontend tech stack
+    group: stack
+  - path: patterns/error-handling.md
+    description: Error handling patterns
+    group: patterns
+`;
+    const result = parseManifest(yaml);
+    expect(result.version).toBe(2);
+    expect(result.categories[0].group).toBe("stack");
+  });
+
+  it("should support optional group field for backwards compatibility", () => {
+    const yaml = `
+name: test-project
+version: 1
+categories:
+  - path: components/form.md
+    description: Form patterns
+`;
+    const result = parseManifest(yaml);
+    expect(result.categories[0].group).toBeUndefined();
+  });
+});

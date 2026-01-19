@@ -5,6 +5,7 @@ import { parse as parseYaml } from "yaml";
 export const CategorySchema = v.object({
   path: v.string(),
   description: v.string(),
+  group: v.optional(v.string()),
 });
 
 export const ManifestSchema = v.object({
