@@ -267,7 +267,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       config.command = {
         ...config.command,
         init: {
-          description: "Initialize project with .mindmodel/ constraints (alias for /mindmodel)",
+          description: "Initialize project with .mindmodel/ constraints",
           agent: "mm-orchestrator",
           template: `Generate mindmodel for this project. $ARGUMENTS`,
         },
@@ -280,11 +280,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
           description: "Search past handoffs, plans, and ledgers",
           agent: "artifact-searcher",
           template: `Search for: $ARGUMENTS`,
-        },
-        mindmodel: {
-          description: "Generate .mindmodel/ with code examples from this project",
-          agent: "mm-orchestrator",
-          template: `Generate mindmodel for this project. $ARGUMENTS`,
         },
       };
     },

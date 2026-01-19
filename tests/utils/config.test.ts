@@ -1,5 +1,5 @@
 // tests/utils/config.test.ts
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 describe("config utility", () => {
   describe("config.compaction", () => {
@@ -76,7 +76,7 @@ describe("config utility", () => {
 
     it("should have rootContextFiles", async () => {
       const { config } = await import("../../src/utils/config");
-      expect(config.paths.rootContextFiles).toEqual(["ARCHITECTURE.md", "CODE_STYLE.md", "README.md"]);
+      expect(config.paths.rootContextFiles).toEqual(["README.md"]);
     });
 
     it("should have dirContextFiles", async () => {

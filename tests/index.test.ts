@@ -45,13 +45,10 @@ describe("index.ts /init command", () => {
     expect(initCommandMatch![1]).toBe("mm-orchestrator");
   });
 
-  it("should have /init as alias for /mindmodel", async () => {
+  it("should not have /mindmodel command (only /init)", async () => {
     const source = await readFile("src/index.ts", "utf-8");
-    // Both commands should use the same agent
-    const initMatch = source.match(/init:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
+    // /mindmodel was removed - only /init exists now
     const mindmodelMatch = source.match(/mindmodel:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
-    expect(initMatch).not.toBeNull();
-    expect(mindmodelMatch).not.toBeNull();
-    expect(initMatch![1]).toBe(mindmodelMatch![1]);
+    expect(mindmodelMatch).toBeNull();
   });
 });

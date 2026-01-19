@@ -16,9 +16,9 @@ describe("config-loader integration", () => {
       "implementer",
       "reviewer",
       "executor",
-      "project-initializer",
       "ledger-creator",
       "artifact-searcher",
+      "mm-orchestrator",
     ];
 
     for (const agentName of expectedAgents) {
@@ -27,10 +27,10 @@ describe("config-loader integration", () => {
     }
   });
 
-  it("should merge user overrides for all agents including project-initializer", () => {
+  it("should merge user overrides for all agents including mm-orchestrator", () => {
     const userConfig = {
       agents: {
-        "project-initializer": { model: "openai/gpt-4o" },
+        "mm-orchestrator": { model: "openai/gpt-4o" },
         "ledger-creator": { model: "openai/gpt-4o" },
         "artifact-searcher": { model: "openai/gpt-4o" },
       },
@@ -40,11 +40,11 @@ describe("config-loader integration", () => {
 
     const merged = mergeAgentConfigs(agents, userConfig, availableModels);
 
-    // Check project-initializer was merged correctly
-    expect(merged["project-initializer"]).toBeDefined();
-    expect(merged["project-initializer"].model).toBe("openai/gpt-4o");
+    // Check mm-orchestrator was merged correctly
+    expect(merged["mm-orchestrator"]).toBeDefined();
+    expect(merged["mm-orchestrator"].model).toBe("openai/gpt-4o");
     // Original prompt should be preserved
-    expect(merged["project-initializer"].prompt).toBeDefined();
+    expect(merged["mm-orchestrator"].prompt).toBeDefined();
 
     // Check other agents still have defaults
     expect(merged.commander.model).toBe("openai/gpt-5.2-codex");
@@ -53,7 +53,7 @@ describe("config-loader integration", () => {
   it("should preserve all agent properties when merging", () => {
     const userConfig = {
       agents: {
-        "project-initializer": { model: "openai/gpt-4o", temperature: 0.5 },
+        "mm-orchestrator": { model: "openai/gpt-4o", temperature: 0.5 },
       },
     };
 
@@ -61,11 +61,10 @@ describe("config-loader integration", () => {
 
     const merged = mergeAgentConfigs(agents, userConfig, availableModels);
 
-    const pi = merged["project-initializer"];
-    expect(pi.model).toBe("openai/gpt-4o");
-    expect(pi.temperature).toBe(0.5);
-    expect(pi.mode).toBe("subagent"); // Original
-    expect(pi.maxTokens).toBe(32000); // Original
-    expect(pi.prompt).toContain("Project Initializer"); // Original
+    const mo = merged["mm-orchestrator"];
+    expect(mo.model).toBe("openai/gpt-4o");
+    expect(mo.temperature).toBe(0.5);
+    expect(mo.mode).toBe("subagent"); // Original
+    expect(mo.prompt).toContain("mindmodel"); // Original
   });
 });

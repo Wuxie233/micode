@@ -117,8 +117,7 @@ When design is silent on implementation details, make confident decisions:
 
 <inputs>
   <required>Design document from thoughts/shared/designs/</required>
-  <injected>CODE_STYLE.md - coding conventions (automatically available)</injected>
-  <injected>ARCHITECTURE.md - system structure (automatically available)</injected>
+  <injected>.mindmodel/ - project constraints and patterns (automatically available)</injected>
 </inputs>
 
 <process>

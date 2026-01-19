@@ -56,7 +56,7 @@ export const config = {
     /** Prefix for ledger filenames */
     ledgerPrefix: "CONTINUITY_",
     /** Context files to inject from project root */
-    rootContextFiles: ["ARCHITECTURE.md", "CODE_STYLE.md", "README.md"] as readonly string[],
+    rootContextFiles: ["README.md"] as readonly string[],
     /** Context files to collect when walking up directories */
     dirContextFiles: ["README.md"] as readonly string[],
     /** Pattern to match plan files */
