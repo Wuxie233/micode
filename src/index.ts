@@ -267,9 +267,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       config.command = {
         ...config.command,
         init: {
-          description: "Initialize project with ARCHITECTURE.md and CODE_STYLE.md",
-          agent: "project-initializer",
-          template: `Initialize this project. $ARGUMENTS`,
+          description: "Initialize project with .mindmodel/ constraints (alias for /mindmodel)",
+          agent: "mm-orchestrator",
+          template: `Generate mindmodel for this project. $ARGUMENTS`,
         },
         ledger: {
           description: "Create or update continuity ledger for session state",

@@ -34,3 +34,24 @@ describe("index.ts constraint-reviewer integration", () => {
     expect(source).toContain("mm-constraint-reviewer");
   });
 });
+
+describe("index.ts /init command", () => {
+  it("should use mm-orchestrator agent for /init command", async () => {
+    const source = await readFile("src/index.ts", "utf-8");
+    // The /init command should use mm-orchestrator for v2 constraint-guided generation
+    // Match the init command configuration block
+    const initCommandMatch = source.match(/init:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
+    expect(initCommandMatch).not.toBeNull();
+    expect(initCommandMatch![1]).toBe("mm-orchestrator");
+  });
+
+  it("should have /init as alias for /mindmodel", async () => {
+    const source = await readFile("src/index.ts", "utf-8");
+    // Both commands should use the same agent
+    const initMatch = source.match(/init:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
+    const mindmodelMatch = source.match(/mindmodel:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
+    expect(initMatch).not.toBeNull();
+    expect(mindmodelMatch).not.toBeNull();
+    expect(initMatch![1]).toBe(mindmodelMatch![1]);
+  });
+});
