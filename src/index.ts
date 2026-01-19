@@ -9,6 +9,7 @@ import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
 // Hooks
 import { createAutoCompactHook } from "./hooks/auto-compact";
 import { createCommentCheckerHook } from "./hooks/comment-checker";
+import { createConstraintReviewerHook } from "./hooks/constraint-reviewer";
 import { createContextInjectorHook } from "./hooks/context-injector";
 import { createContextWindowMonitorHook } from "./hooks/context-window-monitor";
 import { createFileOpsTrackerHook, getFileOps } from "./hooks/file-ops-tracker";
@@ -142,6 +143,51 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   };
   const mindmodelInjectorHook = createMindmodelInjectorHook(ctx, mindmodelClassifyFn);
 
+  // Constraint reviewer hook - reviews generated code against .mindmodel/ constraints
+  const constraintReviewerHook = createConstraintReviewerHook(ctx, async (reviewPrompt) => {
+    let sessionId: string | undefined;
+    try {
+      const sessionResult = await ctx.client.session.create({
+        body: { title: "constraint-reviewer" },
+      });
+
+      if (!sessionResult.data?.id) {
+        log.warn("mindmodel", "Failed to create reviewer session");
+        return '{"status": "PASS", "violations": [], "summary": "Review skipped"}';
+      }
+      sessionId = sessionResult.data.id;
+
+      const promptResult = await ctx.client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          agent: "mm-constraint-reviewer",
+          tools: {},
+          parts: [{ type: "text", text: reviewPrompt }],
+        },
+      });
+
+      if (!promptResult.data?.parts) {
+        return '{"status": "PASS", "violations": [], "summary": "Empty response"}';
+      }
+
+      let responseText = "";
+      for (const part of promptResult.data.parts) {
+        if (part.type === "text" && "text" in part) {
+          responseText += (part as { text: string }).text;
+        }
+      }
+
+      return responseText;
+    } catch (error) {
+      log.warn("mindmodel", `Reviewer failed: ${error instanceof Error ? error.message : "unknown"}`);
+      return '{"status": "PASS", "violations": [], "summary": "Review failed"}';
+    } finally {
+      if (sessionId) {
+        await ctx.client.session.delete({ path: { id: sessionId } }).catch(() => {});
+      }
+    }
+  });
+
   // PTY System
   const ptyManager = new PTYManager();
   const ptyTools = createPtyTools(ptyManager);
@@ -252,6 +298,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Track if think mode was requested
       thinkModeState.set(input.sessionID, detectThinkKeyword(text));
+
+      // Check for override command
+      await constraintReviewerHook["chat.message"](input, output);
     },
 
     "chat.params": async (input, output) => {
@@ -354,6 +403,12 @@ IMPORTANT:
 
       // Track file operations for ledger
       await fileOpsTrackerHook["tool.execute.after"](
+        { tool: input.tool, sessionID: input.sessionID, args: input.args },
+        output,
+      );
+
+      // Constraint review for Edit/Write
+      await constraintReviewerHook["tool.execute.after"](
         { tool: input.tool, sessionID: input.sessionID, args: input.args },
         output,
       );
