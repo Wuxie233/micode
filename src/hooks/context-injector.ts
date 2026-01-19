@@ -1,6 +1,8 @@
-import type { PluginInput } from "@opencode-ai/plugin";
 import { readFile } from "node:fs/promises";
-import { join, dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+
+import type { PluginInput } from "@opencode-ai/plugin";
+
 import { config } from "../utils/config";
 
 // Tools that trigger directory-aware context injection
@@ -40,6 +42,17 @@ export function createContextInjectorHook(ctx: PluginInput) {
       } catch {
         // File doesn't exist - skip
       }
+    }
+
+    // Also load mindmodel system.md if it exists
+    try {
+      const mindmodelSystem = join(ctx.directory, ".mindmodel", "system.md");
+      const content = await readFile(mindmodelSystem, "utf-8");
+      if (content.trim()) {
+        cache.rootContent.set(".mindmodel/system.md", content);
+      }
+    } catch {
+      // Mindmodel doesn't exist - skip
     }
 
     return cache.rootContent;
