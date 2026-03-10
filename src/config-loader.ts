@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { AgentConfig } from "@opencode-ai/sdk";
-import { parse as parseJsonc } from "jsonc-parser";
+import { type ParseError, parse as parseJsonc } from "jsonc-parser";
 
 // Minimal type for provider validation - only what we need
 export interface ProviderInfo {
@@ -26,7 +26,12 @@ interface OpencodeConfig {
  * Uses the same options as OpenCode's own parser.
  */
 function parseConfigJson(content: string): unknown {
-  return parseJsonc(content, undefined, { allowTrailingComma: true });
+  const errors: ParseError[] = [];
+  const result = parseJsonc(content, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    throw new Error(`Invalid JSON/JSONC: ${errors.length} parse error(s)`);
+  }
+  return result;
 }
 
 /**
