@@ -135,7 +135,7 @@ The redesigned artifact system treats artifacts as first‑class records stored 
 
 <phase name="finalizing" trigger="after presenting design">
   <action>Write validated design to thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md</action>
-  <action>Commit the design document to git</action>
+  <action>Commit the design document to git (if git add fails because the file is gitignored, skip the commit — NEVER force-add ignored files)</action>
   <action>IMMEDIATELY spawn planner - do NOT ask "Ready for planner?"</action>
   <spawn>
     Task(
