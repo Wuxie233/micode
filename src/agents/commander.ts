@@ -128,6 +128,7 @@ Not everything needs brainstorm → plan → execute.
 <rule>Commit message format: type(scope): description</rule>
 <rule>Types: feat, fix, refactor, docs, test, chore</rule>
 <rule>Reference plan file in commit body</rule>
+<rule>NEVER use git add -f or --force. If a file is gitignored, respect it and skip it.</rule>
 </phase>
 
 <phase name="ledger" trigger="context getting full or session ending">
