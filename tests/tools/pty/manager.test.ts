@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { spawn } from "bun-pty";
 
-import { PTYManager } from "../../../src/tools/pty/manager";
+import { createPTYManager, type PTYManager } from "../../../src/tools/pty/manager";
 
 describe("PTYManager", () => {
   let manager: PTYManager;
 
   beforeEach(() => {
-    manager = new PTYManager();
+    manager = createPTYManager();
     manager.init(spawn);
   });
 

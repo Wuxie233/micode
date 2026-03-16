@@ -11,6 +11,30 @@ export interface LedgerInfo {
   content: string;
 }
 
+async function getFileMtime(filePath: string): Promise<number> {
+  try {
+    const stat = await Bun.file(filePath).stat();
+    return stat ? stat.mtime.getTime() : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function findLatestFile(dir: string, files: string[]): Promise<string> {
+  let latestFile = files[0];
+  let latestMtime = 0;
+
+  for (const file of files) {
+    const mtime = await getFileMtime(join(dir, file));
+    if (mtime > latestMtime) {
+      latestMtime = mtime;
+      latestFile = file;
+    }
+  }
+
+  return latestFile;
+}
+
 export async function findCurrentLedger(directory: string): Promise<LedgerInfo | null> {
   const ledgerDir = join(directory, config.paths.ledgerDir);
 
@@ -21,21 +45,7 @@ export async function findCurrentLedger(directory: string): Promise<LedgerInfo |
     if (ledgerFiles.length === 0) return null;
 
     // Get most recently modified ledger
-    let latestFile = ledgerFiles[0];
-    let latestMtime = 0;
-
-    for (const file of ledgerFiles) {
-      const filePath = join(ledgerDir, file);
-      try {
-        const stat = await Bun.file(filePath).stat();
-        if (stat && stat.mtime.getTime() > latestMtime) {
-          latestMtime = stat.mtime.getTime();
-          latestFile = file;
-        }
-      } catch {
-        // Skip files we can't stat
-      }
-    }
+    const latestFile = await findLatestFile(ledgerDir, ledgerFiles);
 
     const filePath = join(ledgerDir, latestFile);
     const content = await readFile(filePath, "utf-8");

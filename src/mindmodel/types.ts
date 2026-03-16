@@ -18,7 +18,7 @@ export type Category = v.InferOutput<typeof CategorySchema>;
 export type MindmodelManifest = v.InferOutput<typeof ManifestSchema>;
 
 export function parseManifest(yamlContent: string): MindmodelManifest {
-  const parsed = parseYaml(yamlContent);
+  const parsed: unknown = parseYaml(yamlContent);
   return v.parse(ManifestSchema, parsed);
 }
 

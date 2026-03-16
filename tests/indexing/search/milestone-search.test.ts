@@ -16,8 +16,8 @@ describe("milestone artifact search", () => {
   });
 
   it("filters by milestone metadata", async () => {
-    const { ArtifactIndex } = await import("../../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
+    const { createArtifactIndex } = await import("../../../src/tools/artifact-index");
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {

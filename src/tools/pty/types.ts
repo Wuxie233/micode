@@ -1,5 +1,5 @@
 // src/tools/pty/types.ts
-import type { RingBuffer } from "./buffer";
+import type { RingBuffer } from "./buffer"; // now a ReturnType alias
 
 export type PTYStatus = "running" | "exited" | "killed";
 

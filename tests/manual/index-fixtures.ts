@@ -5,14 +5,14 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ArtifactIndex } from "../../src/tools/artifact-index";
+import { createArtifactIndex } from "../../src/tools/artifact-index";
 
 const FIXTURES_DIR = "./thoughts";
 
 async function indexFixtures() {
   console.log("Indexing test fixtures...\n");
 
-  const index = new ArtifactIndex();
+  const index = createArtifactIndex();
   await index.initialize();
 
   // Index ledgers

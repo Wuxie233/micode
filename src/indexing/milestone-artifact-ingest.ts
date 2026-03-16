@@ -1,4 +1,4 @@
-import { type ArtifactIndex, getArtifactIndex } from "@/tools/artifact-index";
+import { type ArtifactIndex, getArtifactIndex } from "@/tools/artifact-index"; // now a ReturnType alias
 import { log } from "@/utils/logger";
 import {
   classifyMilestoneArtifact,

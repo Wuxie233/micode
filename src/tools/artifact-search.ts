@@ -4,6 +4,24 @@ import { getArtifactIndex } from "./artifact-index";
 
 const DEFAULT_SEARCH_LIMIT = 10;
 
+function formatSearchResult(result: {
+  type: string;
+  title?: string;
+  id: string;
+  filePath: string;
+  summary?: string;
+  score: number;
+}): string {
+  const typeLabel = result.type.charAt(0).toUpperCase() + result.type.slice(1);
+  let out = `### ${typeLabel}: ${result.title || result.id}\n`;
+  out += `**File:** \`${result.filePath}\`\n`;
+  if (result.summary) {
+    out += `**Summary:** ${result.summary}\n`;
+  }
+  out += `**Relevance Score:** ${result.score.toFixed(2)}\n\n`;
+  return out;
+}
+
 export const artifact_search = tool({
   description: `Search past plans and ledgers for relevant precedent.
 Use this to find:
@@ -32,13 +50,7 @@ Returns ranked results with file paths for further reading.`,
       output += `Found ${filtered.length} result(s):\n\n`;
 
       for (const result of filtered) {
-        const typeLabel = result.type.charAt(0).toUpperCase() + result.type.slice(1);
-        output += `### ${typeLabel}: ${result.title || result.id}\n`;
-        output += `**File:** \`${result.filePath}\`\n`;
-        if (result.summary) {
-          output += `**Summary:** ${result.summary}\n`;
-        }
-        output += `**Relevance Score:** ${result.score.toFixed(2)}\n\n`;
+        output += formatSearchResult(result);
       }
 
       output += `---\n*Use the Read tool to view full content of relevant files.*`;

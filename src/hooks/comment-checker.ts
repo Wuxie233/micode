@@ -50,47 +50,48 @@ function analyzeComments(content: string): CommentIssue[] {
   let lastCommentLine = -2;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+    const trimmed = lines[i].trim();
+    const isComment = trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*");
+    if (!isComment) continue;
 
-    // Check for comment lines
-    if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
-      // Skip valid patterns
-      if (VALID_COMMENT_PATTERNS.some((p) => p.test(trimmed))) {
-        continue;
-      }
+    // Skip valid patterns
+    if (isValidComment(trimmed)) continue;
 
-      // Check for excessive patterns
-      for (const pattern of EXCESSIVE_COMMENT_PATTERNS) {
-        if (pattern.test(trimmed)) {
-          issues.push({
-            line: i + 1,
-            comment:
-              trimmed.slice(0, MAX_COMMENT_PREVIEW_LENGTH) + (trimmed.length > MAX_COMMENT_PREVIEW_LENGTH ? "..." : ""),
-            reason: "Explains what, not why",
-          });
-          break;
-        }
-      }
+    checkExcessivePattern(trimmed, i, issues);
 
-      // Track consecutive comments (might indicate over-documentation)
-      if (i === lastCommentLine + 1) {
-        consecutiveComments++;
-        if (consecutiveComments > MAX_CONSECUTIVE_COMMENTS) {
-          issues.push({
-            line: i + 1,
-            comment: trimmed.slice(0, MAX_COMMENT_PREVIEW_LENGTH),
-            reason: "Excessive consecutive comments",
-          });
-        }
-      } else {
-        consecutiveComments = 1;
-      }
-      lastCommentLine = i;
+    const isConsecutive = i === lastCommentLine + 1;
+    consecutiveComments = isConsecutive ? consecutiveComments + 1 : 1;
+
+    if (consecutiveComments > MAX_CONSECUTIVE_COMMENTS) {
+      issues.push({
+        line: i + 1,
+        comment: trimmed.slice(0, MAX_COMMENT_PREVIEW_LENGTH),
+        reason: "Excessive consecutive comments",
+      });
     }
+
+    lastCommentLine = i;
   }
 
   return issues;
+}
+
+function isValidComment(trimmed: string): boolean {
+  return VALID_COMMENT_PATTERNS.some((p) => p.test(trimmed));
+}
+
+function checkExcessivePattern(trimmed: string, lineIndex: number, issues: CommentIssue[]): void {
+  for (const pattern of EXCESSIVE_COMMENT_PATTERNS) {
+    if (!pattern.test(trimmed)) continue;
+
+    issues.push({
+      line: lineIndex + 1,
+      comment:
+        trimmed.slice(0, MAX_COMMENT_PREVIEW_LENGTH) + (trimmed.length > MAX_COMMENT_PREVIEW_LENGTH ? "..." : ""),
+      reason: "Explains what, not why",
+    });
+    break;
+  }
 }
 
 interface CommentCheckerHooks {
@@ -116,12 +117,7 @@ export function createCommentCheckerHook(_ctx: PluginInput): CommentCheckerHooks
       const issues = analyzeComments(newString);
 
       if (issues.length > 0) {
-        const warning = `\n\n⚠️ **Comment Check**: Found ${issues.length} potentially unnecessary comment(s):\n${issues
-          .slice(0, MAX_ISSUES_SHOWN)
-          .map((i) => `- Line ${i.line}: "${i.comment}" (${i.reason})`)
-          .join(
-            "\n",
-          )}${issues.length > MAX_ISSUES_SHOWN ? `\n...and ${issues.length - MAX_ISSUES_SHOWN} more` : ""}\n\nComments should explain WHY, not WHAT. Consider removing obvious comments.`;
+        const warning = formatCommentWarning(issues);
 
         if (output.output) {
           output.output += warning;
@@ -129,4 +125,15 @@ export function createCommentCheckerHook(_ctx: PluginInput): CommentCheckerHooks
       }
     },
   };
+}
+
+function formatCommentWarning(issues: CommentIssue[]): string {
+  const shown = issues
+    .slice(0, MAX_ISSUES_SHOWN)
+    .map((i) => `- Line ${i.line}: "${i.comment}" (${i.reason})`)
+    .join("\n");
+
+  const overflow = issues.length > MAX_ISSUES_SHOWN ? `\n...and ${issues.length - MAX_ISSUES_SHOWN} more` : "";
+
+  return `\n\n\u26a0\ufe0f **Comment Check**: Found ${issues.length} potentially unnecessary comment(s):\n${shown}${overflow}\n\nComments should explain WHY, not WHAT. Consider removing obvious comments.`;
 }

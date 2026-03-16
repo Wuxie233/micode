@@ -27,7 +27,7 @@ interface OpencodeConfig {
  */
 function parseConfigJson(content: string): unknown {
   const errors: ParseError[] = [];
-  const result = parseJsonc(content, errors, { allowTrailingComma: true });
+  const result: unknown = parseJsonc(content, errors, { allowTrailingComma: true });
   if (errors.length > 0) {
     throw new Error(`Invalid JSON/JSONC: ${errors.length} parse error(s)`);
   }
@@ -98,16 +98,22 @@ export function loadAvailableModels(configDir?: string): Set<string> {
   const config = loadOpencodeConfig(configDir);
 
   if (config?.provider) {
-    for (const [providerId, providerConfig] of Object.entries(config.provider)) {
-      if (providerConfig.models) {
-        for (const modelId of Object.keys(providerConfig.models)) {
-          availableModels.add(`${providerId}/${modelId}`);
-        }
-      }
-    }
+    collectProviderModels(config.provider, availableModels);
   }
 
   return availableModels;
+}
+
+function collectProviderModels(
+  provider: Record<string, { models?: Record<string, unknown> }>,
+  target: Set<string>,
+): void {
+  for (const [providerId, providerConfig] of Object.entries(provider)) {
+    if (!providerConfig.models) continue;
+    for (const modelId of Object.keys(providerConfig.models)) {
+      target.add(`${providerId}/${modelId}`);
+    }
+  }
 }
 
 /**
@@ -159,68 +165,71 @@ export async function loadMicodeConfig(configDir?: string): Promise<MicodeConfig
     if (!content) return null;
 
     const parsed = parseConfigJson(content) as Record<string, unknown>;
-
-    const result: MicodeConfig = {};
-
-    // Sanitize agents - only allow safe properties
-    if (parsed.agents && typeof parsed.agents === "object") {
-      const sanitizedAgents: Record<string, AgentOverride> = {};
-
-      for (const [agentName, agentConfig] of Object.entries(parsed.agents)) {
-        if (agentConfig && typeof agentConfig === "object") {
-          const sanitized: AgentOverride = {};
-          const config = agentConfig as Record<string, unknown>;
-
-          for (const prop of SAFE_AGENT_PROPERTIES) {
-            if (prop in config) {
-              (sanitized as Record<string, unknown>)[prop] = config[prop];
-            }
-          }
-
-          sanitizedAgents[agentName] = sanitized;
-        }
-      }
-
-      result.agents = sanitizedAgents;
-    }
-
-    // Parse features
-    if (parsed.features && typeof parsed.features === "object") {
-      const features = parsed.features as Record<string, unknown>;
-      result.features = {
-        mindmodelInjection: features.mindmodelInjection === true,
-      };
-    }
-
-    // Parse compactionThreshold (must be number between 0 and 1)
-    if (typeof parsed.compactionThreshold === "number") {
-      const threshold = parsed.compactionThreshold;
-      if (threshold >= 0 && threshold <= 1) {
-        result.compactionThreshold = threshold;
-      }
-    }
-
-    // Parse fragments
-    if (parsed.fragments && typeof parsed.fragments === "object") {
-      const fragments = parsed.fragments as Record<string, unknown>;
-      const sanitizedFragments: Record<string, string[]> = {};
-
-      for (const [agentName, fragmentList] of Object.entries(fragments)) {
-        if (Array.isArray(fragmentList)) {
-          const validFragments = fragmentList.filter((f): f is string => typeof f === "string" && f.trim().length > 0);
-          if (validFragments.length > 0) {
-            sanitizedFragments[agentName] = validFragments;
-          }
-        }
-      }
-
-      result.fragments = sanitizedFragments;
-    }
-
-    return result;
+    return buildMicodeConfig(parsed);
   } catch {
     return null;
   }
+}
+
+function buildMicodeConfig(parsed: Record<string, unknown>): MicodeConfig {
+  const result: MicodeConfig = {};
+
+  if (parsed.agents && typeof parsed.agents === "object") {
+    result.agents = sanitizeAgents(parsed.agents as Record<string, unknown>);
+  }
+
+  if (parsed.features && typeof parsed.features === "object") {
+    const features = parsed.features as Record<string, unknown>;
+    result.features = { mindmodelInjection: features.mindmodelInjection === true };
+  }
+
+  if (typeof parsed.compactionThreshold === "number") {
+    const threshold = parsed.compactionThreshold;
+    if (threshold >= 0 && threshold <= 1) {
+      result.compactionThreshold = threshold;
+    }
+  }
+
+  if (parsed.fragments && typeof parsed.fragments === "object") {
+    result.fragments = sanitizeFragments(parsed.fragments as Record<string, unknown>);
+  }
+
+  return result;
+}
+
+function sanitizeAgents(agents: Record<string, unknown>): Record<string, AgentOverride> {
+  const sanitized: Record<string, AgentOverride> = {};
+
+  for (const [agentName, agentConfig] of Object.entries(agents)) {
+    if (!agentConfig || typeof agentConfig !== "object") continue;
+    sanitized[agentName] = pickSafeProperties(agentConfig as Record<string, unknown>);
+  }
+
+  return sanitized;
+}
+
+function pickSafeProperties(config: Record<string, unknown>): AgentOverride {
+  const result: AgentOverride = {};
+  for (const prop of SAFE_AGENT_PROPERTIES) {
+    if (prop in config) {
+      (result as Record<string, unknown>)[prop] = config[prop];
+    }
+  }
+  return result;
+}
+
+function sanitizeFragments(fragments: Record<string, unknown>): Record<string, string[]> {
+  const sanitized: Record<string, string[]> = {};
+
+  for (const [agentName, fragmentList] of Object.entries(fragments)) {
+    if (!Array.isArray(fragmentList)) continue;
+    const valid = fragmentList.filter((f): f is string => typeof f === "string" && f.trim().length > 0);
+    if (valid.length > 0) {
+      sanitized[agentName] = valid;
+    }
+  }
+
+  return sanitized;
 }
 
 /**
@@ -241,22 +250,36 @@ export function loadModelContextLimits(configDir?: string): Map<string, number> 
     };
 
     if (config.provider) {
-      for (const [providerId, providerConfig] of Object.entries(config.provider)) {
-        if (providerConfig.models) {
-          for (const [modelId, modelConfig] of Object.entries(providerConfig.models)) {
-            const contextLimit = modelConfig?.limit?.context;
-            if (typeof contextLimit === "number" && contextLimit > 0) {
-              limits.set(`${providerId}/${modelId}`, contextLimit);
-            }
-          }
-        }
-      }
+      collectContextLimits(config.provider, limits);
     }
   } catch {
     // Config doesn't exist or can't be parsed - return empty map
   }
 
   return limits;
+}
+
+function collectContextLimits(
+  provider: Record<string, { models?: Record<string, { limit?: { context?: number } }> }>,
+  limits: Map<string, number>,
+): void {
+  for (const [providerId, providerConfig] of Object.entries(provider)) {
+    if (!providerConfig.models) continue;
+    collectModelsContextLimits(providerId, providerConfig.models, limits);
+  }
+}
+
+function collectModelsContextLimits(
+  providerId: string,
+  models: Record<string, { limit?: { context?: number } }>,
+  limits: Map<string, number>,
+): void {
+  for (const [modelId, modelConfig] of Object.entries(models)) {
+    const contextLimit = modelConfig?.limit?.context;
+    if (typeof contextLimit === "number" && contextLimit > 0) {
+      limits.set(`${providerId}/${modelId}`, contextLimit);
+    }
+  }
 }
 
 /**
@@ -279,7 +302,6 @@ export function mergeAgentConfigs(
   const shouldValidateModels = models.size > 0;
   const opencodeDefaultModel = defaultModel !== undefined ? defaultModel : loadDefaultModel();
 
-  // Helper to validate a model string
   const isValidModel = (model: string): boolean => {
     if (BUILTIN_MODELS.has(model)) return true;
     if (!shouldValidateModels) return true;
@@ -289,41 +311,50 @@ export function mergeAgentConfigs(
   const merged: Record<string, AgentConfig> = {};
 
   for (const [name, agentConfig] of Object.entries(pluginAgents)) {
-    const userOverride = userConfig?.agents?.[name];
-
-    // Start with the base agent config
-    let finalConfig: AgentConfig = { ...agentConfig };
-
-    // Apply opencode default model if available and valid (overrides plugin default)
-    if (opencodeDefaultModel && isValidModel(opencodeDefaultModel)) {
-      finalConfig = { ...finalConfig, model: opencodeDefaultModel };
-    }
-
-    // Apply user overrides from micode.json (highest priority)
-    if (userOverride) {
-      if (userOverride.model) {
-        if (isValidModel(userOverride.model)) {
-          // Model is valid - apply all overrides including model
-          finalConfig = { ...finalConfig, ...userOverride };
-        } else {
-          // Model is invalid - log warning and apply other overrides only
-          const fallbackModel = finalConfig.model || "DEFAULT_MODEL";
-          console.warn(
-            `[micode] Model "${userOverride.model}" for agent "${name}" is not available. Using ${fallbackModel}.`,
-          );
-          const { model: _ignored, ...safeOverrides } = userOverride;
-          finalConfig = { ...finalConfig, ...safeOverrides };
-        }
-      } else {
-        // No model in override - apply other overrides (keep resolved model)
-        finalConfig = { ...finalConfig, ...userOverride };
-      }
-    }
-
-    merged[name] = finalConfig;
+    merged[name] = mergeOneAgent(agentConfig, userConfig?.agents?.[name], name, opencodeDefaultModel, isValidModel);
   }
 
   return merged;
+}
+
+function mergeOneAgent(
+  agentConfig: AgentConfig,
+  userOverride: AgentOverride | undefined,
+  name: string,
+  opencodeDefaultModel: string | null,
+  isValidModel: (model: string) => boolean,
+): AgentConfig {
+  let finalConfig: AgentConfig = { ...agentConfig };
+
+  // Apply opencode default model if available and valid (overrides plugin default)
+  if (opencodeDefaultModel && isValidModel(opencodeDefaultModel)) {
+    finalConfig = { ...finalConfig, model: opencodeDefaultModel };
+  }
+
+  if (!userOverride) return finalConfig;
+
+  return applyUserOverride(finalConfig, userOverride, name, isValidModel);
+}
+
+function applyUserOverride(
+  config: AgentConfig,
+  override: AgentOverride,
+  name: string,
+  isValidModel: (model: string) => boolean,
+): AgentConfig {
+  if (!override.model) {
+    return { ...config, ...override };
+  }
+
+  if (isValidModel(override.model)) {
+    return { ...config, ...override };
+  }
+
+  // Model is invalid - log warning and apply other overrides only
+  const fallbackModel = config.model || "DEFAULT_MODEL";
+  console.warn(`[micode] Model "${override.model}" for agent "${name}" is not available. Using ${fallbackModel}.`);
+  const { model: _ignored, ...safeOverrides } = override;
+  return { ...config, ...safeOverrides };
 }
 
 /**
@@ -331,65 +362,57 @@ export function mergeAgentConfigs(
  * Removes invalid model overrides and logs warnings
  */
 export function validateAgentModels(userConfig: MicodeConfig, providers: ProviderInfo[]): MicodeConfig {
-  if (!userConfig.agents) {
-    return userConfig;
-  }
+  if (!userConfig.agents) return userConfig;
 
   const hasAnyModels = providers.some((provider) => Object.keys(provider.models).length > 0);
-  if (!hasAnyModels) {
-    return userConfig;
+  if (!hasAnyModels) return userConfig;
+
+  const providerMap = buildProviderMap(providers);
+  const validatedAgents: Record<string, AgentOverride> = {};
+
+  for (const [agentName, override] of Object.entries(userConfig.agents)) {
+    const validated = validateOneAgent(agentName, override, providerMap);
+    if (validated) validatedAgents[agentName] = validated;
   }
 
-  // Build lookup map for providers and their models
+  return { agents: validatedAgents };
+}
+
+function buildProviderMap(providers: ProviderInfo[]): Map<string, Set<string>> {
   const providerMap = new Map<string, Set<string>>();
   for (const provider of providers) {
     providerMap.set(provider.id, new Set(Object.keys(provider.models)));
   }
+  return providerMap;
+}
 
-  const validatedAgents: Record<string, AgentOverride> = {};
+function validateOneAgent(
+  agentName: string,
+  override: AgentOverride,
+  providerMap: Map<string, Set<string>>,
+): AgentOverride | null {
+  if (override.model === undefined) return override;
 
-  for (const [agentName, override] of Object.entries(userConfig.agents)) {
-    // No model specified - keep other properties as-is
-    if (override.model === undefined) {
-      validatedAgents[agentName] = override;
-      continue;
-    }
-
-    // Empty or whitespace-only model - treat as invalid
-    const trimmedModel = override.model.trim();
-    if (!trimmedModel) {
-      const { model: _removed, ...otherProps } = override;
-      console.warn(`[micode] Empty model for agent "${agentName}". Using default model.`);
-      if (Object.keys(otherProps).length > 0) {
-        validatedAgents[agentName] = otherProps;
-      }
-      continue;
-    }
-
-    // Skip validation for built-in models
-    if (BUILTIN_MODELS.has(trimmedModel)) {
-      validatedAgents[agentName] = override;
-      continue;
-    }
-
-    // Parse "provider/model" format
-    const [providerID, ...rest] = trimmedModel.split("/");
-    const modelID = rest.join("/");
-
-    const providerModels = providerMap.get(providerID);
-    const isValid = providerModels?.has(modelID) ?? false;
-
-    if (isValid) {
-      validatedAgents[agentName] = override;
-    } else {
-      // Remove invalid model but keep other properties
-      const { model: _removed, ...otherProps } = override;
-      console.warn(`[micode] Model "${override.model}" not found for agent "${agentName}". Using default model.`);
-      if (Object.keys(otherProps).length > 0) {
-        validatedAgents[agentName] = otherProps;
-      }
-    }
+  const trimmedModel = override.model.trim();
+  if (!trimmedModel) {
+    console.warn(`[micode] Empty model for agent "${agentName}". Using default model.`);
+    return stripModel(override);
   }
 
-  return { agents: validatedAgents };
+  if (BUILTIN_MODELS.has(trimmedModel)) return override;
+
+  const [providerID, ...rest] = trimmedModel.split("/");
+  const modelID = rest.join("/");
+  const providerModels = providerMap.get(providerID);
+  const isValid = providerModels?.has(modelID) ?? false;
+
+  if (isValid) return override;
+
+  console.warn(`[micode] Model "${override.model}" not found for agent "${agentName}". Using default model.`);
+  return stripModel(override);
+}
+
+function stripModel(override: AgentOverride): AgentOverride | null {
+  const { model: _removed, ...otherProps } = override;
+  return Object.keys(otherProps).length > 0 ? otherProps : null;
 }
