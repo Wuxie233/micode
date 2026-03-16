@@ -90,7 +90,9 @@ export function createSpawnAgentTool(ctx: PluginInput) {
           path: { id: sessionID },
           query: { directory: ctx.directory },
         })
-        .catch(() => {});
+        .catch((_e) => {
+          /* fire-and-forget */
+        });
 
       const agentTime = ((Date.now() - agentStartTime) / 1000).toFixed(1);
       return `## ${description} (${agentTime}s)\n\n**Agent**: ${agent}\n\n### Result\n\n${result}`;

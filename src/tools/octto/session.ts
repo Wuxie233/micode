@@ -1,7 +1,7 @@
 // src/tools/octto/session.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { SessionStore } from "../../octto/session";
+import type { SessionStore } from "@/octto/session";
 import type { OcttoSessionTracker, OcttoTools } from "./types";
 
 export function createSessionTools(sessions: SessionStore, tracker?: OcttoSessionTracker): OcttoTools {

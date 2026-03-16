@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "../mindmodel";
-import { matchCategories } from "../tools/mindmodel-lookup";
-import { config } from "../utils/config";
+import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "@/mindmodel";
+import { matchCategories } from "@/tools/mindmodel-lookup";
+import { config } from "@/utils/config";
 
 interface MessagePart {
   type: string;

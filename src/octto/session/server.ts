@@ -1,8 +1,7 @@
 // src/octto/session/server.ts
 import type { Server, ServerWebSocket } from "bun";
-
-import { config } from "../../utils/config";
-import { getHtmlBundle } from "../ui";
+import { getHtmlBundle } from "@/octto/ui";
+import { config } from "@/utils/config";
 import type { SessionStore } from "./sessions";
 import type { WsClientMessage } from "./types";
 

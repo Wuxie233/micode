@@ -1,8 +1,8 @@
 // src/tools/octto/questions.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { SessionStore } from "../../octto/session";
-import type { ConfirmConfig, PickManyConfig, PickOneConfig, RankConfig, RateConfig } from "../../octto/types";
+import type { SessionStore } from "@/octto/session";
+import type { ConfirmConfig, PickManyConfig, PickOneConfig, RankConfig, RateConfig } from "@/octto/types";
 import { createQuestionToolFactory } from "./factory";
 import type { OcttoTools } from "./types";
 

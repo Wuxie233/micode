@@ -16,8 +16,8 @@ import type {
   ShowOptionsAnswer,
   SliderAnswer,
   ThumbsAnswer,
-} from "../../octto/session";
-import { QUESTIONS } from "../../octto/session";
+} from "@/octto/session";
+import { QUESTIONS } from "@/octto/session";
 
 const MAX_TEXT_LENGTH = 100;
 

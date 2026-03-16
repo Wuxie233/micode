@@ -1,7 +1,7 @@
 // src/octto/state/store.ts
 
-import { STATE_DIR } from "../constants";
-import type { Answer } from "../session";
+import { STATE_DIR } from "@/octto/constants";
+import type { Answer } from "@/octto/session";
 import { createStatePersistence } from "./persistence";
 import {
   BRANCH_STATUSES,

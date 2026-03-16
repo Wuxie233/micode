@@ -45,6 +45,17 @@ export default [
       // PTY code intentionally uses control characters (e.g. \x03 for SIGINT)
       "no-control-regex": "off",
 
+      // --- Empty blocks and class prohibition ---
+      "no-empty": ["error", { allowEmptyCatch: false }],
+      // WARN: 5 classes (LRUCache x2, RingBuffer, ArtifactIndex, PTYManager) need refactoring
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "ClassDeclaration:not([superClass.name='Error'])",
+          message: "No classes for business logic. Use factory functions with closed-over state.",
+        },
+      ],
+
       // --- Structural limits ---
       "max-depth": ["warn", 2],
       "max-lines-per-function": ["warn", { max: 40, skipBlankLines: true, skipComments: true }],

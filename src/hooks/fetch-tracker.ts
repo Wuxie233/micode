@@ -1,8 +1,8 @@
 // src/hooks/fetch-tracker.ts
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { config } from "../utils/config";
-import { log } from "../utils/logger";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 
 // --- Tracked tools ---
 

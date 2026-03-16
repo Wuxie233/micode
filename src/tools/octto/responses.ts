@@ -1,7 +1,7 @@
 // src/tools/octto/responses.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import { type SessionStore, STATUSES } from "../../octto/session";
+import { type SessionStore, STATUSES } from "@/octto/session";
 
 import type { OcttoTools } from "./types";
 

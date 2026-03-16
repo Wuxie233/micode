@@ -8,9 +8,9 @@ import {
   loadMindmodel,
   parseReviewResponse,
   type ReviewResult,
-} from "../mindmodel";
-import { config } from "../utils/config";
-import { log } from "../utils/logger";
+} from "@/mindmodel";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 
 type ReviewFn = (prompt: string) => Promise<string>;
 

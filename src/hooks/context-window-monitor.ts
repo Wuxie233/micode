@@ -1,7 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { config } from "../utils/config";
-import { getContextLimit } from "../utils/model-limits";
+import { config } from "@/utils/config";
+import { getContextLimit } from "@/utils/model-limits";
 
 export interface ContextWindowMonitorConfig {
   /** Model context limits loaded from opencode.json */
@@ -100,7 +100,9 @@ export function createContextWindowMonitorHook(ctx: PluginInput, hookConfig?: Co
                   duration: config.timeouts.toastWarningMs,
                 },
               })
-              .catch(() => {});
+              .catch((_e) => {
+                /* fire-and-forget */
+              });
           }
         }
       }

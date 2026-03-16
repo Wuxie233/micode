@@ -2,7 +2,7 @@
 
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { BaseConfig, QuestionType, SessionStore } from "../../octto/session";
+import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
 import type { OcttoTool, OcttoTools } from "./types";
 
 type ArgsSchema = Parameters<typeof tool>[0]["args"];

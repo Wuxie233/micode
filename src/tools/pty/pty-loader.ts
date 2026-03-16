@@ -13,7 +13,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { log } from "../../utils/logger";
+import { log } from "@/utils/logger";
 
 type BunPtyModule = typeof import("bun-pty");
 

@@ -1,5 +1,5 @@
 import type { PluginInput } from "@opencode-ai/plugin";
-import { config } from "../utils/config";
+import { config } from "@/utils/config";
 
 // Tools that benefit from truncation
 const TRUNCATABLE_TOOLS = ["grep", "Grep", "glob", "Glob", "ast_grep_search"];

@@ -3,9 +3,9 @@ import { join } from "node:path";
 
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { config } from "../utils/config";
-import { extractErrorMessage } from "../utils/errors";
-import { getContextLimit } from "../utils/model-limits";
+import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
+import { getContextLimit } from "@/utils/model-limits";
 
 export interface AutoCompactConfig {
   /** Compaction threshold (0-1), defaults to config.compaction.threshold */
@@ -134,7 +134,9 @@ ${summaryText}
             duration: config.timeouts.toastWarningMs,
           },
         })
-        .catch(() => {});
+        .catch((_e) => {
+          /* fire-and-forget */
+        });
 
       // Set up listener BEFORE calling summarize to avoid race condition
       // (summary message event could fire before we start listening)
@@ -164,7 +166,9 @@ ${summaryText}
             duration: config.timeouts.toastSuccessMs,
           },
         })
-        .catch(() => {});
+        .catch((_e) => {
+          /* fire-and-forget */
+        });
 
       // Auto-continue after compaction - prompt the agent to resume work
       await ctx.client.session
@@ -181,7 +185,7 @@ ${summaryText}
           },
           query: { directory: ctx.directory },
         })
-        .catch(() => {
+        .catch((_e) => {
           // If auto-continue fails, user can manually prompt
         });
     } catch (e) {
@@ -195,7 +199,9 @@ ${summaryText}
             duration: config.timeouts.toastErrorMs,
           },
         })
-        .catch(() => {});
+        .catch((_e) => {
+          /* fire-and-forget */
+        });
     } finally {
       state.inProgress.delete(sessionID);
     }

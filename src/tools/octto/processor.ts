@@ -1,8 +1,8 @@
 // src/tools/octto/processor.ts
 
-import type { Answer, QuestionType, SessionStore } from "../../octto/session";
-import { BRANCH_STATUSES, type BrainstormState, type StateStore } from "../../octto/state";
-import { log } from "../../utils/logger";
+import type { Answer, QuestionType, SessionStore } from "@/octto/session";
+import { BRANCH_STATUSES, type BrainstormState, type StateStore } from "@/octto/state";
+import { log } from "@/utils/logger";
 
 import type { OpencodeClient } from "./types";
 
@@ -89,7 +89,9 @@ async function runProbeAgent(client: OpencodeClient, state: BrainstormState, bra
 
     return JSON.parse(jsonMatch[0]) as ProbeResult;
   } finally {
-    await client.session.delete({ path: { id: probeSessionId } }).catch(() => {});
+    await client.session.delete({ path: { id: probeSessionId } }).catch((_e) => {
+      /* fire-and-forget */
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 // src/tools/pty/tools/list.ts
 import { tool } from "@opencode-ai/plugin/tool";
-import type { PTYManager } from "../manager";
+import type { PTYManager } from "@/tools/pty/manager";
 
 const DESCRIPTION = `Lists all PTY sessions (active and exited).
 
