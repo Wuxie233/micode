@@ -37,7 +37,7 @@ export async function loadMindmodel(projectDir: string): Promise<LoadedMindmodel
       manifest,
     };
   } catch (error) {
-    log.warn("mindmodel", `Failed to load manifest: ${error}`);
+    log.warn("mindmodel", `Failed to load manifest: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }

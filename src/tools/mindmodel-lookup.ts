@@ -28,11 +28,9 @@ export function matchCategories(query: string, manifest: LoadedMindmodel["manife
 
     // Check if any keyword matches
     const keywords = [...pathParts, ...descLower.split(/\s+/)];
-    for (const keyword of keywords) {
-      if (keyword.length > 2 && queryLower.includes(keyword)) {
-        matched.push(category.path);
-        break;
-      }
+    const hasMatch = keywords.some((keyword) => keyword.length > 2 && queryLower.includes(keyword));
+    if (hasMatch) {
+      matched.push(category.path);
     }
   }
 

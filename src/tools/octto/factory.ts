@@ -40,32 +40,46 @@ Returns immediately with question_id. Use get_answer to retrieve response.`,
   };
 }
 
+const QUESTION_TYPE_ENUM = [
+  "pick_one",
+  "pick_many",
+  "confirm",
+  "ask_text",
+  "ask_image",
+  "ask_file",
+  "ask_code",
+  "show_diff",
+  "show_plan",
+  "show_options",
+  "review_section",
+  "thumbs",
+  "slider",
+  "rank",
+  "rate",
+  "emoji_react",
+] as const;
+
+function executePushQuestion(
+  sessions: SessionStore,
+  args: { session_id: string; type: QuestionType; config: BaseConfig },
+): string {
+  try {
+    const result = sessions.pushQuestion(args.session_id, args.type, args.config);
+    return `Question pushed: ${result.question_id}
+Type: ${args.type}
+Use get_next_answer(session_id, block=true) to wait for the user's response.`;
+  } catch (error) {
+    return `Failed to push question: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 export function createPushQuestionTool(sessions: SessionStore): OcttoTools {
   const push_question = tool({
     description: `Push a question to the session queue. This is the generic tool for adding any question type.
 The question will appear in the browser for the user to answer.`,
     args: {
       session_id: tool.schema.string().describe("Session ID from start_session"),
-      type: tool.schema
-        .enum([
-          "pick_one",
-          "pick_many",
-          "confirm",
-          "ask_text",
-          "ask_image",
-          "ask_file",
-          "ask_code",
-          "show_diff",
-          "show_plan",
-          "show_options",
-          "review_section",
-          "thumbs",
-          "slider",
-          "rank",
-          "rate",
-          "emoji_react",
-        ])
-        .describe("Question type"),
+      type: tool.schema.enum(QUESTION_TYPE_ENUM).describe("Question type"),
       config: tool.schema
         .looseObject({
           question: tool.schema.string().optional(),
@@ -73,16 +87,7 @@ The question will appear in the browser for the user to answer.`,
         })
         .describe("Question configuration (varies by type)"),
     },
-    execute: async (args) => {
-      try {
-        const result = sessions.pushQuestion(args.session_id, args.type, args.config);
-        return `Question pushed: ${result.question_id}
-Type: ${args.type}
-Use get_next_answer(session_id, block=true) to wait for the user's response.`;
-      } catch (error) {
-        return `Failed to push question: ${error instanceof Error ? error.message : String(error)}`;
-      }
-    },
+    execute: async (args) => executePushQuestion(sessions, args),
   });
 
   return { push_question };

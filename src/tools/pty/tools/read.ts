@@ -2,6 +2,7 @@
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 import type { PTYManager } from "@/tools/pty/manager";
+import type { PTYSessionInfo, ReadResult, SearchResult } from "@/tools/pty/types";
 
 const DESCRIPTION = `Reads output from a PTY session's buffer.
 
@@ -46,6 +47,79 @@ const DEFAULT_LIMIT = 500;
 const MAX_LINE_LENGTH = 2000;
 const LINE_NUMBER_PAD_WIDTH = 5;
 
+function truncateLine(text: string): string {
+  return text.length > MAX_LINE_LENGTH ? `${text.slice(0, MAX_LINE_LENGTH)}...` : text;
+}
+
+function formatLineNumber(num: number): string {
+  return num.toString().padStart(LINE_NUMBER_PAD_WIDTH, "0");
+}
+
+function parseRegex(pattern: string, ignoreCase: boolean): RegExp {
+  try {
+    return new RegExp(pattern, ignoreCase ? "i" : "");
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    throw new Error(`Invalid regex pattern '${pattern}': ${error}`, { cause: e });
+  }
+}
+
+function formatSearchOutput(
+  id: string,
+  session: PTYSessionInfo,
+  pattern: string,
+  result: SearchResult,
+  offset: number,
+): string {
+  if (result.matches.length === 0) {
+    return [
+      `<pty_output id="${id}" status="${session.status}" pattern="${pattern}">`,
+      `No lines matched the pattern '${pattern}'.`,
+      `Total lines in buffer: ${result.totalLines}`,
+      `</pty_output>`,
+    ].join("\n");
+  }
+
+  const formattedLines = result.matches.map(
+    (match) => `${formatLineNumber(match.lineNumber)}| ${truncateLine(match.text)}`,
+  );
+
+  const output = [`<pty_output id="${id}" status="${session.status}" pattern="${pattern}">`, ...formattedLines, ""];
+
+  const paginationNote = result.hasMore
+    ? `(${result.matches.length} of ${result.totalMatches} matches shown. Use offset=${offset + result.matches.length} to see more.)`
+    : `(${result.totalMatches} match${result.totalMatches === 1 ? "" : "es"} from ${result.totalLines} total lines)`;
+  output.push(paginationNote);
+  output.push(`</pty_output>`);
+
+  return output.join("\n");
+}
+
+function formatReadOutput(id: string, session: PTYSessionInfo, result: ReadResult): string {
+  if (result.lines.length === 0) {
+    return [
+      `<pty_output id="${id}" status="${session.status}">`,
+      `(No output available - buffer is empty)`,
+      `Total lines: ${result.totalLines}`,
+      `</pty_output>`,
+    ].join("\n");
+  }
+
+  const formattedLines = result.lines.map(
+    (line, index) => `${formatLineNumber(result.offset + index + 1)}| ${truncateLine(line)}`,
+  );
+
+  const output = [`<pty_output id="${id}" status="${session.status}">`, ...formattedLines, ""];
+
+  const paginationNote = result.hasMore
+    ? `(Buffer has more lines. Use offset=${result.offset + result.lines.length} to read beyond line ${result.offset + result.lines.length})`
+    : `(End of buffer - total ${result.totalLines} lines)`;
+  output.push(paginationNote);
+  output.push(`</pty_output>`);
+
+  return output.join("\n");
+}
+
 export function createPtyReadTool(manager: PTYManager): ToolDefinition {
   return tool({
     description: DESCRIPTION,
@@ -66,89 +140,19 @@ export function createPtyReadTool(manager: PTYManager): ToolDefinition {
       const limit = args.limit ?? DEFAULT_LIMIT;
 
       if (args.pattern) {
-        let regex: RegExp;
-        try {
-          regex = new RegExp(args.pattern, args.ignoreCase ? "i" : "");
-        } catch (e) {
-          const error = e instanceof Error ? e.message : String(e);
-          throw new Error(`Invalid regex pattern '${args.pattern}': ${error}`, { cause: e });
-        }
-
+        const regex = parseRegex(args.pattern, args.ignoreCase ?? false);
         const result = manager.search(args.id, regex, offset, limit);
         if (!result) {
           throw new Error(`PTY session '${args.id}' not found.`);
         }
-
-        if (result.matches.length === 0) {
-          return [
-            `<pty_output id="${args.id}" status="${session.status}" pattern="${args.pattern}">`,
-            `No lines matched the pattern '${args.pattern}'.`,
-            `Total lines in buffer: ${result.totalLines}`,
-            `</pty_output>`,
-          ].join("\n");
-        }
-
-        const formattedLines = result.matches.map((match) => {
-          const lineNum = match.lineNumber.toString().padStart(LINE_NUMBER_PAD_WIDTH, "0");
-          const truncatedLine =
-            match.text.length > MAX_LINE_LENGTH ? `${match.text.slice(0, MAX_LINE_LENGTH)}...` : match.text;
-          return `${lineNum}| ${truncatedLine}`;
-        });
-
-        const output = [
-          `<pty_output id="${args.id}" status="${session.status}" pattern="${args.pattern}">`,
-          ...formattedLines,
-          "",
-        ];
-
-        if (result.hasMore) {
-          output.push(
-            `(${result.matches.length} of ${result.totalMatches} matches shown. Use offset=${offset + result.matches.length} to see more.)`,
-          );
-        } else {
-          output.push(
-            `(${result.totalMatches} match${result.totalMatches === 1 ? "" : "es"} from ${result.totalLines} total lines)`,
-          );
-        }
-        output.push(`</pty_output>`);
-
-        return output.join("\n");
+        return formatSearchOutput(args.id, session, args.pattern, result, offset);
       }
 
       const result = manager.read(args.id, offset, limit);
       if (!result) {
         throw new Error(`PTY session '${args.id}' not found.`);
       }
-
-      if (result.lines.length === 0) {
-        return [
-          `<pty_output id="${args.id}" status="${session.status}">`,
-          `(No output available - buffer is empty)`,
-          `Total lines: ${result.totalLines}`,
-          `</pty_output>`,
-        ].join("\n");
-      }
-
-      const formattedLines = result.lines.map((line, index) => {
-        const lineNum = (result.offset + index + 1).toString().padStart(LINE_NUMBER_PAD_WIDTH, "0");
-        const truncatedLine = line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line;
-        return `${lineNum}| ${truncatedLine}`;
-      });
-
-      const output = [`<pty_output id="${args.id}" status="${session.status}">`, ...formattedLines];
-
-      if (result.hasMore) {
-        output.push("");
-        output.push(
-          `(Buffer has more lines. Use offset=${result.offset + result.lines.length} to read beyond line ${result.offset + result.lines.length})`,
-        );
-      } else {
-        output.push("");
-        output.push(`(End of buffer - total ${result.totalLines} lines)`);
-      }
-      output.push(`</pty_output>`);
-
-      return output.join("\n");
+      return formatReadOutput(args.id, session, result);
     },
   });
 }

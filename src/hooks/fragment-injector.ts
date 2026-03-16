@@ -7,6 +7,27 @@ import type { PluginInput } from "@opencode-ai/plugin";
 import type { MicodeConfig } from "@/config-loader";
 
 /**
+ * Extract valid string fragments from an unknown value
+ */
+function extractValidFragments(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const valid = value.filter((f): f is string => typeof f === "string" && f.trim().length > 0);
+  return valid.length > 0 ? valid : null;
+}
+
+/**
+ * Parse a raw fragments object into validated Record<string, string[]>
+ */
+function parseFragments(parsed: Record<string, unknown>): Record<string, string[]> {
+  const fragments: Record<string, string[]> = {};
+  for (const [agentName, fragmentList] of Object.entries(parsed)) {
+    const valid = extractValidFragments(fragmentList);
+    if (valid) fragments[agentName] = valid;
+  }
+  return fragments;
+}
+
+/**
  * Load project-level fragments from .micode/fragments.json
  * Returns empty object if file doesn't exist or is invalid
  */
@@ -16,19 +37,7 @@ export async function loadProjectFragments(projectDir: string): Promise<Record<s
   try {
     const content = await readFile(fragmentsPath, "utf-8");
     const parsed = JSON.parse(content) as Record<string, unknown>;
-
-    const fragments: Record<string, string[]> = {};
-
-    for (const [agentName, fragmentList] of Object.entries(parsed)) {
-      if (Array.isArray(fragmentList)) {
-        const validFragments = fragmentList.filter((f): f is string => typeof f === "string" && f.trim().length > 0);
-        if (validFragments.length > 0) {
-          fragments[agentName] = validFragments;
-        }
-      }
-    }
-
-    return fragments;
+    return parseFragments(parsed);
   } catch {
     return {};
   }
@@ -71,30 +80,40 @@ export function formatFragmentsBlock(fragments: string[]): string {
 }
 
 /**
+ * Initialize Levenshtein distance matrix
+ */
+function initLevenshteinMatrix(aLen: number, bLen: number): number[][] {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= bLen; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= aLen; j++) {
+    matrix[0][j] = j;
+  }
+  return matrix;
+}
+
+/**
+ * Fill a single row of the Levenshtein matrix
+ */
+function fillLevenshteinRow(matrix: number[][], a: string, bChar: string, i: number): void {
+  for (let j = 1; j <= a.length; j++) {
+    const cost = bChar === a.charAt(j - 1) ? 0 : 1;
+    matrix[i][j] =
+      cost === 0
+        ? matrix[i - 1][j - 1]
+        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+  }
+}
+
+/**
  * Simple Levenshtein distance for typo detection
  */
 function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
-
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
+  const matrix = initLevenshteinMatrix(a.length, b.length);
 
   for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1, // substitution
-          matrix[i][j - 1] + 1, // insertion
-          matrix[i - 1][j] + 1, // deletion
-        );
-      }
-    }
+    fillLevenshteinRow(matrix, a, b.charAt(i - 1), i);
   }
 
   return matrix[b.length][a.length];
@@ -126,14 +145,11 @@ export function warnUnknownAgents(fragmentAgents: string[], knownAgents: Set<str
   const warnings: string[] = [];
 
   for (const agent of fragmentAgents) {
-    if (!knownAgents.has(agent)) {
-      const closest = findClosestAgent(agent, knownAgents);
-      if (closest) {
-        warnings.push(`[micode] Unknown agent "${agent}" in fragments config. Did you mean "${closest}"?`);
-      } else {
-        warnings.push(`[micode] Unknown agent "${agent}" in fragments config.`);
-      }
-    }
+    if (knownAgents.has(agent)) continue;
+
+    const closest = findClosestAgent(agent, knownAgents);
+    const suffix = closest ? ` Did you mean "${closest}"?` : "";
+    warnings.push(`[micode] Unknown agent "${agent}" in fragments config.${suffix}`);
   }
 
   return warnings;

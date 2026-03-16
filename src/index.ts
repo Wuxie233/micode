@@ -28,8 +28,7 @@ import { look_at } from "./tools/look-at";
 import { milestone_artifact_search } from "./tools/milestone-artifact-search";
 import { createMindmodelLookupTool } from "./tools/mindmodel-lookup";
 import { createOcttoTools, createSessionStore } from "./tools/octto";
-// PTY System
-import { createPtyTools, loadBunPty, PTYManager } from "./tools/pty";
+import { createPTYManager, createPtyTools, loadBunPty } from "./tools/pty";
 import { createSpawnAgentTool } from "./tools/spawn-agent";
 import { log } from "./utils/logger";
 
@@ -68,6 +67,7 @@ if (process.env.FIRECRAWL_API_KEY) {
   };
 }
 
+// eslint-disable-next-line max-lines-per-function
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Validate external tool dependencies at startup
   const astGrepStatus = await checkAstGrepAvailable();
@@ -181,7 +181,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // PTY System - load bun-pty with graceful degradation
   // Sets BUN_PTY_LIB env var to fix path resolution in OpenCode plugin environments
   // See: https://github.com/vtemian/micode/issues/20
-  const ptyManager = new PTYManager();
+  const ptyManager = createPTYManager();
   const bunPty = await loadBunPty();
   if (bunPty) {
     ptyManager.init(bunPty.spawn);

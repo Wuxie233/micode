@@ -20,11 +20,12 @@ export function parseReviewResponse(response: string): ReviewResult {
   const jsonStr = jsonMatch ? jsonMatch[1].trim() : response.trim();
 
   try {
-    const parsed = JSON.parse(jsonStr);
+    const parsed: unknown = JSON.parse(jsonStr);
+    const record = parsed as Record<string, unknown> | null;
     return {
-      status: parsed.status === "PASS" ? "PASS" : "BLOCKED",
-      violations: parsed.violations || [],
-      summary: parsed.summary || "",
+      status: record?.status === "PASS" ? "PASS" : "BLOCKED",
+      violations: (Array.isArray(record?.violations) ? record.violations : []) as Violation[],
+      summary: typeof record?.summary === "string" ? record.summary : "",
     };
   } catch {
     // If JSON parsing fails, assume PASS to avoid false blocks

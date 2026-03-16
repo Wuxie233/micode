@@ -3,10 +3,10 @@ import { tool } from "@opencode-ai/plugin/tool";
 
 import { type SessionStore, STATUSES } from "@/octto/session";
 
-import type { OcttoTools } from "./types";
+import type { OcttoTool, OcttoTools } from "./types";
 
-export function createResponseTools(sessions: SessionStore): OcttoTools {
-  const get_answer = tool({
+function buildGetAnswerTool(sessions: SessionStore): OcttoTool {
+  return tool({
     description: `Get the answer to a SPECIFIC question.
 By default returns immediately with current status.
 Set block=true to wait for user response (with optional timeout).
@@ -27,26 +27,18 @@ NOTE: Prefer get_next_answer for better flow - it returns whichever question use
       });
 
       if (result.completed) {
-        return `## Answer Received
-
-**Status:** ${result.status}
-
-**Response:**
-\`\`\`json
-${JSON.stringify(result.response, null, 2)}
-\`\`\``;
+        return `## Answer Received\n\n**Status:** ${result.status}\n\n**Response:**\n\`\`\`json\n${JSON.stringify(result.response, null, 2)}\n\`\`\``;
       }
 
-      return `## Waiting for Answer
-
-**Status:** ${result.status}
-**Reason:** ${result.reason}
-
-${result.status === STATUSES.PENDING ? "User has not answered yet. Call again with block=true to wait." : ""}`;
+      const hint =
+        result.status === STATUSES.PENDING ? "User has not answered yet. Call again with block=true to wait." : "";
+      return `## Waiting for Answer\n\n**Status:** ${result.status}\n**Reason:** ${result.reason}\n\n${hint}`;
     },
   });
+}
 
-  const get_next_answer = tool({
+function buildGetNextAnswerTool(sessions: SessionStore): OcttoTool {
+  return tool({
     description: `Wait for ANY question to be answered. Returns whichever question the user answers first.
 This is the PREFERRED way to get answers - lets user answer in any order.
 Push multiple questions, then call this repeatedly to get answers as they come.`,
@@ -66,57 +58,41 @@ Push multiple questions, then call this repeatedly to get answers as they come.`
       });
 
       if (result.completed) {
-        return `## Answer Received
-
-**Question ID:** ${result.question_id}
-**Question Type:** ${result.question_type}
-**Status:** ${result.status}
-
-**Response:**
-\`\`\`json
-${JSON.stringify(result.response, null, 2)}
-\`\`\``;
+        return `## Answer Received\n\n**Question ID:** ${result.question_id}\n**Question Type:** ${result.question_type}\n**Status:** ${result.status}\n\n**Response:**\n\`\`\`json\n${JSON.stringify(result.response, null, 2)}\n\`\`\``;
       }
 
       if (result.status === STATUSES.NONE_PENDING) {
-        return `## No Pending Questions
-
-All questions have been answered or there are no questions in the queue.
-Push more questions or end the session.`;
+        return "## No Pending Questions\n\nAll questions have been answered or there are no questions in the queue.\nPush more questions or end the session.";
       }
 
-      return `## Waiting for Answer
-
-**Status:** ${result.status}
-${result.reason === STATUSES.TIMEOUT ? "Timed out waiting for response." : "No answer yet."}`;
+      const reason = result.reason === STATUSES.TIMEOUT ? "Timed out waiting for response." : "No answer yet.";
+      return `## Waiting for Answer\n\n**Status:** ${result.status}\n${reason}`;
     },
   });
+}
 
-  const list_questions = tool({
+function buildListQuestionsTool(sessions: SessionStore): OcttoTool {
+  return tool({
     description: `List all questions and their status for a session.`,
     args: {
       session_id: tool.schema.string().optional().describe("Session ID (omit for all sessions)"),
     },
     execute: async (args) => {
       const result = sessions.listQuestions(args.session_id);
+      if (result.questions.length === 0) return "No questions found.";
 
-      if (result.questions.length === 0) {
-        return "No questions found.";
-      }
-
-      let output = "## Questions\n\n";
-      output += "| ID | Type | Status | Created | Answered |\n";
-      output += "|----|------|--------|---------|----------|\n";
-
+      let output =
+        "## Questions\n\n| ID | Type | Status | Created | Answered |\n|----|------|--------|---------|----------|\n";
       for (const q of result.questions) {
         output += `| ${q.id} | ${q.type} | ${q.status} | ${q.createdAt} | ${q.answeredAt || "-"} |\n`;
       }
-
       return output;
     },
   });
+}
 
-  const cancel_question = tool({
+function buildCancelQuestionTool(sessions: SessionStore): OcttoTool {
+  return tool({
     description: `Cancel a pending question.
 The question will be removed from the user's queue.`,
     args: {
@@ -124,12 +100,17 @@ The question will be removed from the user's queue.`,
     },
     execute: async (args) => {
       const result = sessions.cancelQuestion(args.question_id);
-      if (result.ok) {
-        return `Question ${args.question_id} cancelled.`;
-      }
+      if (result.ok) return `Question ${args.question_id} cancelled.`;
       return `Could not cancel question ${args.question_id}. It may already be answered or not exist.`;
     },
   });
+}
 
-  return { get_answer, get_next_answer, list_questions, cancel_question };
+export function createResponseTools(sessions: SessionStore): OcttoTools {
+  return {
+    get_answer: buildGetAnswerTool(sessions),
+    get_next_answer: buildGetNextAnswerTool(sessions),
+    list_questions: buildListQuestionsTool(sessions),
+    cancel_question: buildCancelQuestionTool(sessions),
+  };
 }

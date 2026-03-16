@@ -18,29 +18,35 @@ interface ProbeResult {
   };
 }
 
-function formatBranchContext(state: BrainstormState, branchId: string): string {
+function formatBranchQuestions(questions: { type: string; text: string; answer?: unknown }[]): string[] {
   const lines: string[] = [];
+  for (const q of questions) {
+    lines.push(`  <question type="${q.type}">${q.text}</question>`);
+    if (q.answer) {
+      lines.push(`  <answer>${JSON.stringify(q.answer)}</answer>`);
+    }
+  }
+  return lines;
+}
 
-  lines.push(`<original_request>${state.request}</original_request>`);
-  lines.push("");
-  lines.push("<branches>");
+function formatSingleBranch(id: string, branch: BrainstormState["branches"][string], isCurrent: boolean): string[] {
+  const lines: string[] = [];
+  lines.push(`<branch id="${id}" scope="${branch.scope}"${isCurrent ? ' current="true"' : ""}>`);
+  lines.push(...formatBranchQuestions(branch.questions));
+
+  if (branch.status === BRANCH_STATUSES.DONE && branch.finding) {
+    lines.push(`  <finding>${branch.finding}</finding>`);
+  }
+
+  lines.push("</branch>");
+  return lines;
+}
+
+function formatBranchContext(state: BrainstormState, branchId: string): string {
+  const lines: string[] = [`<original_request>${state.request}</original_request>`, "", "<branches>"];
 
   for (const [id, branch] of Object.entries(state.branches)) {
-    const isCurrent = id === branchId;
-    lines.push(`<branch id="${id}" scope="${branch.scope}"${isCurrent ? ' current="true"' : ""}>`);
-
-    for (const q of branch.questions) {
-      lines.push(`  <question type="${q.type}">${q.text}</question>`);
-      if (q.answer) {
-        lines.push(`  <answer>${JSON.stringify(q.answer)}</answer>`);
-      }
-    }
-
-    if (branch.status === BRANCH_STATUSES.DONE && branch.finding) {
-      lines.push(`  <finding>${branch.finding}</finding>`);
-    }
-
-    lines.push("</branch>");
+    lines.push(...formatSingleBranch(id, branch, id === branchId));
   }
 
   lines.push("</branches>");
@@ -48,6 +54,21 @@ function formatBranchContext(state: BrainstormState, branchId: string): string {
   lines.push(`Evaluate the branch "${branchId}" and decide: ask another question or complete with a finding.`);
 
   return lines.join("\n");
+}
+
+function extractTextFromParts(parts: Array<{ type: string; text?: string }>): string {
+  return parts
+    .filter((part) => part.type === "text" && "text" in part)
+    .map((part) => (part as { text: string }).text)
+    .join("");
+}
+
+function parseProbeResponse(responseText: string): ProbeResult {
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return { done: true, finding: "Could not parse probe response" };
+  }
+  return JSON.parse(jsonMatch[0]) as ProbeResult;
 }
 
 async function runProbeAgent(client: OpencodeClient, state: BrainstormState, branchId: string): Promise<ProbeResult> {
@@ -75,24 +96,59 @@ async function runProbeAgent(client: OpencodeClient, state: BrainstormState, bra
       throw new Error("Failed to get probe response");
     }
 
-    let responseText = "";
-    for (const part of promptResult.data.parts) {
-      if (part.type === "text" && "text" in part) {
-        responseText += (part as { text: string }).text;
-      }
-    }
-
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return { done: true, finding: "Could not parse probe response" };
-    }
-
-    return JSON.parse(jsonMatch[0]) as ProbeResult;
+    const responseText = extractTextFromParts(promptResult.data.parts);
+    return parseProbeResponse(responseText);
   } finally {
     await client.session.delete({ path: { id: probeSessionId } }).catch((_e: unknown) => {
       /* fire-and-forget */
     });
   }
+}
+
+function findBranchForQuestion(state: BrainstormState, questionId: string): string | null {
+  for (const [id, branch] of Object.entries(state.branches)) {
+    if (branch.questions.some((q) => q.id === questionId)) return id;
+  }
+  return null;
+}
+
+async function recordAnswerSafe(
+  stateStore: StateStore,
+  sessionId: string,
+  questionId: string,
+  answer: Answer,
+): Promise<void> {
+  try {
+    await stateStore.recordAnswer(sessionId, questionId, answer);
+  } catch (error) {
+    log.error("octto", `Failed to record answer for ${questionId}`, error);
+    throw error;
+  }
+}
+
+async function pushFollowUpQuestion(
+  stateStore: StateStore,
+  sessions: SessionStore,
+  sessionId: string,
+  browserSessionId: string,
+  branchId: string,
+  branchScope: string,
+  probeQuestion: ProbeResult["question"] & object,
+): Promise<void> {
+  const config = probeQuestion.config as { question?: string; context?: string };
+  const configWithContext = {
+    ...config,
+    context: `[${branchScope}] ${config.context ?? ""}`.trim(),
+  };
+
+  const { question_id: newQuestionId } = sessions.pushQuestion(browserSessionId, probeQuestion.type, configWithContext);
+
+  await stateStore.addQuestionToBranch(sessionId, branchId, {
+    id: newQuestionId,
+    type: probeQuestion.type,
+    text: config.question ?? "Follow-up question",
+    config: configWithContext,
+  });
 }
 
 export async function processAnswer(
@@ -107,34 +163,18 @@ export async function processAnswer(
   const state = await stateStore.getSession(sessionId);
   if (!state) return;
 
-  // Find which branch this question belongs to
-  let branchId: string | null = null;
-  for (const [id, branch] of Object.entries(state.branches)) {
-    if (branch.questions.some((q) => q.id === questionId)) {
-      branchId = id;
-      break;
-    }
-  }
-
+  const branchId = findBranchForQuestion(state, questionId);
   if (!branchId) return;
   if (state.branches[branchId].status === BRANCH_STATUSES.DONE) return;
 
-  // Record the answer
-  try {
-    await stateStore.recordAnswer(sessionId, questionId, answer);
-  } catch (error) {
-    log.error("octto", `Failed to record answer for ${questionId}`, error);
-    throw error;
-  }
+  await recordAnswerSafe(stateStore, sessionId, questionId, answer);
 
-  // Get fresh state after recording
   const updatedState = await stateStore.getSession(sessionId);
   if (!updatedState) return;
 
   const branch = updatedState.branches[branchId];
   if (!branch || branch.status === BRANCH_STATUSES.DONE) return;
 
-  // Evaluate branch using probe agent
   const result = await runProbeAgent(client, updatedState, branchId);
 
   if (result.done) {
@@ -143,25 +183,14 @@ export async function processAnswer(
   }
 
   if (result.question) {
-    const config = result.question.config as { question?: string; context?: string };
-    const questionText = config.question ?? "Follow-up question";
-    const existingContext = config.context ?? "";
-    const configWithContext = {
-      ...config,
-      context: `[${branch.scope}] ${existingContext}`.trim(),
-    };
-
-    const { question_id: newQuestionId } = sessions.pushQuestion(
+    await pushFollowUpQuestion(
+      stateStore,
+      sessions,
+      sessionId,
       browserSessionId,
-      result.question.type,
-      configWithContext,
+      branchId,
+      branch.scope,
+      result.question,
     );
-
-    await stateStore.addQuestionToBranch(sessionId, branchId, {
-      id: newQuestionId,
-      type: result.question.type,
-      text: questionText,
-      config: configWithContext,
-    });
   }
 }

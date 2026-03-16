@@ -140,8 +140,11 @@ function extractMarkdownStructure(lines: string[]): string {
 
 function extractJsonStructure(content: string): string {
   try {
-    const obj = JSON.parse(content);
-    const keys = Object.keys(obj);
+    const obj: unknown = JSON.parse(content);
+    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+      return "## JSON (non-object top-level value)";
+    }
+    const keys = Object.keys(obj as Record<string, unknown>);
     return `## Top-level keys (${keys.length})\n\n${keys.slice(0, MAX_JSON_KEYS_SHOWN).join(", ")}${keys.length > MAX_JSON_KEYS_SHOWN ? "..." : ""}`;
   } catch {
     return "## Invalid JSON";

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { MILESTONE_ARTIFACT_TYPES } from "../../../src/indexing/milestone-artifact-classifier";
 import { ingestMilestoneArtifact } from "../../../src/indexing/milestone-artifact-ingest";
-import { ArtifactIndex } from "../../../src/tools/artifact-index";
+import { createArtifactIndex } from "../../../src/tools/artifact-index";
 
 describe("milestone artifact ingest error paths", () => {
   let testDir: string;
@@ -23,7 +23,7 @@ describe("milestone artifact ingest error paths", () => {
   });
 
   it("falls back to session when classifier fails", async () => {
-    const index = new ArtifactIndex(testDir);
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {

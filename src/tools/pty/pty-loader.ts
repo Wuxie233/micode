@@ -70,15 +70,11 @@ function probeBunPtyLib(): void {
     // require.resolve may fail in some environments
   }
 
-  for (const basePath of additionalBasePaths) {
-    for (const filename of filenames) {
-      const candidate = join(basePath, filename);
-      if (existsSync(candidate)) {
-        process.env.BUN_PTY_LIB = candidate;
-        log.info(LOG_TAG, `Auto-resolved BUN_PTY_LIB=${candidate}`);
-        return;
-      }
-    }
+  const candidates = additionalBasePaths.flatMap((basePath) => filenames.map((f) => join(basePath, f)));
+  const found = candidates.find((c) => existsSync(c));
+  if (found) {
+    process.env.BUN_PTY_LIB = found;
+    log.info(LOG_TAG, `Auto-resolved BUN_PTY_LIB=${found}`);
   }
 }
 

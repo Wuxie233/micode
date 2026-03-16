@@ -64,84 +64,100 @@ export function createConstraintReviewerHook(ctx: PluginInput, reviewFn: ReviewF
       input: { tool: string; sessionID: string; args?: Record<string, unknown> },
       output: { output?: string },
     ) => {
-      // Only review Write and Edit operations
-      if (!["Write", "Edit"].includes(input.tool)) return;
-      if (!config.mindmodel.reviewEnabled) return;
-
       const mindmodel = await getMindmodel();
-      if (!mindmodel) return;
-
-      const state = getSessionState(input.sessionID);
-
-      // Skip if override is active
-      if (state.overrideActive) {
-        state.overrideActive = false;
-        return;
-      }
-
-      const filePath = input.args?.file_path as string | undefined;
-      if (!filePath) return;
-
-      try {
-        // Build review prompt
-        const reviewPrompt = buildReviewPrompt(output.output || "", filePath, mindmodel);
-
-        // Call reviewer
-        const reviewResponse = await reviewFn(reviewPrompt);
-        const result = parseReviewResponse(reviewResponse);
-
-        if (result.status === "PASS") {
-          // Reset retry count for this file on success
-          state.retryCountByFile.delete(filePath);
-          return;
-        }
-
-        // Handle violations - track retry count per file
-        const currentRetryCount = state.retryCountByFile.get(filePath) || 0;
-
-        if (currentRetryCount < config.mindmodel.reviewMaxRetries) {
-          // Trigger retry by modifying output
-          state.retryCountByFile.set(filePath, currentRetryCount + 1);
-          const violationsText = formatViolationsForRetry(result.violations);
-          output.output = `${output.output}\n\n<constraint-violations>\n${violationsText}\n</constraint-violations>`;
-        } else {
-          // Max retries reached - block
-          state.retryCountByFile.delete(filePath);
-          const userMessage = formatViolationsForUser(result.violations);
-          throw new ConstraintViolationError(userMessage, result);
-        }
-      } catch (error) {
-        if (error instanceof ConstraintViolationError) {
-          throw error;
-        }
-        // Log but don't block on review failures
-        log.warn("mindmodel", `Review failed: ${error instanceof Error ? error.message : "unknown"}`);
-      }
+      await reviewToolOutput(input, output, mindmodel, getSessionState, reviewFn);
     },
 
     "chat.message": async (input: { sessionID: string }, output: { parts: Array<{ type: string; text?: string }> }) => {
-      // Check for override command
-      const text = output.parts
-        .filter((p) => p.type === "text" && p.text)
-        .map((p) => p.text)
-        .join(" ");
-
-      const overrideMatch = text.match(/^override:\s*(.+)$/im);
-      if (overrideMatch) {
-        const state = getSessionState(input.sessionID);
-        state.overrideActive = true;
-
-        // Log the override
-        const reason = overrideMatch[1].trim();
-        await logOverride(ctx.directory, reason);
-
-        log.info("mindmodel", `Override activated: ${reason}`);
-      }
+      await handleChatMessage(ctx, input, output, getSessionState);
     },
 
     /** Cleanup session state on session deletion to prevent memory leaks */
     cleanupSession,
   };
+}
+
+async function reviewToolOutput(
+  input: { tool: string; sessionID: string; args?: Record<string, unknown> },
+  output: { output?: string },
+  mindmodel: LoadedMindmodel | null,
+  getSessionState: (sessionID: string) => ReviewState,
+  reviewFn: ReviewFn,
+): Promise<void> {
+  if (!["Write", "Edit"].includes(input.tool)) return;
+  if (!config.mindmodel.reviewEnabled) return;
+  if (!mindmodel) return;
+
+  const state = getSessionState(input.sessionID);
+
+  if (state.overrideActive) {
+    state.overrideActive = false;
+    return;
+  }
+
+  const filePath = input.args?.file_path as string | undefined;
+  if (!filePath) return;
+
+  try {
+    const reviewPrompt = buildReviewPrompt(output.output || "", filePath, mindmodel);
+    const reviewResponse = await reviewFn(reviewPrompt);
+    const result = parseReviewResponse(reviewResponse);
+
+    if (result.status === "PASS") {
+      state.retryCountByFile.delete(filePath);
+      return;
+    }
+
+    handleViolations(state, filePath, result, output);
+  } catch (error) {
+    if (error instanceof ConstraintViolationError) {
+      throw error;
+    }
+    log.warn("mindmodel", `Review failed: ${error instanceof Error ? error.message : "unknown"}`);
+  }
+}
+
+function handleViolations(
+  state: ReviewState,
+  filePath: string,
+  result: ReviewResult,
+  output: { output?: string },
+): void {
+  const currentRetryCount = state.retryCountByFile.get(filePath) || 0;
+
+  if (currentRetryCount < config.mindmodel.reviewMaxRetries) {
+    state.retryCountByFile.set(filePath, currentRetryCount + 1);
+    const violationsText = formatViolationsForRetry(result.violations);
+    output.output = `${output.output}\n\n<constraint-violations>\n${violationsText}\n</constraint-violations>`;
+    return;
+  }
+
+  state.retryCountByFile.delete(filePath);
+  const userMessage = formatViolationsForUser(result.violations);
+  throw new ConstraintViolationError(userMessage, result);
+}
+
+async function handleChatMessage(
+  ctx: PluginInput,
+  input: { sessionID: string },
+  output: { parts: Array<{ type: string; text?: string }> },
+  getSessionState: (sessionID: string) => ReviewState,
+): Promise<void> {
+  const text = output.parts
+    .filter((p) => p.type === "text" && p.text)
+    .map((p) => p.text)
+    .join(" ");
+
+  const overrideMatch = text.match(/^override:\s*(.+)$/im);
+  if (!overrideMatch) return;
+
+  const state = getSessionState(input.sessionID);
+  state.overrideActive = true;
+
+  const reason = overrideMatch[1].trim();
+  await logOverride(ctx.directory, reason);
+
+  log.info("mindmodel", `Override activated: ${reason}`);
 }
 
 function buildReviewPrompt(code: string, filePath: string, mindmodel: LoadedMindmodel): string {

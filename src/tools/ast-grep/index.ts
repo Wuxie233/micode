@@ -68,10 +68,11 @@ async function runSg(args: string[]): Promise<{ matches: Match[]; error?: string
       proc.exited,
     ]);
 
+    const isNoFilesFound = exitCode !== 0 && !stdout.trim() && stderr.includes("No files found");
+    if (isNoFilesFound) {
+      return { matches: [] };
+    }
     if (exitCode !== 0 && !stdout.trim()) {
-      if (stderr.includes("No files found")) {
-        return { matches: [] };
-      }
       return { matches: [], error: stderr.trim() || `Exit code ${exitCode}` };
     }
 
