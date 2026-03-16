@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { spawn } from "bun-pty";
 
-import { PTYManager } from "../../../src/tools/pty/manager";
+import { createPTYManager, type PTYManager } from "../../../src/tools/pty/manager";
 import { createPtyKillTool } from "../../../src/tools/pty/tools/kill";
 import { createPtyReadTool } from "../../../src/tools/pty/tools/read";
 import { createPtySpawnTool } from "../../../src/tools/pty/tools/spawn";
@@ -22,7 +22,7 @@ describe("PTY Integration", () => {
   } as any;
 
   beforeEach(() => {
-    manager = new PTYManager();
+    manager = createPTYManager();
     manager.init(spawn);
     pty_spawn = createPtySpawnTool(manager);
     pty_write = createPtyWriteTool(manager);
@@ -99,7 +99,8 @@ describe("PTY Integration", () => {
 
       // Session should have exited
       const session = manager.get(id);
-      expect(["exited", "killed"]).toContain(session?.status);
+      expect(session).toBeDefined();
+      expect(["exited", "killed"]).toContain(session!.status);
     });
   });
 

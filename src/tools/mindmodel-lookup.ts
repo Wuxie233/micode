@@ -1,9 +1,11 @@
 // src/tools/mindmodel-lookup.ts
-import type { PluginInput } from "@opencode-ai/plugin";
+import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
-import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "../mindmodel";
-import { log } from "../utils/logger";
+import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "@/mindmodel";
+import { log } from "@/utils/logger";
+
+const MAX_QUERY_LOG_LENGTH = 100;
 
 let cachedMindmodel: LoadedMindmodel | null | undefined;
 
@@ -26,18 +28,16 @@ export function matchCategories(query: string, manifest: LoadedMindmodel["manife
 
     // Check if any keyword matches
     const keywords = [...pathParts, ...descLower.split(/\s+/)];
-    for (const keyword of keywords) {
-      if (keyword.length > 2 && queryLower.includes(keyword)) {
-        matched.push(category.path);
-        break;
-      }
+    const hasMatch = keywords.some((keyword) => keyword.length > 2 && queryLower.includes(keyword));
+    if (hasMatch) {
+      matched.push(category.path);
     }
   }
 
   return matched;
 }
 
-export function createMindmodelLookupTool(ctx: PluginInput) {
+export function createMindmodelLookupTool(ctx: PluginInput): { mindmodel_lookup: ToolDefinition } {
   const mindmodel_lookup = tool({
     description: `Look up coding patterns and examples from the project's .mindmodel/ directory.
 Call this tool when you need to understand how to implement something in this codebase.
@@ -55,7 +55,7 @@ Returns relevant code examples and patterns to follow.`,
           return "No .mindmodel/ directory found in this project. Proceed without specific patterns.";
         }
 
-        log.info("mindmodel", `Looking up patterns for: "${query.slice(0, 100)}..."`);
+        log.info("mindmodel", `Looking up patterns for: "${query.slice(0, MAX_QUERY_LOG_LENGTH)}..."`);
 
         // Match categories using keywords
         const categories = matchCategories(query, mindmodel.manifest);

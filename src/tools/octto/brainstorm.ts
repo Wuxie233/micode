@@ -1,14 +1,14 @@
 // src/tools/octto/brainstorm.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { ReviewAnswer, SessionStore } from "../../octto/session";
-import { QUESTION_TYPES, QUESTIONS, STATUSES } from "../../octto/session";
-import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "../../octto/state";
-import { config } from "../../utils/config";
-import { log } from "../../utils/logger";
+import type { Answer, ReviewAnswer, SessionStore } from "@/octto/session";
+import { QUESTION_TYPES, QUESTIONS, STATUSES } from "@/octto/session";
+import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "@/octto/state";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 import { formatBranchStatus, formatFindings, formatFindingsList, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
-import type { OcttoSessionTracker, OcttoTools, OpencodeClient } from "./types";
+import type { OcttoSessionTracker, OcttoTool, OcttoTools, OpencodeClient } from "./types";
 import { generateSessionId } from "./utils";
 
 // --- Extracted helper functions ---
@@ -16,6 +16,41 @@ import { generateSessionId } from "./utils";
 interface CollectionResult {
   state: BrainstormState | null;
   allComplete: boolean;
+}
+
+async function drainPendingOnIdle(answer: { status?: string }, pendingProcessing: Promise<void>[]): Promise<void> {
+  if (answer.status === STATUSES.NONE_PENDING) {
+    await Promise.all(pendingProcessing);
+    pendingProcessing.length = 0;
+  }
+}
+
+function shouldStopCollecting(answer: { status?: string }): boolean {
+  return answer.status === STATUSES.TIMEOUT;
+}
+
+function enqueueAnswerProcessing(
+  stateStore: StateStore,
+  sessions: SessionStore,
+  sessionId: string,
+  browserSessionId: string,
+  questionId: string,
+  response: Answer,
+  client: OpencodeClient,
+  pendingProcessing: Promise<void>[],
+): void {
+  const processing = processAnswer(
+    stateStore,
+    sessions,
+    sessionId,
+    browserSessionId,
+    questionId,
+    response,
+    client,
+  ).catch((error: unknown) => {
+    log.error("octto", `Error processing answer ${questionId}`, error);
+  });
+  pendingProcessing.push(processing);
 }
 
 async function collectAnswers(
@@ -36,20 +71,16 @@ async function collectAnswers(
       timeout: config.octto.answerTimeoutMs,
     });
 
+    if (!answer.completed && shouldStopCollecting(answer)) break;
     if (!answer.completed) {
-      if (answer.status === STATUSES.NONE_PENDING) {
-        await Promise.all(pendingProcessing);
-        pendingProcessing.length = 0;
-        continue;
-      }
-      if (answer.status === STATUSES.TIMEOUT) break;
+      await drainPendingOnIdle(answer, pendingProcessing);
       continue;
     }
 
     const { question_id, response } = answer;
     if (!question_id || response === undefined) continue;
 
-    const processing = processAnswer(
+    enqueueAnswerProcessing(
       stateStore,
       sessions,
       sessionId,
@@ -57,10 +88,8 @@ async function collectAnswers(
       question_id,
       response,
       client,
-    ).catch((error) => {
-      log.error("octto", `Error processing answer ${question_id}`, error);
-    });
-    pendingProcessing.push(processing);
+      pendingProcessing,
+    );
   }
 
   await Promise.all(pendingProcessing);
@@ -159,86 +188,109 @@ function formatCompletionResult(state: BrainstormState, approved: boolean, feedb
 
 // --- Tool definitions ---
 
-export function createBrainstormTools(
-  sessions: SessionStore,
-  client: OpencodeClient,
-  tracker?: OcttoSessionTracker,
-): OcttoTools {
-  const store = createStateStore();
+interface BranchInput {
+  id: string;
+  scope: string;
+  initial_question: {
+    type: (typeof QUESTION_TYPES)[number];
+    config: { question?: string; context?: string };
+  };
+}
 
-  const create_brainstorm = tool({
+function buildInitialQuestions(
+  branches: BranchInput[],
+): Array<{ type: (typeof QUESTION_TYPES)[number]; config: Record<string, unknown> }> {
+  return branches.map((b) => {
+    const { type, config } = b.initial_question;
+    const context = `[${b.scope}] ${config.context ?? ""}`.trim();
+    return { type, config: { ...config, context } };
+  });
+}
+
+async function registerBranchQuestions(
+  store: StateStore,
+  sessionId: string,
+  branches: BranchInput[],
+  questionIds: string[] | undefined,
+): Promise<void> {
+  for (const [i, branch] of branches.entries()) {
+    const questionId = questionIds?.[i];
+    if (!questionId) continue;
+
+    const { type, config } = branch.initial_question;
+    await store.addQuestionToBranch(sessionId, branch.id, {
+      id: questionId,
+      type,
+      text: config.question ?? "Question",
+      config,
+    });
+  }
+}
+
+function formatCreatedXml(sessionId: string, browserSessionId: string, url: string, branches: BranchInput[]): string {
+  const branchesXml = branches.map((b) => `    <branch id="${b.id}">${b.scope}</branch>`).join("\n");
+  return `<brainstorm_created>
+  <session_id>${sessionId}</session_id>
+  <browser_session>${browserSessionId}</browser_session>
+  <url>${url}</url>
+  <branches>
+${branchesXml}
+  </branches>
+  <next_action>Call get_next_answer(session_id="${browserSessionId}", block=true)</next_action>
+</brainstorm_created>`;
+}
+
+const brainstormBranchSchema = tool.schema
+  .array(
+    tool.schema.object({
+      id: tool.schema.string(),
+      scope: tool.schema.string(),
+      initial_question: tool.schema.object({
+        type: tool.schema.enum(QUESTION_TYPES),
+        config: tool.schema.looseObject({
+          question: tool.schema.string().optional(),
+          context: tool.schema.string().optional(),
+        }),
+      }),
+    }),
+  )
+  .describe("Branches to explore");
+
+function buildCreateBrainstormTool(
+  store: StateStore,
+  sessions: SessionStore,
+  tracker?: OcttoSessionTracker,
+): OcttoTool {
+  return tool({
     description: "Create a new brainstorm session with exploration branches",
     args: {
       request: tool.schema.string().describe("The original user request"),
-      branches: tool.schema
-        .array(
-          tool.schema.object({
-            id: tool.schema.string(),
-            scope: tool.schema.string(),
-            initial_question: tool.schema.object({
-              type: tool.schema.enum(QUESTION_TYPES),
-              config: tool.schema.looseObject({
-                question: tool.schema.string().optional(),
-                context: tool.schema.string().optional(),
-              }),
-            }),
-          }),
-        )
-        .describe("Branches to explore"),
+      branches: brainstormBranchSchema,
     },
     execute: async (args, context) => {
       const sessionId = generateSessionId();
-
       await store.createSession(
         sessionId,
         args.request,
         args.branches.map((b) => ({ id: b.id, scope: b.scope })),
       );
 
-      const initialQuestions = args.branches.map((b) => {
-        const { type, config } = b.initial_question;
-        const context = `[${b.scope}] ${config.context ?? ""}`.trim();
-        return {
-          type,
-          config: { ...config, context },
-        };
-      });
-
       const browserSession = await sessions.startSession({
         title: "Brainstorming Session",
-        questions: initialQuestions,
+        questions: buildInitialQuestions(args.branches),
       });
 
       tracker?.onCreated?.(context.sessionID, browserSession.session_id);
       await store.setBrowserSessionId(sessionId, browserSession.session_id);
+      await registerBranchQuestions(store, sessionId, args.branches, browserSession.question_ids);
 
-      for (const [i, branch] of args.branches.entries()) {
-        const questionId = browserSession.question_ids?.[i];
-        if (!questionId) continue;
-
-        const { type, config } = branch.initial_question;
-        await store.addQuestionToBranch(sessionId, branch.id, {
-          id: questionId,
-          type,
-          text: config.question ?? "Question",
-          config,
-        });
-      }
-
-      const branchesXml = args.branches.map((b) => `    <branch id="${b.id}">${b.scope}</branch>`).join("\n");
-      return `<brainstorm_created>
-  <session_id>${sessionId}</session_id>
-  <browser_session>${browserSession.session_id}</browser_session>
-  <url>${browserSession.url}</url>
-  <branches>
-${branchesXml}
-  </branches>
-  <next_action>Call get_next_answer(session_id="${browserSession.session_id}", block=true)</next_action>
-</brainstorm_created>`;
+      return formatCreatedXml(sessionId, browserSession.session_id, browserSession.url, args.branches);
     },
   });
+}
 
-  const get_session_summary = tool({
+function buildGetSessionSummaryTool(store: StateStore): OcttoTool {
+  return tool({
     description: "Get summary of all branches and their findings",
     args: {
       session_id: tool.schema.string().describe("Brainstorm session ID"),
@@ -259,8 +311,10 @@ ${branches}
 </session_summary>`;
     },
   });
+}
 
-  const end_brainstorm = tool({
+function buildEndBrainstormTool(store: StateStore, sessions: SessionStore, tracker?: OcttoSessionTracker): OcttoTool {
+  return tool({
     description: "End a brainstorm session and get final summary",
     args: {
       session_id: tool.schema.string().describe("Brainstorm session ID"),
@@ -286,8 +340,14 @@ ${branches}
 </brainstorm_ended>`;
     },
   });
+}
 
-  const await_brainstorm_complete = tool({
+function buildAwaitBrainstormCompleteTool(
+  store: StateStore,
+  sessions: SessionStore,
+  client: OpencodeClient,
+): OcttoTool {
+  return tool({
     description: `Wait for brainstorm session to complete. Processes answers asynchronously as they arrive.
 Returns when all branches are done with their findings.
 This is the recommended way to run a brainstorm - just create_brainstorm then await_brainstorm_complete.`,
@@ -322,11 +382,19 @@ This is the recommended way to run a brainstorm - just create_brainstorm then aw
       return formatCompletionResult(state, approved, feedback);
     },
   });
+}
+
+export function createBrainstormTools(
+  sessions: SessionStore,
+  client: OpencodeClient,
+  tracker?: OcttoSessionTracker,
+): OcttoTools {
+  const store = createStateStore();
 
   return {
-    create_brainstorm,
-    get_session_summary,
-    end_brainstorm,
-    await_brainstorm_complete,
+    create_brainstorm: buildCreateBrainstormTool(store, sessions, tracker),
+    get_session_summary: buildGetSessionSummaryTool(store),
+    end_brainstorm: buildEndBrainstormTool(store, sessions, tracker),
+    await_brainstorm_complete: buildAwaitBrainstormCompleteTool(store, sessions, client),
   };
 }

@@ -1,5 +1,5 @@
-import { spawn, which } from "bun";
 import { tool } from "@opencode-ai/plugin/tool";
+import { spawn, which } from "bun";
 
 /**
  * Check if ast-grep CLI (sg) is available on the system.
@@ -68,10 +68,11 @@ async function runSg(args: string[]): Promise<{ matches: Match[]; error?: string
       proc.exited,
     ]);
 
+    const isNoFilesFound = exitCode !== 0 && !stdout.trim() && stderr.includes("No files found");
+    if (isNoFilesFound) {
+      return { matches: [] };
+    }
     if (exitCode !== 0 && !stdout.trim()) {
-      if (stderr.includes("No files found")) {
-        return { matches: [] };
-      }
       return { matches: [], error: stderr.trim() || `Exit code ${exitCode}` };
     }
 
@@ -99,16 +100,18 @@ async function runSg(args: string[]): Promise<{ matches: Match[]; error?: string
   }
 }
 
+const MAX_DISPLAY_MATCHES = 100;
+const MAX_MATCH_TEXT_LENGTH = 100;
+
 function formatMatches(matches: Match[], isDryRun = false): string {
   if (matches.length === 0) return "No matches found";
 
-  const MAX = 100;
-  const truncated = matches.length > MAX;
-  const shown = matches.slice(0, MAX);
+  const truncated = matches.length > MAX_DISPLAY_MATCHES;
+  const shown = matches.slice(0, MAX_DISPLAY_MATCHES);
 
   const lines = shown.map((m) => {
     const loc = `${m.file}:${m.range.start.line}:${m.range.start.column}`;
-    const text = m.text.length > 100 ? `${m.text.slice(0, 100)}...` : m.text;
+    const text = m.text.length > MAX_MATCH_TEXT_LENGTH ? `${m.text.slice(0, MAX_MATCH_TEXT_LENGTH)}...` : m.text;
     if (isDryRun && m.replacement) {
       return `${loc}\n  - ${text}\n  + ${m.replacement}`;
     }
@@ -116,7 +119,7 @@ function formatMatches(matches: Match[], isDryRun = false): string {
   });
 
   if (truncated) {
-    lines.unshift(`Found ${matches.length} matches (showing first ${MAX}):`);
+    lines.unshift(`Found ${matches.length} matches (showing first ${MAX_DISPLAY_MATCHES}):`);
   }
 
   return lines.join("\n");

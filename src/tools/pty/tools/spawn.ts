@@ -1,6 +1,7 @@
 // src/tools/pty/tools/spawn.ts
+import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-import type { PTYManager } from "../manager";
+import type { PTYManager } from "@/tools/pty/manager";
 
 const DESCRIPTION = `Spawns a new interactive PTY (pseudo-terminal) session that runs in the background.
 
@@ -34,7 +35,7 @@ Examples:
 - Start a Python REPL: command="python3", title="Python REPL"
 - Run tests in watch mode: command="npm", args=["test", "--", "--watch"]`;
 
-export function createPtySpawnTool(manager: PTYManager) {
+export function createPtySpawnTool(manager: PTYManager): ToolDefinition {
   return tool({
     description: DESCRIPTION,
     args: {

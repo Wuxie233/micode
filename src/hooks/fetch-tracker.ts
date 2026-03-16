@@ -1,52 +1,58 @@
 // src/hooks/fetch-tracker.ts
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { config } from "../utils/config";
-import { log } from "../utils/logger";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 
 // --- Tracked tools ---
 
 export const FETCH_TOOLS = new Set(["webfetch", "context7_query-docs", "context7_resolve-library-id", "btca_ask"]);
 
-// --- LRU Cache (same pattern as mindmodel-injector.ts) ---
+// --- LRU Cache (factory pattern) ---
 
 interface CacheEntry {
   content: string;
   timestamp: number;
 }
 
-class LRUCache<V> {
-  private cache = new Map<string, V>();
-  constructor(private maxSize: number) {}
+interface LRUCache<V> {
+  get(key: string): V | undefined;
+  set(key: string, value: V): void;
+  delete(key: string): void;
+  clear(): void;
+}
 
-  get(key: string): V | undefined {
-    const value = this.cache.get(key);
-    if (value !== undefined) {
+function createLRUCache<V>(maxSize: number): LRUCache<V> {
+  const cache = new Map<string, V>();
+
+  return {
+    get(key: string): V | undefined {
+      const value = cache.get(key);
+      if (value === undefined) return undefined;
       // Move to end (most recently used)
-      this.cache.delete(key);
-      this.cache.set(key, value);
-    }
-    return value;
-  }
+      cache.delete(key);
+      cache.set(key, value);
+      return value;
+    },
 
-  set(key: string, value: V): void {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Delete oldest (first) entry
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) this.cache.delete(firstKey);
-    }
-    this.cache.set(key, value);
-  }
+    set(key: string, value: V): void {
+      if (cache.has(key)) {
+        cache.delete(key);
+      } else if (cache.size >= maxSize) {
+        const firstKey = cache.keys().next().value;
+        if (firstKey !== undefined) cache.delete(firstKey);
+      }
+      cache.set(key, value);
+    },
 
-  delete(key: string): void {
-    this.cache.delete(key);
-  }
+    delete(key: string): void {
+      cache.delete(key);
+    },
 
-  clear(): void {
-    this.cache.clear();
-  }
+    clear(): void {
+      cache.clear();
+    },
+  };
 }
 
 // --- Per-session state ---
@@ -67,45 +73,44 @@ export function normalizeKey(tool: string, args: Record<string, unknown> | undef
   if (!FETCH_TOOLS.has(tool) || !args) return null;
 
   try {
-    switch (tool) {
-      case "webfetch": {
-        const rawUrl = args.url as string | undefined;
-        if (!rawUrl) return null;
-        try {
-          const parsed = new URL(rawUrl);
-          // Sort query params for consistent keys
-          parsed.searchParams.sort();
-          return `webfetch|${parsed.toString()}`;
-        } catch {
-          // Malformed URL — use raw string as fallback
-          return `webfetch|${rawUrl}`;
-        }
-      }
-      case "context7_query-docs": {
-        const libraryId = args.libraryId as string | undefined;
-        const query = args.query as string | undefined;
-        if (!libraryId || !query) return null;
-        return `context7_query-docs|${libraryId}|${query}`;
-      }
-      case "context7_resolve-library-id": {
-        const libraryName = args.libraryName as string | undefined;
-        const query = args.query as string | undefined;
-        if (!libraryName || !query) return null;
-        return `context7_resolve-library-id|${libraryName}|${query}`;
-      }
-      case "btca_ask": {
-        const tech = args.tech as string | undefined;
-        const question = args.question as string | undefined;
-        if (!tech || !question) return null;
-        return `btca_ask|${tech}|${question}`;
-      }
-      default:
-        return null;
-    }
+    const normalizer = keyNormalizers[tool];
+    return normalizer ? normalizer(args) : null;
   } catch (error) {
     log.warn("hooks.fetch-tracker", `Key normalization failed: ${error instanceof Error ? error.message : "unknown"}`);
     return null;
   }
+}
+
+const keyNormalizers: Record<string, (args: Record<string, unknown>) => string | null> = {
+  webfetch: (args) => normalizeWebfetchKey(args),
+  "context7_query-docs": (args) => normalizeFieldPair(args, "context7_query-docs", "libraryId", "query"),
+  "context7_resolve-library-id": (args) =>
+    normalizeFieldPair(args, "context7_resolve-library-id", "libraryName", "query"),
+  btca_ask: (args) => normalizeFieldPair(args, "btca_ask", "tech", "question"),
+};
+
+function normalizeWebfetchKey(args: Record<string, unknown>): string | null {
+  const rawUrl = args.url as string | undefined;
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.searchParams.sort();
+    return `webfetch|${parsed.toString()}`;
+  } catch {
+    return `webfetch|${rawUrl}`;
+  }
+}
+
+function normalizeFieldPair(
+  args: Record<string, unknown>,
+  prefix: string,
+  field1: string,
+  field2: string,
+): string | null {
+  const val1 = args[field1] as string | undefined;
+  const val2 = args[field2] as string | undefined;
+  if (!val1 || !val2) return null;
+  return `${prefix}|${val1}|${val2}`;
 }
 
 // --- Public accessors (for testing and external use) ---
@@ -137,7 +142,7 @@ function getOrCreateCounts(sessionID: string): Map<string, number> {
 function getOrCreateCache(sessionID: string): LRUCache<CacheEntry> {
   let cache = sessionCaches.get(sessionID);
   if (!cache) {
-    cache = new LRUCache<CacheEntry>(config.fetch.cacheMaxEntries);
+    cache = createLRUCache<CacheEntry>(config.fetch.cacheMaxEntries);
     sessionCaches.set(sessionID, cache);
   }
   return cache;
@@ -157,77 +162,74 @@ function isCacheExpired(entry: CacheEntry): boolean {
 
 // --- Hook factory ---
 
-export function createFetchTrackerHook(_ctx: PluginInput) {
+interface FetchTrackerHooks {
+  "tool.execute.after": (
+    input: { tool: string; sessionID: string; args?: Record<string, unknown> },
+    output: { output?: string },
+  ) => Promise<void>;
+  event: (input: { event: { type: string; properties?: unknown } }) => Promise<void>;
+  cleanupSession: (sessionID: string) => void;
+}
+
+export function createFetchTrackerHook(_ctx: PluginInput): FetchTrackerHooks {
   return {
-    /**
-     * After hook: track fetch calls, cache results, inject warnings/blocks.
-     *
-     * On first call: stores result in cache, increments count.
-     * On repeated calls: replaces output with cached content + warning.
-     * After maxCallsPerResource: replaces output with block message.
-     *
-     * Note: We use tool.execute.after (not before) because the plugin SDK's
-     * before hook only exposes { args } for modification, not { output }.
-     * The after hook can mutate output.output to replace the tool's result.
-     */
-    "tool.execute.after": async (
-      input: { tool: string; sessionID: string; args?: Record<string, unknown> },
-      output: { output?: string },
-    ) => {
+    "tool.execute.after": async (input, output) => {
       try {
-        if (!FETCH_TOOLS.has(input.tool)) return;
-
-        const key = normalizeKey(input.tool, input.args);
-        if (!key) return;
-
-        // Increment call count
-        const count = incrementCount(input.sessionID, key);
-
-        // Hard block: exceeded max calls — unconditional, independent of cache state
-        if (count > config.fetch.maxCallsPerResource) {
-          output.output = `<fetch-blocked>This resource has been fetched ${count} times this session. The content is already available in the conversation above. Use the information already available instead of re-fetching.</fetch-blocked>`;
-          return;
-        }
-
-        // Check for cached content from a previous call
-        const cache = getOrCreateCache(input.sessionID);
-        const cached = cache.get(key);
-
-        if (count > 1 && cached && !isCacheExpired(cached)) {
-          // Repeated call with valid cache — replace output with cached content
-          let cachedOutput = `<from-cache>Returning cached result (fetched ${count} time${count !== 1 ? "s" : ""} previously).</from-cache>\n\n${cached.content}`;
-
-          // Add warning if at or above warn threshold
-          if (count >= config.fetch.warnThreshold) {
-            cachedOutput += `\n\n<fetch-warning>You have fetched this resource ${count} times. The content is cached and identical. Consider using the information you already have instead of re-fetching.</fetch-warning>`;
-          }
-
-          output.output = cachedOutput;
-        } else {
-          // First call or cache expired — store fresh result
-          if (output.output) {
-            cache.set(key, { content: output.output, timestamp: Date.now() });
-          }
-        }
+        handleFetchAfter(input, output);
       } catch (error) {
         log.warn("hooks.fetch-tracker", `After hook error: ${error instanceof Error ? error.message : "unknown"}`);
       }
     },
 
-    /**
-     * Event handler: clean up on session deletion.
-     * Same pattern as file-ops-tracker.
-     */
-    event: async ({ event }: { event: { type: string; properties?: unknown } }) => {
-      if (event.type === "session.deleted") {
-        const props = event.properties as { info?: { id?: string } } | undefined;
-        if (props?.info?.id) {
-          clearSession(props.info.id);
-        }
-      }
+    event: async ({ event }) => {
+      if (event.type !== "session.deleted") return;
+      const props = event.properties as { info?: { id?: string } } | undefined;
+      if (props?.info?.id) clearSession(props.info.id);
     },
 
-    /** Direct cleanup function (used by index.ts for explicit cleanup) */
     cleanupSession: clearSession,
   };
+}
+
+// --- After-hook logic ---
+
+function handleFetchAfter(
+  input: { tool: string; sessionID: string; args?: Record<string, unknown> },
+  output: { output?: string },
+): void {
+  if (!FETCH_TOOLS.has(input.tool)) return;
+
+  const key = normalizeKey(input.tool, input.args);
+  if (!key) return;
+
+  const count = incrementCount(input.sessionID, key);
+
+  if (count > config.fetch.maxCallsPerResource) {
+    output.output = `<fetch-blocked>This resource has been fetched ${count} times this session. The content is already available in the conversation above. Use the information already available instead of re-fetching.</fetch-blocked>`;
+    return;
+  }
+
+  const cache = getOrCreateCache(input.sessionID);
+  const cached = cache.get(key);
+
+  if (count > 1 && cached && !isCacheExpired(cached)) {
+    output.output = buildCachedOutput(cached, count);
+    return;
+  }
+
+  // First call or cache expired — store fresh result
+  if (output.output) {
+    cache.set(key, { content: output.output, timestamp: Date.now() });
+  }
+}
+
+function buildCachedOutput(cached: CacheEntry, count: number): string {
+  const plural = count !== 1 ? "s" : "";
+  let result = `<from-cache>Returning cached result (fetched ${count} time${plural} previously).</from-cache>\n\n${cached.content}`;
+
+  if (count >= config.fetch.warnThreshold) {
+    result += `\n\n<fetch-warning>You have fetched this resource ${count} times. The content is cached and identical. Consider using the information you already have instead of re-fetching.</fetch-warning>`;
+  }
+
+  return result;
 }

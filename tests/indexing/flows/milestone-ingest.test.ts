@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ingestMilestoneArtifact } from "../../../src/indexing/milestone-artifact-ingest";
-import { ArtifactIndex } from "../../../src/tools/artifact-index";
+import { createArtifactIndex } from "../../../src/tools/artifact-index";
 
 describe("milestone artifact ingest", () => {
   let testDir: string;
@@ -19,7 +19,7 @@ describe("milestone artifact ingest", () => {
   });
 
   it("classifies and stores milestone artifacts", async () => {
-    const index = new ArtifactIndex(testDir);
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {

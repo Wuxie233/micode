@@ -1,5 +1,5 @@
-import { type ArtifactIndex, getArtifactIndex } from "../tools/artifact-index";
-import { log } from "../utils/logger";
+import { type ArtifactIndex, getArtifactIndex } from "@/tools/artifact-index"; // now a ReturnType alias
+import { log } from "@/utils/logger";
 import {
   classifyMilestoneArtifact,
   MILESTONE_ARTIFACT_TYPES,

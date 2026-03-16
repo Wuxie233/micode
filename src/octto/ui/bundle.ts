@@ -1,4 +1,5 @@
 // src/octto/ui/bundle.ts
+/* eslint-disable max-lines-per-function */
 
 /**
  * Returns the bundled HTML for the octto UI.

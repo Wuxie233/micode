@@ -1,7 +1,7 @@
 // src/tools/octto/formatters.ts
 
-import type { Answer } from "../../octto/session";
-import type { BrainstormState, Branch, BranchQuestion } from "../../octto/state";
+import type { Answer } from "@/octto/session";
+import type { BrainstormState, Branch, BranchQuestion } from "@/octto/state";
 import { extractAnswerSummary } from "./extractor";
 
 function escapeXml(str: string): string {
