@@ -1,6 +1,6 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
-import { DEFAULT_MODEL } from "../utils/config";
+import { DEFAULT_MODEL } from "@/utils/config";
 import { artifactSearcherAgent } from "./artifact-searcher";
 import { bootstrapperAgent } from "./bootstrapper";
 import { brainstormerAgent } from "./brainstormer";

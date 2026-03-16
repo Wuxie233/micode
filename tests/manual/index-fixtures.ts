@@ -1,17 +1,18 @@
 #!/usr/bin/env bun
+
 // Script to index test fixtures into the artifact database
 // Run: bun tests/manual/index-fixtures.ts
 
-import { ArtifactIndex } from "../../src/tools/artifact-index";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createArtifactIndex } from "../../src/tools/artifact-index";
 
 const FIXTURES_DIR = "./thoughts";
 
 async function indexFixtures() {
   console.log("Indexing test fixtures...\n");
 
-  const index = new ArtifactIndex();
+  const index = createArtifactIndex();
   await index.initialize();
 
   // Index ledgers
@@ -70,14 +71,13 @@ async function indexFixtures() {
       // Extract what worked (from learnings for now)
       const whatWorked = learnings;
 
-      await index.indexHandoff({
+      await index.indexLedger({
         id: `handoff-${file.replace(".md", "")}`,
         sessionName: file.replace(".md", ""),
         filePath,
-        taskSummary,
-        whatWorked,
-        learnings,
-        outcome: "SUCCEEDED",
+        goal: taskSummary,
+        stateNow: whatWorked,
+        keyDecisions: learnings,
       });
       console.log(`✓ Indexed handoff: ${file}`);
     }

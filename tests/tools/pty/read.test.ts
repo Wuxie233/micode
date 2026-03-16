@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { spawn } from "bun-pty";
 
-import { PTYManager } from "../../../src/tools/pty/manager";
+import { createPTYManager, type PTYManager } from "../../../src/tools/pty/manager";
 import { createPtyReadTool } from "../../../src/tools/pty/tools/read";
 import { createPtySpawnTool } from "../../../src/tools/pty/tools/spawn";
 
@@ -13,7 +13,7 @@ describe("pty_read tool", () => {
   let pty_spawn: ReturnType<typeof createPtySpawnTool>;
 
   beforeEach(() => {
-    manager = new PTYManager();
+    manager = createPTYManager();
     manager.init(spawn);
     pty_read = createPtyReadTool(manager);
     pty_spawn = createPtySpawnTool(manager);

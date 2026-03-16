@@ -17,8 +17,8 @@ describe("ArtifactIndex", () => {
   });
 
   it("should create database on initialization", async () => {
-    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
+    const { createArtifactIndex } = await import("../../src/tools/artifact-index");
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {
@@ -30,8 +30,8 @@ describe("ArtifactIndex", () => {
   });
 
   it("should index and search plans", async () => {
-    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
+    const { createArtifactIndex } = await import("../../src/tools/artifact-index");
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {
@@ -52,8 +52,8 @@ describe("ArtifactIndex", () => {
   });
 
   it("should index and search ledgers", async () => {
-    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
+    const { createArtifactIndex } = await import("../../src/tools/artifact-index");
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {
@@ -77,8 +77,8 @@ describe("ArtifactIndex", () => {
   });
 
   it("should index ledger with file operations", async () => {
-    const { ArtifactIndex } = await import("../../src/tools/artifact-index");
-    const index = new ArtifactIndex(testDir);
+    const { createArtifactIndex } = await import("../../src/tools/artifact-index");
+    const index = createArtifactIndex(testDir);
     await index.initialize();
 
     try {

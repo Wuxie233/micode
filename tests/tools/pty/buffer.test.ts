@@ -1,18 +1,18 @@
 // tests/tools/pty/buffer.test.ts
-import { describe, it, expect } from "bun:test";
-import { RingBuffer } from "../../../src/tools/pty/buffer";
+import { describe, expect, it } from "bun:test";
+import { createRingBuffer } from "../../../src/tools/pty/buffer";
 
 describe("RingBuffer", () => {
   describe("append", () => {
     it("should store appended lines", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("line1\nline2\nline3");
 
       expect(buffer.length).toBe(3);
     });
 
     it("should evict oldest lines when max reached", () => {
-      const buffer = new RingBuffer(3);
+      const buffer = createRingBuffer(3);
       buffer.append("line1\nline2\nline3\nline4\nline5");
 
       expect(buffer.length).toBe(3);
@@ -23,7 +23,7 @@ describe("RingBuffer", () => {
 
   describe("read", () => {
     it("should return lines from offset", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("a\nb\nc\nd\ne");
 
       const lines = buffer.read(2, 2);
@@ -31,7 +31,7 @@ describe("RingBuffer", () => {
     });
 
     it("should return all lines when no limit", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("a\nb\nc");
 
       const lines = buffer.read(0);
@@ -39,7 +39,7 @@ describe("RingBuffer", () => {
     });
 
     it("should normalize negative offset to 0", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("a\nb\nc");
 
       const lines = buffer.read(-5, 2);
@@ -47,7 +47,7 @@ describe("RingBuffer", () => {
     });
 
     it("should handle empty string input", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("");
 
       expect(buffer.length).toBe(1);
@@ -56,7 +56,7 @@ describe("RingBuffer", () => {
     });
 
     it("should handle unicode characters", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("Hello 世界\n🎉 emoji\nкириллица");
 
       expect(buffer.length).toBe(3);
@@ -67,7 +67,7 @@ describe("RingBuffer", () => {
 
   describe("search", () => {
     it("should find lines matching pattern", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("info: starting\nerror: failed\ninfo: done\nerror: timeout");
 
       const matches = buffer.search(/error/);
@@ -77,7 +77,7 @@ describe("RingBuffer", () => {
     });
 
     it("should return empty array when no matches", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("line1\nline2");
 
       const matches = buffer.search(/notfound/);
@@ -87,7 +87,7 @@ describe("RingBuffer", () => {
 
   describe("clear", () => {
     it("should remove all lines", () => {
-      const buffer = new RingBuffer(100);
+      const buffer = createRingBuffer(100);
       buffer.append("line1\nline2");
       buffer.clear();
 

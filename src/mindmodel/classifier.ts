@@ -24,7 +24,7 @@ export function parseClassifierResponse(response: string, manifest: MindmodelMan
     const jsonMatch = response.match(/\[[\s\S]*?\]/);
     if (!jsonMatch) return [];
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed)) return [];
 
     // Validate paths exist in manifest

@@ -13,13 +13,25 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { log } from "../../utils/logger";
+import { log } from "@/utils/logger";
+
+const LOG_TAG = "pty.loader";
 
 type BunPtyModule = typeof import("bun-pty");
 
 let cachedModule: BunPtyModule | null = null;
 let loadAttempted = false;
 let loadError: string | null = null;
+
+function resolveNativeLibNames(platform: string, arch: string): string[] {
+  if (platform === "darwin") {
+    return arch === "arm64" ? ["librust_pty_arm64.dylib", "librust_pty.dylib"] : ["librust_pty.dylib"];
+  }
+  if (platform === "win32") {
+    return ["rust_pty.dll"];
+  }
+  return arch === "arm64" ? ["librust_pty_arm64.so", "librust_pty.so"] : ["librust_pty.so"];
+}
 
 /**
  * Probe additional paths where the bun-pty native library might live,
@@ -32,16 +44,7 @@ function probeBunPtyLib(): void {
   const platform = process.platform;
   const arch = process.arch;
 
-  const filenames =
-    platform === "darwin"
-      ? arch === "arm64"
-        ? ["librust_pty_arm64.dylib", "librust_pty.dylib"]
-        : ["librust_pty.dylib"]
-      : platform === "win32"
-        ? ["rust_pty.dll"]
-        : arch === "arm64"
-          ? ["librust_pty_arm64.so", "librust_pty.so"]
-          : ["librust_pty.so"];
+  const filenames = resolveNativeLibNames(platform, arch);
 
   const cwd = process.cwd();
 
@@ -67,15 +70,11 @@ function probeBunPtyLib(): void {
     // require.resolve may fail in some environments
   }
 
-  for (const basePath of additionalBasePaths) {
-    for (const filename of filenames) {
-      const candidate = join(basePath, filename);
-      if (existsSync(candidate)) {
-        process.env.BUN_PTY_LIB = candidate;
-        log.info("pty.loader", `Auto-resolved BUN_PTY_LIB=${candidate}`);
-        return;
-      }
-    }
+  const candidates = additionalBasePaths.flatMap((basePath) => filenames.map((f) => join(basePath, f)));
+  const found = candidates.find((c) => existsSync(c));
+  if (found) {
+    process.env.BUN_PTY_LIB = found;
+    log.info(LOG_TAG, `Auto-resolved BUN_PTY_LIB=${found}`);
   }
 }
 
@@ -95,14 +94,14 @@ export async function loadBunPty(): Promise<BunPtyModule | null> {
 
   try {
     cachedModule = await import("bun-pty");
-    log.info("pty.loader", "bun-pty loaded successfully");
+    log.info(LOG_TAG, "bun-pty loaded successfully");
     return cachedModule;
   } catch (error) {
     loadError = error instanceof Error ? error.message : String(error);
     // Extract just the first line for a cleaner warning
     const firstLine = loadError.split("\n")[0];
-    log.warn("pty.loader", `bun-pty unavailable: ${firstLine}`);
-    log.warn("pty.loader", "PTY tools will be disabled. Set BUN_PTY_LIB env var to the native library path to fix.");
+    log.warn(LOG_TAG, `bun-pty unavailable: ${firstLine}`);
+    log.warn(LOG_TAG, "PTY tools will be disabled. Set BUN_PTY_LIB env var to the native library path to fix.");
     cachedModule = null;
     return null;
   }

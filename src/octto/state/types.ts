@@ -1,5 +1,5 @@
 // src/octto/state/types.ts
-import type { Answer, BaseConfig, QuestionType } from "../session";
+import type { Answer, BaseConfig, QuestionType } from "@/octto/session";
 
 export const BRANCH_STATUSES = {
   EXPLORING: "exploring",

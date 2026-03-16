@@ -1,39 +1,33 @@
 // src/hooks/artifact-auto-index.ts
 // Auto-indexes artifacts when written to thoughts/ directories
 
-import type { PluginInput } from "@opencode-ai/plugin";
 import { readFileSync } from "node:fs";
-import { getArtifactIndex } from "../tools/artifact-index";
-import { log } from "../utils/logger";
+import type { PluginInput } from "@opencode-ai/plugin";
+import { getArtifactIndex } from "@/tools/artifact-index";
+import { log } from "@/utils/logger";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
 
-export function parseLedger(content: string, filePath: string, sessionName: string) {
+export function parseLedger(
+  content: string,
+  filePath: string,
+  sessionName: string,
+): {
+  id: string;
+  sessionName: string;
+  filePath: string;
+  goal: string;
+  stateNow: string;
+  keyDecisions: string;
+  filesRead: string;
+  filesModified: string;
+} {
   const goalMatch = content.match(/## Goal\n([^\n]+)/);
   const stateMatch = content.match(/### In Progress\n- \[ \] ([^\n]+)/);
   const decisionsMatch = content.match(/## Key Decisions\n([\s\S]*?)(?=\n## |$)/);
 
-  // Parse file operations from new ledger format
-  const fileOpsSection = content.match(/## File Operations\n([\s\S]*?)(?=\n## |$)/);
-  let filesRead = "";
-  let filesModified = "";
-
-  if (fileOpsSection) {
-    const readMatch = fileOpsSection[1].match(/### Read\n([\s\S]*?)(?=\n### |$)/);
-    const modifiedMatch = fileOpsSection[1].match(/### Modified\n([\s\S]*?)(?=\n### |$)/);
-
-    if (readMatch) {
-      // Extract paths from markdown list items like "- `path`"
-      const paths = readMatch[1].match(/`([^`]+)`/g);
-      filesRead = paths ? paths.map((p) => p.replace(/`/g, "")).join(",") : "";
-    }
-
-    if (modifiedMatch) {
-      const paths = modifiedMatch[1].match(/`([^`]+)`/g);
-      filesModified = paths ? paths.map((p) => p.replace(/`/g, "")).join(",") : "";
-    }
-  }
+  const { filesRead, filesModified } = parseFileOperations(content);
 
   return {
     id: `ledger-${sessionName}`,
@@ -47,7 +41,36 @@ export function parseLedger(content: string, filePath: string, sessionName: stri
   };
 }
 
-function parsePlan(content: string, filePath: string, fileName: string) {
+function parseFileOperations(content: string): { filesRead: string; filesModified: string } {
+  const fileOpsSection = content.match(/## File Operations\n([\s\S]*?)(?=\n## |$)/);
+  if (!fileOpsSection) return { filesRead: "", filesModified: "" };
+
+  const readMatch = fileOpsSection[1].match(/### Read\n([\s\S]*?)(?=\n### |$)/);
+  const modifiedMatch = fileOpsSection[1].match(/### Modified\n([\s\S]*?)(?=\n### |$)/);
+
+  return {
+    filesRead: extractBacktickedPaths(readMatch?.[1]),
+    filesModified: extractBacktickedPaths(modifiedMatch?.[1]),
+  };
+}
+
+function extractBacktickedPaths(section: string | undefined): string {
+  if (!section) return "";
+  const paths = section.match(/`([^`]+)`/g);
+  return paths ? paths.map((p) => p.replace(/`/g, "")).join(",") : "";
+}
+
+function parsePlan(
+  content: string,
+  filePath: string,
+  fileName: string,
+): {
+  id: string;
+  title: string;
+  filePath: string;
+  overview: string;
+  approach: string;
+} {
   // Extract title (first heading)
   const titleMatch = content.match(/^# (.+)$/m);
   const title = titleMatch?.[1] || fileName;
@@ -69,7 +92,14 @@ function parsePlan(content: string, filePath: string, fileName: string) {
   };
 }
 
-export function createArtifactAutoIndexHook(_ctx: PluginInput) {
+interface ArtifactAutoIndexHooks {
+  "tool.execute.after": (
+    input: { tool: string; args?: Record<string, unknown> },
+    _output: { output?: string },
+  ) => Promise<void>;
+}
+
+export function createArtifactAutoIndexHook(_ctx: PluginInput): ArtifactAutoIndexHooks {
   return {
     "tool.execute.after": async (
       input: { tool: string; args?: Record<string, unknown> },

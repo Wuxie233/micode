@@ -1,10 +1,15 @@
 // src/tools/octto/questions.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { SessionStore } from "../../octto/session";
-import type { ConfirmConfig, PickManyConfig, PickOneConfig, RankConfig, RateConfig } from "../../octto/types";
+import type { SessionStore } from "@/octto/session";
+import type { ConfirmConfig, PickManyConfig, PickOneConfig, RankConfig, RateConfig } from "@/octto/types";
 import { createQuestionToolFactory } from "./factory";
-import type { OcttoTools } from "./types";
+import type { OcttoTool, OcttoTools } from "./types";
+
+const DESC_QUESTION = "Question to display";
+const DESC_CONTEXT = "Instructions/context";
+const ERR_OPTIONS_EMPTY = "options array must not be empty";
+const DEFAULT_RATING_MAX = 5;
 
 const optionsSchema = tool.schema
   .array(
@@ -17,19 +22,18 @@ const optionsSchema = tool.schema
   .describe("Available options");
 
 function requireOptions(args: { options?: unknown[] }): string | null {
-  if (!args.options || args.options.length === 0) return "options array must not be empty";
+  if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
   return null;
 }
 
-export function createQuestionTools(sessions: SessionStore): OcttoTools {
+function buildPickOneTool(sessions: SessionStore): OcttoTool {
   const createTool = createQuestionToolFactory(sessions);
-
-  const pick_one = createTool<PickOneConfig & { session_id: string }>({
+  return createTool<PickOneConfig & { session_id: string }>({
     type: "pick_one",
     description: `Ask user to select ONE option from a list.
 Response format: { selected: string } where selected is the chosen option id.`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       options: optionsSchema,
       recommended: tool.schema.string().optional().describe("Recommended option id (highlighted)"),
       allowOther: tool.schema.boolean().optional().describe("Allow custom 'other' input"),
@@ -42,13 +46,16 @@ Response format: { selected: string } where selected is the chosen option id.`,
       allowOther: args.allowOther,
     }),
   });
+}
 
-  const pick_many = createTool<PickManyConfig & { session_id: string }>({
+function buildPickManyTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<PickManyConfig & { session_id: string }>({
     type: "pick_many",
     description: `Ask user to select MULTIPLE options from a list.
 Response format: { selected: string[] } where selected is array of chosen option ids.`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       options: optionsSchema,
       recommended: tool.schema.array(tool.schema.string()).optional().describe("Recommended option ids"),
       min: tool.schema.number().optional().describe("Minimum selections required"),
@@ -56,7 +63,7 @@ Response format: { selected: string[] } where selected is array of chosen option
       allowOther: tool.schema.boolean().optional().describe("Allow custom 'other' input"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return "options array must not be empty";
+      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
       if (args.min !== undefined && args.max !== undefined && args.min > args.max) {
         return `min (${args.min}) cannot be greater than max (${args.max})`;
       }
@@ -71,13 +78,16 @@ Response format: { selected: string[] } where selected is array of chosen option
       allowOther: args.allowOther,
     }),
   });
+}
 
-  const confirm = createTool<ConfirmConfig & { session_id: string }>({
+function buildConfirmTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<ConfirmConfig & { session_id: string }>({
     type: "confirm",
     description: `Ask user for Yes/No confirmation.
 Response format: { choice: "yes" | "no" | "cancel" }`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       context: tool.schema.string().optional().describe("Additional context/details"),
       yesLabel: tool.schema.string().optional().describe("Custom label for yes button"),
       noLabel: tool.schema.string().optional().describe("Custom label for no button"),
@@ -91,15 +101,18 @@ Response format: { choice: "yes" | "no" | "cancel" }`,
       allowCancel: args.allowCancel,
     }),
   });
+}
 
-  const rank = createTool<RankConfig & { session_id: string }>({
+function buildRankTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<RankConfig & { session_id: string }>({
     type: "rank",
     description: `Ask user to rank/order items by dragging.
 Response format: { ranked: string[] } where ranked is array of option ids in user's order (first = highest).`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       options: optionsSchema.describe("Items to rank"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
     },
     validate: requireOptions,
     toConfig: (args) => ({
@@ -108,13 +121,16 @@ Response format: { ranked: string[] } where ranked is array of option ids in use
       context: args.context,
     }),
   });
+}
 
-  const rate = createTool<RateConfig & { session_id: string }>({
+function buildRateTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<RateConfig & { session_id: string }>({
     type: "rate",
     description: `Ask user to rate items on a numeric scale.
 Response format: { ratings: Record<string, number> } where key is option id, value is rating.`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       options: optionsSchema.describe("Items to rate"),
       min: tool.schema.number().optional().describe("Minimum rating value (default: 1)"),
       max: tool.schema.number().optional().describe("Maximum rating value (default: 5)"),
@@ -128,9 +144,9 @@ Response format: { ratings: Record<string, number> } where key is option id, val
         .describe("Optional labels for min/max"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return "options array must not be empty";
+      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
       const min = args.min ?? 1;
-      const max = args.max ?? 5;
+      const max = args.max ?? DEFAULT_RATING_MAX;
       if (min >= max) return `min (${min}) must be less than max (${max})`;
       return null;
     },
@@ -138,51 +154,74 @@ Response format: { ratings: Record<string, number> } where key is option id, val
       question: args.question,
       options: args.options,
       min: args.min ?? 1,
-      max: args.max ?? 5,
+      max: args.max ?? DEFAULT_RATING_MAX,
       step: args.step,
       labels: args.labels,
     }),
   });
+}
 
-  // Import remaining tools from other files
-  const inputTools = createInputTools(sessions);
-  const presentationTools = createPresentationTools(sessions);
-  const quickTools = createQuickTools(sessions);
-
+export function createQuestionTools(sessions: SessionStore): OcttoTools {
   return {
-    pick_one,
-    pick_many,
-    confirm,
-    rank,
-    rate,
-    ...inputTools,
-    ...presentationTools,
-    ...quickTools,
+    pick_one: buildPickOneTool(sessions),
+    pick_many: buildPickManyTool(sessions),
+    confirm: buildConfirmTool(sessions),
+    rank: buildRankTool(sessions),
+    rate: buildRateTool(sessions),
+    ...createInputTools(sessions),
+    ...createPresentationTools(sessions),
+    ...createQuickTools(sessions),
   };
 }
 
-// Input tools using factory
-function createInputTools(sessions: SessionStore): OcttoTools {
+// Input tool interfaces
+interface TextConfig {
+  session_id: string;
+  question: string;
+  placeholder?: string;
+  context?: string;
+  multiline?: boolean;
+  minLength?: number;
+  maxLength?: number;
+}
+
+interface ImageConfig {
+  session_id: string;
+  question: string;
+  context?: string;
+  multiple?: boolean;
+  maxImages?: number;
+  accept?: string[];
+}
+
+interface FileConfig {
+  session_id: string;
+  question: string;
+  context?: string;
+  multiple?: boolean;
+  maxFiles?: number;
+  accept?: string[];
+  maxSize?: number;
+}
+
+interface CodeConfig {
+  session_id: string;
+  question: string;
+  context?: string;
+  language?: string;
+  placeholder?: string;
+}
+
+function buildAskTextTool(sessions: SessionStore): OcttoTool {
   const createTool = createQuestionToolFactory(sessions);
-
-  interface TextConfig {
-    session_id: string;
-    question: string;
-    placeholder?: string;
-    context?: string;
-    multiline?: boolean;
-    minLength?: number;
-    maxLength?: number;
-  }
-
-  const ask_text = createTool<TextConfig>({
+  return createTool<TextConfig>({
     type: "ask_text",
     description: `Ask user for text input (single or multi-line).
 Response format: { text: string }`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       placeholder: tool.schema.string().optional().describe("Placeholder text"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
       multiline: tool.schema.boolean().optional().describe("Multi-line input (default: false)"),
       minLength: tool.schema.number().optional().describe("Minimum text length"),
       maxLength: tool.schema.number().optional().describe("Maximum text length"),
@@ -196,22 +235,16 @@ Response format: { text: string }`,
       maxLength: args.maxLength,
     }),
   });
+}
 
-  interface ImageConfig {
-    session_id: string;
-    question: string;
-    context?: string;
-    multiple?: boolean;
-    maxImages?: number;
-    accept?: string[];
-  }
-
-  const ask_image = createTool<ImageConfig>({
+function buildAskImageTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<ImageConfig>({
     type: "ask_image",
     description: "Ask user to upload/paste image(s).",
     args: {
-      question: tool.schema.string().describe("Question to display"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      question: tool.schema.string().describe(DESC_QUESTION),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
       multiple: tool.schema.boolean().optional().describe("Allow multiple images"),
       maxImages: tool.schema.number().optional().describe("Maximum number of images"),
       accept: tool.schema.array(tool.schema.string()).optional().describe("Allowed image types"),
@@ -224,23 +257,16 @@ Response format: { text: string }`,
       accept: args.accept,
     }),
   });
+}
 
-  interface FileConfig {
-    session_id: string;
-    question: string;
-    context?: string;
-    multiple?: boolean;
-    maxFiles?: number;
-    accept?: string[];
-    maxSize?: number;
-  }
-
-  const ask_file = createTool<FileConfig>({
+function buildAskFileTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<FileConfig>({
     type: "ask_file",
     description: "Ask user to upload file(s).",
     args: {
-      question: tool.schema.string().describe("Question to display"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      question: tool.schema.string().describe(DESC_QUESTION),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
       multiple: tool.schema.boolean().optional().describe("Allow multiple files"),
       maxFiles: tool.schema.number().optional().describe("Maximum number of files"),
       accept: tool.schema.array(tool.schema.string()).optional().describe("Allowed file types"),
@@ -255,21 +281,16 @@ Response format: { text: string }`,
       maxSize: args.maxSize,
     }),
   });
+}
 
-  interface CodeConfig {
-    session_id: string;
-    question: string;
-    context?: string;
-    language?: string;
-    placeholder?: string;
-  }
-
-  const ask_code = createTool<CodeConfig>({
+function buildAskCodeTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<CodeConfig>({
     type: "ask_code",
     description: "Ask user for code input with syntax highlighting.",
     args: {
-      question: tool.schema.string().describe("Question to display"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      question: tool.schema.string().describe(DESC_QUESTION),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
       language: tool.schema.string().optional().describe("Programming language for highlighting"),
       placeholder: tool.schema.string().optional().describe("Placeholder code"),
     },
@@ -280,24 +301,70 @@ Response format: { text: string }`,
       placeholder: args.placeholder,
     }),
   });
-
-  return { ask_text, ask_image, ask_file, ask_code };
 }
 
-// Presentation tools using factory
-function createPresentationTools(sessions: SessionStore): OcttoTools {
+function createInputTools(sessions: SessionStore): OcttoTools {
+  return {
+    ask_text: buildAskTextTool(sessions),
+    ask_image: buildAskImageTool(sessions),
+    ask_file: buildAskFileTool(sessions),
+    ask_code: buildAskCodeTool(sessions),
+  };
+}
+
+// Presentation tool interfaces
+interface DiffConfig {
+  session_id: string;
+  question: string;
+  before: string;
+  after: string;
+  filePath?: string;
+  language?: string;
+}
+
+interface PlanConfig {
+  session_id: string;
+  question: string;
+  sections?: Array<{ id: string; title: string; content: string }>;
+  markdown?: string;
+}
+
+interface ShowOptionsConfig {
+  session_id: string;
+  question: string;
+  options: Array<{ id: string; label: string; description?: string; pros?: string[]; cons?: string[] }>;
+  recommended?: string;
+  allowFeedback?: boolean;
+}
+
+interface ReviewConfig {
+  session_id: string;
+  question: string;
+  content: string;
+  context?: string;
+}
+
+const sectionSchema = tool.schema.array(
+  tool.schema.object({
+    id: tool.schema.string().describe("Section identifier"),
+    title: tool.schema.string().describe("Section title"),
+    content: tool.schema.string().describe("Section content (markdown)"),
+  }),
+);
+
+const prosConsOptionSchema = tool.schema.array(
+  tool.schema.object({
+    id: tool.schema.string().describe("Unique option identifier"),
+    label: tool.schema.string().describe("Display label"),
+    description: tool.schema.string().optional().describe("Optional description"),
+    pros: tool.schema.array(tool.schema.string()).optional().describe("Advantages"),
+    cons: tool.schema.array(tool.schema.string()).optional().describe("Disadvantages"),
+  }),
+);
+
+function buildShowDiffTool(sessions: SessionStore): OcttoTool {
   const createTool = createQuestionToolFactory(sessions);
-
-  interface DiffConfig {
-    session_id: string;
-    question: string;
-    before: string;
-    after: string;
-    filePath?: string;
-    language?: string;
-  }
-
-  const show_diff = createTool<DiffConfig>({
+  return createTool<DiffConfig>({
     type: "show_diff",
     description: "Show a diff and ask user to approve/reject/edit.",
     args: {
@@ -315,23 +382,11 @@ function createPresentationTools(sessions: SessionStore): OcttoTools {
       language: args.language,
     }),
   });
+}
 
-  const sectionSchema = tool.schema.array(
-    tool.schema.object({
-      id: tool.schema.string().describe("Section identifier"),
-      title: tool.schema.string().describe("Section title"),
-      content: tool.schema.string().describe("Section content (markdown)"),
-    }),
-  );
-
-  interface PlanConfig {
-    session_id: string;
-    question: string;
-    sections?: Array<{ id: string; title: string; content: string }>;
-    markdown?: string;
-  }
-
-  const show_plan = createTool<PlanConfig>({
+function buildShowPlanTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<PlanConfig>({
     type: "show_plan",
     description: `Show a plan/document for user review with annotations.
 Response format: { approved: boolean, annotations?: Record<sectionId, string> }`,
@@ -346,37 +401,22 @@ Response format: { approved: boolean, annotations?: Record<sectionId, string> }`
       markdown: args.markdown,
     }),
   });
+}
 
-  const prosConsOptionSchema = tool.schema.array(
-    tool.schema.object({
-      id: tool.schema.string().describe("Unique option identifier"),
-      label: tool.schema.string().describe("Display label"),
-      description: tool.schema.string().optional().describe("Optional description"),
-      pros: tool.schema.array(tool.schema.string()).optional().describe("Advantages"),
-      cons: tool.schema.array(tool.schema.string()).optional().describe("Disadvantages"),
-    }),
-  );
-
-  interface ShowOptionsConfig {
-    session_id: string;
-    question: string;
-    options: Array<{ id: string; label: string; description?: string; pros?: string[]; cons?: string[] }>;
-    recommended?: string;
-    allowFeedback?: boolean;
-  }
-
-  const show_options = createTool<ShowOptionsConfig>({
+function buildShowOptionsTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<ShowOptionsConfig>({
     type: "show_options",
     description: `Show options with pros/cons for user to select.
 Response format: { selected: string, feedback?: string } where selected is the chosen option id.`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       options: prosConsOptionSchema.describe("Options with pros/cons"),
       recommended: tool.schema.string().optional().describe("Recommended option id"),
       allowFeedback: tool.schema.boolean().optional().describe("Allow text feedback with selection"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return "options array must not be empty";
+      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
       return null;
     },
     toConfig: (args) => ({
@@ -386,15 +426,11 @@ Response format: { selected: string, feedback?: string } where selected is the c
       allowFeedback: args.allowFeedback,
     }),
   });
+}
 
-  interface ReviewConfig {
-    session_id: string;
-    question: string;
-    content: string;
-    context?: string;
-  }
-
-  const review_section = createTool<ReviewConfig>({
+function buildReviewSectionTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<ReviewConfig>({
     type: "review_section",
     description: "Show content section for user review with inline feedback.",
     args: {
@@ -408,26 +444,50 @@ Response format: { selected: string, feedback?: string } where selected is the c
       context: args.context,
     }),
   });
-
-  return { show_diff, show_plan, show_options, review_section };
 }
 
-// Quick tools using factory
-function createQuickTools(sessions: SessionStore): OcttoTools {
+function createPresentationTools(sessions: SessionStore): OcttoTools {
+  return {
+    show_diff: buildShowDiffTool(sessions),
+    show_plan: buildShowPlanTool(sessions),
+    show_options: buildShowOptionsTool(sessions),
+    review_section: buildReviewSectionTool(sessions),
+  };
+}
+
+// Quick tool interfaces
+interface ThumbsConfig {
+  session_id: string;
+  question: string;
+  context?: string;
+}
+
+interface EmojiConfig {
+  session_id: string;
+  question: string;
+  context?: string;
+  emojis?: string[];
+}
+
+interface SliderConfig {
+  session_id: string;
+  question: string;
+  min: number;
+  max: number;
+  step?: number;
+  defaultValue?: number;
+  context?: string;
+  labels?: { min?: string; max?: string; mid?: string };
+}
+
+function buildThumbsTool(sessions: SessionStore): OcttoTool {
   const createTool = createQuestionToolFactory(sessions);
-
-  interface ThumbsConfig {
-    session_id: string;
-    question: string;
-    context?: string;
-  }
-
-  const thumbs = createTool<ThumbsConfig>({
+  return createTool<ThumbsConfig>({
     type: "thumbs",
     description: `Ask user for quick thumbs up/down feedback.
 Response format: { choice: "up" | "down" }`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       context: tool.schema.string().optional().describe("Context to show"),
     },
     toConfig: (args) => ({
@@ -435,19 +495,15 @@ Response format: { choice: "up" | "down" }`,
       context: args.context,
     }),
   });
+}
 
-  interface EmojiConfig {
-    session_id: string;
-    question: string;
-    context?: string;
-    emojis?: string[];
-  }
-
-  const emoji_react = createTool<EmojiConfig>({
+function buildEmojiReactTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<EmojiConfig>({
     type: "emoji_react",
     description: "Ask user to react with an emoji.",
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       context: tool.schema.string().optional().describe("Context to show"),
       emojis: tool.schema.array(tool.schema.string()).optional().describe("Available emoji options"),
     },
@@ -457,29 +513,21 @@ Response format: { choice: "up" | "down" }`,
       emojis: args.emojis,
     }),
   });
+}
 
-  interface SliderConfig {
-    session_id: string;
-    question: string;
-    min: number;
-    max: number;
-    step?: number;
-    defaultValue?: number;
-    context?: string;
-    labels?: { min?: string; max?: string; mid?: string };
-  }
-
-  const slider = createTool<SliderConfig>({
+function buildSliderTool(sessions: SessionStore): OcttoTool {
+  const createTool = createQuestionToolFactory(sessions);
+  return createTool<SliderConfig>({
     type: "slider",
     description: `Ask user to select a value on a numeric slider.
 Response format: { value: number }`,
     args: {
-      question: tool.schema.string().describe("Question to display"),
+      question: tool.schema.string().describe(DESC_QUESTION),
       min: tool.schema.number().describe("Minimum value"),
       max: tool.schema.number().describe("Maximum value"),
       step: tool.schema.number().optional().describe("Step size (default: 1)"),
       defaultValue: tool.schema.number().optional().describe("Default value"),
-      context: tool.schema.string().optional().describe("Instructions/context"),
+      context: tool.schema.string().optional().describe(DESC_CONTEXT),
       labels: tool.schema
         .object({
           min: tool.schema.string().optional().describe("Label for minimum value"),
@@ -503,6 +551,12 @@ Response format: { value: number }`,
       labels: args.labels,
     }),
   });
+}
 
-  return { thumbs, emoji_react, slider };
+function createQuickTools(sessions: SessionStore): OcttoTools {
+  return {
+    thumbs: buildThumbsTool(sessions),
+    emoji_react: buildEmojiReactTool(sessions),
+    slider: buildSliderTool(sessions),
+  };
 }
