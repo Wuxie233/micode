@@ -26,7 +26,18 @@
       },
       "style": {
         "noParameterAssign": "error",
-        "noDefaultExport": "error"
+        "noDefaultExport": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../*"],
+                "message": "Use @/* path aliases instead of parent-relative imports."
+              }
+            ]
+          }
+        }
       }
     }
   },

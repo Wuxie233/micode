@@ -138,7 +138,9 @@ export function createSessionRecoveryHook(ctx: PluginInput) {
             duration: 5000,
           },
         })
-        .catch(() => {});
+        .catch((_e) => {
+          /* fire-and-forget */
+        });
       return false;
     }
 
@@ -153,7 +155,9 @@ export function createSessionRecoveryHook(ctx: PluginInput) {
           duration: 3000,
         },
       })
-      .catch(() => {});
+      .catch((_e) => {
+        /* fire-and-forget */
+      });
 
     // Abort current session to stop the error state
     await abortSession(sessionID);
@@ -173,7 +177,9 @@ export function createSessionRecoveryHook(ctx: PluginInput) {
           duration: 3000,
         },
       })
-      .catch(() => {});
+      .catch((_e) => {
+        /* fire-and-forget */
+      });
 
     return true;
   }

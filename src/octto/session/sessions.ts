@@ -1,7 +1,7 @@
 // src/octto/session/sessions.ts
 import type { ServerWebSocket } from "bun";
 
-import { DEFAULT_ANSWER_TIMEOUT_MS } from "../constants";
+import { DEFAULT_ANSWER_TIMEOUT_MS } from "@/octto/constants";
 import { openBrowser } from "./browser";
 import { createServer } from "./server";
 import {

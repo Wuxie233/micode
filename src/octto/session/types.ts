@@ -19,7 +19,7 @@ import type {
   ShowPlanConfig,
   SliderConfig,
   ThumbsConfig,
-} from "../types";
+} from "@/octto/types";
 
 export const STATUSES = {
   PENDING: "pending",

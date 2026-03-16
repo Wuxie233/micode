@@ -2,8 +2,8 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
-import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "../mindmodel";
-import { log } from "../utils/logger";
+import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "@/mindmodel";
+import { log } from "@/utils/logger";
 
 let cachedMindmodel: LoadedMindmodel | null | undefined;
 

@@ -3,8 +3,8 @@
 
 import { readFileSync } from "node:fs";
 import type { PluginInput } from "@opencode-ai/plugin";
-import { getArtifactIndex } from "../tools/artifact-index";
-import { log } from "../utils/logger";
+import { getArtifactIndex } from "@/tools/artifact-index";
+import { log } from "@/utils/logger";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;

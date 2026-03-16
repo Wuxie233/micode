@@ -1,11 +1,11 @@
 // src/tools/octto/brainstorm.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { ReviewAnswer, SessionStore } from "../../octto/session";
-import { QUESTION_TYPES, QUESTIONS, STATUSES } from "../../octto/session";
-import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "../../octto/state";
-import { config } from "../../utils/config";
-import { log } from "../../utils/logger";
+import type { ReviewAnswer, SessionStore } from "@/octto/session";
+import { QUESTION_TYPES, QUESTIONS, STATUSES } from "@/octto/session";
+import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "@/octto/state";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 import { formatBranchStatus, formatFindings, formatFindingsList, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
 import type { OcttoSessionTracker, OcttoTools, OpencodeClient } from "./types";

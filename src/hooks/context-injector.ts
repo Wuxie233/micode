@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { config } from "../utils/config";
+import { config } from "@/utils/config";
 
 // Tools that trigger directory-aware context injection
 const FILE_ACCESS_TOOLS = ["Read", "read", "Edit", "edit"];

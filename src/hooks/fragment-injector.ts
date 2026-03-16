@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import type { MicodeConfig } from "../config-loader";
+import type { MicodeConfig } from "@/config-loader";
 
 /**
  * Load project-level fragments from .micode/fragments.json

@@ -2,8 +2,8 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { config } from "../utils/config";
-import { log } from "../utils/logger";
+import { config } from "@/utils/config";
+import { log } from "@/utils/logger";
 import { type MindmodelManifest, parseManifest } from "./types";
 
 export interface LoadedMindmodel {

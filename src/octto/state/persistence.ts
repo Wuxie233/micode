@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { STATE_DIR } from "../constants";
+import { STATE_DIR } from "@/octto/constants";
 import type { BrainstormState } from "./types";
 
 export interface StatePersistence {

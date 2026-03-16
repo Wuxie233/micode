@@ -1,6 +1,6 @@
 // src/tools/pty/tools/spawn.ts
 import { tool } from "@opencode-ai/plugin/tool";
-import type { PTYManager } from "../manager";
+import type { PTYManager } from "@/tools/pty/manager";
 
 const DESCRIPTION = `Spawns a new interactive PTY (pseudo-terminal) session that runs in the background.
 
