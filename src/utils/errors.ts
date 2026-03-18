@@ -24,34 +24,3 @@ export function formatToolError(message: string, context?: string): string {
   }
   return `Error: ${message}`;
 }
-
-/**
- * Execute a function and log any errors without throwing.
- * Use for non-critical operations that shouldn't fail the main flow.
- * @param module - Module name for log prefix
- * @param fn - Function to execute
- * @returns Result or undefined if error occurred
- */
-export function catchAndLog<T>(module: string, fn: () => T): T | undefined {
-  try {
-    return fn();
-  } catch (e) {
-    console.error(`[${module}] ${extractErrorMessage(e)}`);
-    return undefined;
-  }
-}
-
-/**
- * Async version of catchAndLog.
- * @param module - Module name for log prefix
- * @param fn - Async function to execute
- * @returns Result or undefined if error occurred
- */
-export async function catchAndLogAsync<T>(module: string, fn: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await fn();
-  } catch (e) {
-    console.error(`[${module}] ${extractErrorMessage(e)}`);
-    return undefined;
-  }
-}
