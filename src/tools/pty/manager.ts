@@ -1,4 +1,5 @@
 // src/tools/pty/manager.ts
+import { extractErrorMessage } from "@/utils/errors";
 import { createRingBuffer } from "./buffer";
 import type { PTYSession, PTYSessionInfo, ReadResult, SearchResult, SpawnOptions } from "./types";
 
@@ -60,7 +61,7 @@ function spawnPtyProcess(
   try {
     return spawnFn(command, args, { name: "xterm-256color", cols: 120, rows: 40, cwd: workdir, env });
   } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e);
+    const errorMsg = extractErrorMessage(e);
     throw new Error(`Failed to spawn PTY for command "${command}": ${errorMsg}`, { cause: e });
   }
 }
@@ -126,10 +127,10 @@ function readFromSession(session: PTYSession, offset: number, limit?: number): R
 }
 
 function searchInSession(session: PTYSession, pattern: RegExp, offset: number, limit?: number): SearchResult {
-  const allMatches = session.buffer.search(pattern);
-  const totalMatches = allMatches.length;
+  const matches = session.buffer.search(pattern);
+  const totalMatches = matches.length;
   const totalLines = session.buffer.length;
-  const paginatedMatches = limit !== undefined ? allMatches.slice(offset, offset + limit) : allMatches.slice(offset);
+  const paginatedMatches = limit !== undefined ? matches.slice(offset, offset + limit) : matches.slice(offset);
   const hasMore = offset + paginatedMatches.length < totalMatches;
   return { matches: paginatedMatches, totalMatches, totalLines, offset, hasMore };
 }

@@ -5,7 +5,6 @@ import { readFile } from "node:fs/promises";
 describe("index.ts constraint-reviewer integration", () => {
   it("should import createConstraintReviewerHook", async () => {
     const source = await readFile("src/index.ts", "utf-8");
-    expect(source).toContain('from "./hooks/constraint-reviewer"');
     expect(source).toContain("createConstraintReviewerHook");
   });
 

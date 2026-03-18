@@ -143,6 +143,14 @@ export const config = {
   },
 
   /**
+   * Think mode settings
+   */
+  thinking: {
+    /** Budget tokens for thinking mode */
+    budgetTokens: 128_000,
+  },
+
+  /**
    * Mindmodel v2 settings
    */
   mindmodel: {

@@ -10,6 +10,8 @@ import {
   loadMicodeConfig,
   loadModelContextLimits,
   mergeAgentConfigs,
+  type ProviderInfo,
+  validateAgentModels,
 } from "../src/config-loader";
 import { DEFAULT_MODEL } from "../src/utils/config";
 
@@ -872,5 +874,215 @@ describe("JSONC parsing support", () => {
 
       expect(model).toBe("openai/gpt-4o");
     });
+  });
+});
+
+describe("validateAgentModels", () => {
+  function createProvider(id: string, modelIds: string[]): ProviderInfo {
+    const models: Record<string, unknown> = {};
+    for (const modelId of modelIds) {
+      models[modelId] = { id: modelId };
+    }
+    return { id, models };
+  }
+
+  it("returns config unchanged when all models are valid", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4" },
+        brainstormer: { model: "anthropic/claude-3" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [
+      createProvider("openai", ["gpt-4", "gpt-3.5"]),
+      createProvider("anthropic", ["claude-3", "claude-2"]),
+    ];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBe("openai/gpt-4");
+    expect(result.agents?.brainstormer?.model).toBe("anthropic/claude-3");
+  });
+
+  it("removes model override when provider does not exist", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "nonexistent/gpt-4" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBeUndefined();
+  });
+
+  it("removes model override when model does not exist in provider", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/nonexistent-model" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4", "gpt-3.5"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBeUndefined();
+  });
+
+  it("preserves other properties when model is invalid", () => {
+    const userConfig = {
+      agents: {
+        commander: {
+          model: "nonexistent/model",
+          temperature: 0.7,
+          maxTokens: 4000,
+        },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBeUndefined();
+    expect(result.agents?.commander?.temperature).toBe(0.7);
+    expect(result.agents?.commander?.maxTokens).toBe(4000);
+  });
+
+  it("handles config with no agents", () => {
+    const userConfig = {};
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result).toEqual({});
+  });
+
+  it("handles agent override with no model specified", () => {
+    const userConfig = {
+      agents: {
+        commander: { temperature: 0.5 },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.temperature).toBe(0.5);
+    expect(result.agents?.commander?.model).toBeUndefined();
+  });
+
+  it("handles empty providers list", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result).toEqual(userConfig);
+  });
+
+  it("handles providers with no models", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [{ id: "openai", models: {} }];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result).toEqual(userConfig);
+  });
+
+  it("validates multiple agents with mixed valid/invalid models", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4" },
+        brainstormer: { model: "fake/model" },
+        planner: { model: "openai/fake-model" },
+        reviewer: { model: "anthropic/claude-3" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [
+      createProvider("openai", ["gpt-4", "gpt-3.5"]),
+      createProvider("anthropic", ["claude-3"]),
+    ];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBe("openai/gpt-4");
+    expect(result.agents?.brainstormer?.model).toBeUndefined();
+    expect(result.agents?.planner?.model).toBeUndefined();
+    expect(result.agents?.reviewer?.model).toBe("anthropic/claude-3");
+  });
+
+  it("removes empty string model", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "", temperature: 0.5 },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBeUndefined();
+    expect(result.agents?.commander?.temperature).toBe(0.5);
+  });
+
+  it("removes model string without slash (malformed)", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "gpt-4-no-provider" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBeUndefined();
+  });
+
+  it("handles model with multiple slashes in model ID", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "openai/gpt-4/turbo" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4/turbo"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result.agents?.commander?.model).toBe("openai/gpt-4/turbo");
+  });
+
+  it("returns consistent shape when all agents have invalid models", () => {
+    const userConfig = {
+      agents: {
+        commander: { model: "invalid/model" },
+      },
+    };
+
+    const providers: ProviderInfo[] = [createProvider("openai", ["gpt-4"])];
+
+    const result = validateAgentModels(userConfig, providers);
+
+    expect(result).toEqual({ agents: {} });
   });
 });

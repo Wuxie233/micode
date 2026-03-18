@@ -2,6 +2,7 @@
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { SessionStore } from "@/octto/session";
+import { extractErrorMessage } from "@/utils/errors";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools } from "./types";
 
 const MISSING_QUESTIONS_ERROR = `## ERROR: questions parameter is REQUIRED
@@ -82,11 +83,11 @@ REQUIRED: You MUST provide at least 1 question. Will fail without questions.`,
       if (!args.questions || args.questions.length === 0) return MISSING_QUESTIONS_ERROR;
 
       try {
-        const result = await sessions.startSession({ title: args.title, questions: args.questions });
-        tracker?.onCreated?.(context.sessionID, result.session_id);
-        return formatSessionStartOutput(result.session_id, result.url, result.question_ids);
+        const session = await sessions.startSession({ title: args.title, questions: args.questions });
+        tracker?.onCreated?.(context.sessionID, session.session_id);
+        return formatSessionStartOutput(session.session_id, session.url, session.question_ids);
       } catch (error) {
-        return `Failed to start session: ${error instanceof Error ? error.message : String(error)}`;
+        return `Failed to start session: ${extractErrorMessage(error)}`;
       }
     },
   });
@@ -100,8 +101,8 @@ Closes the browser window and cleans up resources.`,
       session_id: tool.schema.string().describe("Session ID to end"),
     },
     execute: async (args, context) => {
-      const result = await sessions.endSession(args.session_id);
-      if (result.ok) {
+      const endStatus = await sessions.endSession(args.session_id);
+      if (endStatus.ok) {
         tracker?.onEnded?.(context.sessionID, args.session_id);
         return `Session ${args.session_id} ended successfully.`;
       }

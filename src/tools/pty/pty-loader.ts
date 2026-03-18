@@ -13,13 +13,14 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 const LOG_TAG = "pty.loader";
 
 type BunPtyModule = typeof import("bun-pty");
 
-let cachedModule: BunPtyModule | null = null;
+let ptyModule: BunPtyModule | null = null;
 let loadAttempted = false;
 let loadError: string | null = null;
 
@@ -86,23 +87,23 @@ function probeBunPtyLib(): void {
  * Returns null if bun-pty cannot be loaded (native library missing, etc.)
  */
 export async function loadBunPty(): Promise<BunPtyModule | null> {
-  if (loadAttempted) return cachedModule;
+  if (loadAttempted) return ptyModule;
   loadAttempted = true;
 
   // Probe and set BUN_PTY_LIB before importing
   probeBunPtyLib();
 
   try {
-    cachedModule = await import("bun-pty");
+    ptyModule = await import("bun-pty");
     log.info(LOG_TAG, "bun-pty loaded successfully");
-    return cachedModule;
+    return ptyModule;
   } catch (error) {
-    loadError = error instanceof Error ? error.message : String(error);
+    loadError = extractErrorMessage(error);
     // Extract just the first line for a cleaner warning
     const firstLine = loadError.split("\n")[0];
     log.warn(LOG_TAG, `bun-pty unavailable: ${firstLine}`);
     log.warn(LOG_TAG, "PTY tools will be disabled. Set BUN_PTY_LIB env var to the native library path to fix.");
-    cachedModule = null;
+    ptyModule = null;
     return null;
   }
 }
@@ -111,7 +112,7 @@ export async function loadBunPty(): Promise<BunPtyModule | null> {
  * Check if bun-pty is available (must call loadBunPty first).
  */
 export function isBunPtyAvailable(): boolean {
-  return cachedModule !== null;
+  return ptyModule !== null;
 }
 
 /**

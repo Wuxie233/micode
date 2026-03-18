@@ -92,27 +92,15 @@ export default [
           selector: "variable",
           format: ["camelCase", "UPPER_CASE", "snake_case", "PascalCase"],
           leadingUnderscore: "allow",
-          filter: {
-            regex: "(Map|Object|String|Array|List|Set|Dict|Number|Boolean|Fn|Func|Callback)$",
-            match: false,
-          },
         },
         {
           selector: "function",
           format: ["camelCase"],
-          filter: {
-            regex: "(Map|Object|String|Array|List|Set|Dict|Number|Boolean|Fn|Func|Callback)$",
-            match: false,
-          },
         },
         {
           selector: "parameter",
           format: ["camelCase"],
           leadingUnderscore: "allow",
-          filter: {
-            regex: "(Map|Object|String|Array|List|Set|Dict|Number|Boolean|Fn|Func|Callback)$",
-            match: false,
-          },
         },
         { selector: "typeLike", format: ["PascalCase"] },
         {

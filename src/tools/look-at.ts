@@ -1,11 +1,10 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
 import { tool } from "@opencode-ai/plugin/tool";
+import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 
 const BYTES_PER_KB = 1024;
-const LARGE_FILE_THRESHOLD_KB = 100;
-const LARGE_FILE_THRESHOLD = LARGE_FILE_THRESHOLD_KB * BYTES_PER_KB;
-const MAX_LINES_WITHOUT_EXTRACT = 200;
 const MAX_SIGNATURE_LENGTH = 80;
 const MAX_JSON_KEYS_SHOWN = 50;
 const MAX_PREVIEW_LINES = 10;
@@ -140,11 +139,11 @@ function extractMarkdownStructure(lines: string[]): string {
 
 function extractJsonStructure(content: string): string {
   try {
-    const obj: unknown = JSON.parse(content);
-    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+    const parsed: unknown = JSON.parse(content);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return "## JSON (non-object top-level value)";
     }
-    const keys = Object.keys(obj as Record<string, unknown>);
+    const keys = Object.keys(parsed as Record<string, unknown>);
     return `## Top-level keys (${keys.length})\n\n${keys.slice(0, MAX_JSON_KEYS_SHOWN).join(", ")}${keys.length > MAX_JSON_KEYS_SHOWN ? "..." : ""}`;
   } catch {
     return "## Invalid JSON";
@@ -198,7 +197,7 @@ Ideal for: large files, getting file structure, quick overview.`,
       const lines = content.split("\n");
 
       // For small files, return full content
-      if (stats.size < LARGE_FILE_THRESHOLD && lines.length <= MAX_LINES_WITHOUT_EXTRACT) {
+      if (stats.size < config.limits.largeFileBytes && lines.length <= config.limits.maxLinesNoExtract) {
         return `## ${name} (${lines.length} lines)\n\n${content}`;
       }
 
@@ -216,7 +215,7 @@ Ideal for: large files, getting file structure, quick overview.`,
 
       return output;
     } catch (e) {
-      return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      return `Error: ${extractErrorMessage(e)}`;
     }
   },
 });

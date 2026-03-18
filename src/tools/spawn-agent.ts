@@ -1,5 +1,6 @@
 import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
+import { extractErrorMessage } from "@/utils/errors";
 
 // Extended context with metadata (available but not typed in plugin API)
 // Using intersection to add optional metadata without type conflict
@@ -73,7 +74,7 @@ async function executeAgentSession(ctx: PluginInput, task: AgentTask): Promise<s
 
   const messages = messagesResp.data || [];
   const lastAssistant = messages.filter((m) => m.info?.role === "assistant").pop();
-  const result =
+  const agentResponse =
     lastAssistant?.parts
       ?.filter((p) => p.type === "text" && p.text)
       .map((p) => p.text)
@@ -85,7 +86,7 @@ async function executeAgentSession(ctx: PluginInput, task: AgentTask): Promise<s
       /* fire-and-forget */
     });
 
-  return result;
+  return agentResponse;
 }
 
 async function runAgent(
@@ -98,11 +99,11 @@ async function runAgent(
   updateProgress(toolCtx, progressState, `Running ${task.agent}...`);
 
   try {
-    const result = await executeAgentSession(ctx, task);
+    const agentOutput = await executeAgentSession(ctx, task);
     const agentTime = ((Date.now() - agentStartTime) / MS_PER_SECOND).toFixed(1);
-    return `## ${task.description} (${agentTime}s)\n\n**Agent**: ${task.agent}\n\n### Result\n\n${result}`;
+    return `## ${task.description} (${agentTime}s)\n\n**Agent**: ${task.agent}\n\n### Result\n\n${agentOutput}`;
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = extractErrorMessage(error);
     return `## ${task.description}\n\n**Agent**: ${task.agent}\n**Error**: ${errorMsg}`;
   }
 }
@@ -114,13 +115,13 @@ async function runParallelAgents(ctx: PluginInput, agents: AgentTask[], extCtx: 
   extCtx.metadata?.({ title: `Running ${agents.length} agents in parallel...` });
 
   const runWithProgress = async (task: AgentTask): Promise<string> => {
-    const result = await runAgent(ctx, task, extCtx, progressState);
+    const agentOutput = await runAgent(ctx, task, extCtx, progressState);
     progressState.completed++;
     const elapsed = ((Date.now() - startTime) / MS_PER_SECOND).toFixed(0);
     extCtx.metadata?.({
       title: `[${progressState.completed}/${agents.length}] ${task.agent} done (${elapsed}s)`,
     });
-    return result;
+    return agentOutput;
   };
 
   const results = await Promise.all(agents.map(runWithProgress));

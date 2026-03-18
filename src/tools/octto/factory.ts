@@ -3,6 +3,7 @@
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
+import { extractErrorMessage } from "@/utils/errors";
 import type { OcttoTool, OcttoTools } from "./types";
 
 type ArgsSchema = Parameters<typeof tool>[0]["args"];
@@ -30,10 +31,10 @@ Returns immediately with question_id. Use get_answer to retrieve response.`,
 
         try {
           const questionConfig = config.toConfig(args as unknown as T);
-          const result = sessions.pushQuestion(args.session_id, config.type, questionConfig);
-          return `Question pushed: ${result.question_id}\nUse get_answer("${result.question_id}") to retrieve response.`;
+          const pushed = sessions.pushQuestion(args.session_id, config.type, questionConfig);
+          return `Question pushed: ${pushed.question_id}\nUse get_answer("${pushed.question_id}") to retrieve response.`;
         } catch (error) {
-          return `Failed: ${error instanceof Error ? error.message : String(error)}`;
+          return `Failed: ${extractErrorMessage(error)}`;
         }
       },
     });
@@ -64,12 +65,12 @@ function executePushQuestion(
   args: { session_id: string; type: QuestionType; config: BaseConfig },
 ): string {
   try {
-    const result = sessions.pushQuestion(args.session_id, args.type, args.config);
-    return `Question pushed: ${result.question_id}
+    const pushed = sessions.pushQuestion(args.session_id, args.type, args.config);
+    return `Question pushed: ${pushed.question_id}
 Type: ${args.type}
 Use get_next_answer(session_id, block=true) to wait for the user's response.`;
   } catch (error) {
-    return `Failed to push question: ${error instanceof Error ? error.message : String(error)}`;
+    return `Failed to push question: ${extractErrorMessage(error)}`;
   }
 }
 

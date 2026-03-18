@@ -51,10 +51,10 @@ export function mergeFragments(
   global: Record<string, string[]>,
   project: Record<string, string[]>,
 ): Record<string, string[]> {
-  const allAgents = new Set([...Object.keys(global), ...Object.keys(project)]);
+  const agents = new Set([...Object.keys(global), ...Object.keys(project)]);
   const merged: Record<string, string[]> = {};
 
-  for (const agent of allAgents) {
+  for (const agent of agents) {
     const globalFragments = global[agent] ?? [];
     const projectFragments = project[agent] ?? [];
     const combined = [...globalFragments, ...projectFragments];

@@ -4,59 +4,59 @@ import type { RingBuffer } from "./buffer"; // now a ReturnType alias
 export type PTYStatus = "running" | "exited" | "killed";
 
 export interface PTYSession {
-  id: string;
-  title: string;
-  command: string;
-  args: string[];
-  workdir: string;
-  env?: Record<string, string>;
+  readonly id: string;
+  readonly title: string;
+  readonly command: string;
+  readonly args: string[];
+  readonly workdir: string;
+  readonly env?: Record<string, string>;
   status: PTYStatus;
   exitCode?: number;
-  pid: number;
-  createdAt: Date;
-  parentSessionId: string;
-  buffer: RingBuffer;
-  process: import("bun-pty").IPty;
+  readonly pid: number;
+  readonly createdAt: Date;
+  readonly parentSessionId: string;
+  readonly buffer: RingBuffer;
+  readonly process: import("bun-pty").IPty;
 }
 
 export interface PTYSessionInfo {
-  id: string;
-  title: string;
-  command: string;
-  args: string[];
-  workdir: string;
-  status: PTYStatus;
-  exitCode?: number;
-  pid: number;
-  createdAt: Date;
-  lineCount: number;
+  readonly id: string;
+  readonly title: string;
+  readonly command: string;
+  readonly args: string[];
+  readonly workdir: string;
+  readonly status: PTYStatus;
+  readonly exitCode?: number;
+  readonly pid: number;
+  readonly createdAt: Date;
+  readonly lineCount: number;
 }
 
 export interface SpawnOptions {
-  command: string;
-  args?: string[];
-  workdir?: string;
-  env?: Record<string, string>;
-  title?: string;
-  parentSessionId: string;
+  readonly command: string;
+  readonly args?: string[];
+  readonly workdir?: string;
+  readonly env?: Record<string, string>;
+  readonly title?: string;
+  readonly parentSessionId: string;
 }
 
 export interface ReadResult {
-  lines: string[];
-  totalLines: number;
-  offset: number;
-  hasMore: boolean;
+  readonly lines: string[];
+  readonly totalLines: number;
+  readonly offset: number;
+  readonly hasMore: boolean;
 }
 
 export interface SearchMatch {
-  lineNumber: number;
-  text: string;
+  readonly lineNumber: number;
+  readonly text: string;
 }
 
 export interface SearchResult {
-  matches: SearchMatch[];
-  totalMatches: number;
-  totalLines: number;
-  offset: number;
-  hasMore: boolean;
+  readonly matches: SearchMatch[];
+  readonly totalMatches: number;
+  readonly totalLines: number;
+  readonly offset: number;
+  readonly hasMore: boolean;
 }

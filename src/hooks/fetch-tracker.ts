@@ -2,6 +2,7 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
 import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 // --- Tracked tools ---
@@ -76,7 +77,7 @@ export function normalizeKey(tool: string, args: Record<string, unknown> | undef
     const normalizer = keyNormalizers[tool];
     return normalizer ? normalizer(args) : null;
   } catch (error) {
-    log.warn("hooks.fetch-tracker", `Key normalization failed: ${error instanceof Error ? error.message : "unknown"}`);
+    log.warn("hooks.fetch-tracker", `Key normalization failed: ${extractErrorMessage(error)}`);
     return null;
   }
 }
@@ -177,7 +178,7 @@ export function createFetchTrackerHook(_ctx: PluginInput): FetchTrackerHooks {
       try {
         handleFetchAfter(input, output);
       } catch (error) {
-        log.warn("hooks.fetch-tracker", `After hook error: ${error instanceof Error ? error.message : "unknown"}`);
+        log.warn("hooks.fetch-tracker", `After hook error: ${extractErrorMessage(error)}`);
       }
     },
 

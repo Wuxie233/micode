@@ -1,36 +1,38 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
 
-// Agents
-import { agents, PRIMARY_AGENT_NAME } from "./agents";
-// Config loader
-import { loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "./config-loader";
-import { createArtifactAutoIndexHook } from "./hooks/artifact-auto-index";
-// Hooks
-import { createAutoCompactHook } from "./hooks/auto-compact";
-import { createCommentCheckerHook } from "./hooks/comment-checker";
-import { createConstraintReviewerHook } from "./hooks/constraint-reviewer";
-import { createContextInjectorHook } from "./hooks/context-injector";
-import { createContextWindowMonitorHook } from "./hooks/context-window-monitor";
-import { createFetchTrackerHook } from "./hooks/fetch-tracker";
-import { createFileOpsTrackerHook, getFileOps } from "./hooks/file-ops-tracker";
-import { createFragmentInjectorHook, warnUnknownAgents } from "./hooks/fragment-injector";
-import { createLedgerLoaderHook } from "./hooks/ledger-loader";
-import { createMindmodelInjectorHook } from "./hooks/mindmodel-injector";
-import { createSessionRecoveryHook } from "./hooks/session-recovery";
-import { createTokenAwareTruncationHook } from "./hooks/token-aware-truncation";
-import { artifact_search } from "./tools/artifact-search";
-// Tools
-import { ast_grep_replace, ast_grep_search, checkAstGrepAvailable } from "./tools/ast-grep";
-import { createBatchReadTool } from "./tools/batch-read";
-import { btca_ask, checkBtcaAvailable } from "./tools/btca";
-import { look_at } from "./tools/look-at";
-import { milestone_artifact_search } from "./tools/milestone-artifact-search";
-import { createMindmodelLookupTool } from "./tools/mindmodel-lookup";
-import { createOcttoTools, createSessionStore } from "./tools/octto";
-import { createPTYManager, createPtyTools, loadBunPty } from "./tools/pty";
-import { createSpawnAgentTool } from "./tools/spawn-agent";
-import { log } from "./utils/logger";
+import { agents, PRIMARY_AGENT_NAME } from "@/agents";
+import { loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
+import {
+  createArtifactAutoIndexHook,
+  createAutoCompactHook,
+  createCommentCheckerHook,
+  createConstraintReviewerHook,
+  createContextInjectorHook,
+  createContextWindowMonitorHook,
+  createFetchTrackerHook,
+  createFileOpsTrackerHook,
+  createFragmentInjectorHook,
+  createLedgerLoaderHook,
+  createMindmodelInjectorHook,
+  createSessionRecoveryHook,
+  createTokenAwareTruncationHook,
+  getFileOps,
+  warnUnknownAgents,
+} from "@/hooks";
+import { artifact_search } from "@/tools/artifact-search";
+import { ast_grep_replace, ast_grep_search, checkAstGrepAvailable } from "@/tools/ast-grep";
+import { createBatchReadTool } from "@/tools/batch-read";
+import { btca_ask, checkBtcaAvailable } from "@/tools/btca";
+import { look_at } from "@/tools/look-at";
+import { milestone_artifact_search } from "@/tools/milestone-artifact-search";
+import { createMindmodelLookupTool } from "@/tools/mindmodel-lookup";
+import { createOcttoTools, createSessionStore } from "@/tools/octto";
+import { createPTYManager, createPtyTools, loadBunPty } from "@/tools/pty";
+import { createSpawnAgentTool } from "@/tools/spawn-agent";
+import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
+import { log } from "@/utils/logger";
 
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
@@ -189,7 +191,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       return extractTextFromParts(promptResult.data.parts);
     } catch (error) {
-      log.warn("mindmodel", `Reviewer failed: ${error instanceof Error ? error.message : "unknown"}`);
+      log.warn("mindmodel", `Reviewer failed: ${extractErrorMessage(error)}`);
       return '{"status": "PASS", "violations": [], "summary": "Review failed"}';
     } finally {
       if (sessionId) {
@@ -345,7 +347,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
           ...output.options,
           thinking: {
             type: "enabled",
-            budgetTokens: 128000,
+            budgetTokens: config.thinking.budgetTokens,
           },
         };
       }

@@ -43,24 +43,24 @@ export function clearFileOps(sessionID: string): void {
 export function getAndClearFileOps(sessionID: string): FileOps {
   const ops = getFileOps(sessionID);
   // Return copies of the sets before clearing
-  const result = {
+  const snapshot = {
     read: new Set(ops.read),
     modified: new Set(ops.modified),
   };
   clearFileOps(sessionID);
-  return result;
+  return snapshot;
 }
 
 export function formatFileOpsForPrompt(ops: FileOps): string {
   const readPaths = Array.from(ops.read).sort();
   const modifiedPaths = Array.from(ops.modified).sort();
 
-  let result = "<file-operations>\n";
-  result += `Read: ${readPaths.length > 0 ? readPaths.join(", ") : "(none)"}\n`;
-  result += `Modified: ${modifiedPaths.length > 0 ? modifiedPaths.join(", ") : "(none)"}\n`;
-  result += "</file-operations>";
+  let prompt = "<file-operations>\n";
+  prompt += `Read: ${readPaths.length > 0 ? readPaths.join(", ") : "(none)"}\n`;
+  prompt += `Modified: ${modifiedPaths.length > 0 ? modifiedPaths.join(", ") : "(none)"}\n`;
+  prompt += "</file-operations>";
 
-  return result;
+  return prompt;
 }
 
 interface FileOpsTrackerHooks {

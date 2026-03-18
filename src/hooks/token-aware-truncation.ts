@@ -13,9 +13,9 @@ function truncateToTokenLimit(
   maxTokens: number,
   preserveLines: number = config.tokens.preserveHeaderLines,
 ): string {
-  const currentTokens = estimateTokens(output);
+  const tokens = estimateTokens(output);
 
-  if (currentTokens <= maxTokens) {
+  if (tokens <= maxTokens) {
     return output;
   }
 
@@ -95,8 +95,8 @@ function applyTruncation(text: string, maxTokens: number): string {
   if (maxTokens <= 0) {
     return "[Output suppressed - context window exhausted. Consider compacting.]";
   }
-  const currentTokens = estimateTokens(text);
-  return currentTokens > maxTokens ? truncateToTokenLimit(text, maxTokens) : text;
+  const tokens = estimateTokens(text);
+  return tokens > maxTokens ? truncateToTokenLimit(text, maxTokens) : text;
 }
 
 async function fetchTokenUsage(
@@ -112,9 +112,9 @@ async function fetchTokenUsage(
     const messages = (resp as { data?: unknown[] }).data;
     if (!Array.isArray(messages) || messages.length === 0) return DEFAULT_USAGE;
 
-    const result = extractUsageFromMessages(messages);
-    cache.set(sessionID, result);
-    return result;
+    const tokenUsage = extractUsageFromMessages(messages);
+    cache.set(sessionID, tokenUsage);
+    return tokenUsage;
   } catch {
     return cache.get(sessionID) || DEFAULT_USAGE;
   }

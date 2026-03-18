@@ -3,6 +3,8 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 import type { PTYManager } from "@/tools/pty/manager";
 import type { PTYSessionInfo, ReadResult, SearchResult } from "@/tools/pty/types";
+import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 
 const DESCRIPTION = `Reads output from a PTY session's buffer.
 
@@ -43,8 +45,8 @@ Examples:
 - Find specific log levels: pattern="ERROR|WARN|FATAL"
 - First 10 matches only: pattern="error", limit=10`;
 
-const DEFAULT_LIMIT = 500;
-const MAX_LINE_LENGTH = 2000;
+const DEFAULT_LIMIT = config.limits.ptyDefaultReadLimit;
+const MAX_LINE_LENGTH = config.limits.ptyMaxLineLength;
 const LINE_NUMBER_PAD_WIDTH = 5;
 
 function truncateLine(text: string): string {
@@ -59,7 +61,7 @@ function parseRegex(pattern: string, ignoreCase: boolean): RegExp {
   try {
     return new RegExp(pattern, ignoreCase ? "i" : "");
   } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
+    const error = extractErrorMessage(e);
     throw new Error(`Invalid regex pattern '${pattern}': ${error}`, { cause: e });
   }
 }
@@ -141,18 +143,18 @@ export function createPtyReadTool(manager: PTYManager): ToolDefinition {
 
       if (args.pattern) {
         const regex = parseRegex(args.pattern, args.ignoreCase ?? false);
-        const result = manager.search(args.id, regex, offset, limit);
-        if (!result) {
+        const searchResult = manager.search(args.id, regex, offset, limit);
+        if (!searchResult) {
           throw new Error(`PTY session '${args.id}' not found.`);
         }
-        return formatSearchOutput(args.id, session, args.pattern, result, offset);
+        return formatSearchOutput(args.id, session, args.pattern, searchResult, offset);
       }
 
-      const result = manager.read(args.id, offset, limit);
-      if (!result) {
+      const readResult = manager.read(args.id, offset, limit);
+      if (!readResult) {
         throw new Error(`PTY session '${args.id}' not found.`);
       }
-      return formatReadOutput(args.id, session, result);
+      return formatReadOutput(args.id, session, readResult);
     },
   });
 }

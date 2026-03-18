@@ -32,12 +32,12 @@ export const STATUSES = {
 export type QuestionStatus = (typeof STATUSES)[Exclude<keyof typeof STATUSES, "NONE_PENDING">];
 
 export interface Question {
-  id: string;
-  sessionId: string;
-  type: QuestionType;
-  config: BaseConfig;
+  readonly id: string;
+  readonly sessionId: string;
+  readonly type: QuestionType;
+  readonly config: BaseConfig;
   status: QuestionStatus;
-  createdAt: Date;
+  readonly createdAt: Date;
   answeredAt?: Date;
   response?: Answer;
   /** True if this answer was already returned via get_next_answer */
@@ -69,61 +69,61 @@ export const QUESTION_TYPES = Object.values(QUESTIONS);
 // --- Answer Types ---
 
 export interface PickOneAnswer {
-  selected: string;
+  readonly selected: string;
 }
 
 export interface PickManyAnswer {
-  selected: string[];
+  readonly selected: string[];
 }
 
 export interface ConfirmAnswer {
-  choice: "yes" | "no" | "cancel";
+  readonly choice: "yes" | "no" | "cancel";
 }
 
 export interface ThumbsAnswer {
-  choice: "up" | "down";
+  readonly choice: "up" | "down";
 }
 
 export interface EmojiReactAnswer {
-  emoji: string;
+  readonly emoji: string;
 }
 
 export interface AskTextAnswer {
-  text: string;
+  readonly text: string;
 }
 
 export interface SliderAnswer {
-  value: number;
+  readonly value: number;
 }
 
 export interface RankAnswer {
-  ranking: Array<{ id: string; rank: number }>;
+  readonly ranking: Array<{ id: string; rank: number }>;
 }
 
 export interface RateAnswer {
-  ratings: Record<string, number>;
+  readonly ratings: Record<string, number>;
 }
 
 export interface AskCodeAnswer {
-  code: string;
+  readonly code: string;
 }
 
 export interface AskImageAnswer {
-  images: Array<{ name: string; data: string; type: string }>;
+  readonly images: Array<{ name: string; data: string; type: string }>;
 }
 
 export interface AskFileAnswer {
-  files: Array<{ name: string; data: string; type: string }>;
+  readonly files: Array<{ name: string; data: string; type: string }>;
 }
 
 export interface ReviewAnswer {
-  decision: string;
-  feedback?: string;
+  readonly decision: string;
+  readonly feedback?: string;
 }
 
 export interface ShowOptionsAnswer {
-  selected: string;
-  feedback?: string;
+  readonly selected: string;
+  readonly feedback?: string;
 }
 
 export type Answer =
@@ -143,22 +143,22 @@ export type Answer =
   | ShowOptionsAnswer;
 
 export interface QuestionAnswers {
-  [QUESTIONS.PICK_ONE]: PickOneAnswer;
-  [QUESTIONS.PICK_MANY]: PickManyAnswer;
-  [QUESTIONS.CONFIRM]: ConfirmAnswer;
-  [QUESTIONS.THUMBS]: ThumbsAnswer;
-  [QUESTIONS.EMOJI_REACT]: EmojiReactAnswer;
-  [QUESTIONS.ASK_TEXT]: AskTextAnswer;
-  [QUESTIONS.SLIDER]: SliderAnswer;
-  [QUESTIONS.RANK]: RankAnswer;
-  [QUESTIONS.RATE]: RateAnswer;
-  [QUESTIONS.ASK_CODE]: AskCodeAnswer;
-  [QUESTIONS.ASK_IMAGE]: AskImageAnswer;
-  [QUESTIONS.ASK_FILE]: AskFileAnswer;
-  [QUESTIONS.SHOW_DIFF]: ReviewAnswer;
-  [QUESTIONS.SHOW_PLAN]: ReviewAnswer;
-  [QUESTIONS.REVIEW_SECTION]: ReviewAnswer;
-  [QUESTIONS.SHOW_OPTIONS]: ShowOptionsAnswer;
+  readonly [QUESTIONS.PICK_ONE]: PickOneAnswer;
+  readonly [QUESTIONS.PICK_MANY]: PickManyAnswer;
+  readonly [QUESTIONS.CONFIRM]: ConfirmAnswer;
+  readonly [QUESTIONS.THUMBS]: ThumbsAnswer;
+  readonly [QUESTIONS.EMOJI_REACT]: EmojiReactAnswer;
+  readonly [QUESTIONS.ASK_TEXT]: AskTextAnswer;
+  readonly [QUESTIONS.SLIDER]: SliderAnswer;
+  readonly [QUESTIONS.RANK]: RankAnswer;
+  readonly [QUESTIONS.RATE]: RateAnswer;
+  readonly [QUESTIONS.ASK_CODE]: AskCodeAnswer;
+  readonly [QUESTIONS.ASK_IMAGE]: AskImageAnswer;
+  readonly [QUESTIONS.ASK_FILE]: AskFileAnswer;
+  readonly [QUESTIONS.SHOW_DIFF]: ReviewAnswer;
+  readonly [QUESTIONS.SHOW_PLAN]: ReviewAnswer;
+  readonly [QUESTIONS.REVIEW_SECTION]: ReviewAnswer;
+  readonly [QUESTIONS.SHOW_OPTIONS]: ShowOptionsAnswer;
 }
 
 export type QuestionConfig =
@@ -189,80 +189,80 @@ export type BaseConfig =
     };
 
 export interface Session {
-  id: string;
-  title?: string;
-  port: number;
-  url: string;
-  createdAt: Date;
-  questions: Map<string, Question>;
+  readonly id: string;
+  readonly title?: string;
+  readonly port: number;
+  readonly url: string;
+  readonly createdAt: Date;
+  readonly questions: Map<string, Question>;
   wsConnected: boolean;
-  server?: ReturnType<typeof Bun.serve>;
+  readonly server?: ReturnType<typeof Bun.serve>;
   wsClient?: ServerWebSocket<unknown>;
 }
 
 export interface InitialQuestion {
-  type: QuestionType;
-  config: BaseConfig;
+  readonly type: QuestionType;
+  readonly config: BaseConfig;
 }
 
 export interface StartSessionInput {
-  title?: string;
+  readonly title?: string;
   /** Initial questions to display immediately when browser opens */
-  questions?: InitialQuestion[];
+  readonly questions?: InitialQuestion[];
 }
 
 export interface StartSessionOutput {
-  session_id: string;
-  url: string;
+  readonly session_id: string;
+  readonly url: string;
   /** IDs of initial questions if any were provided */
-  question_ids?: string[];
+  readonly question_ids?: string[];
 }
 
 export interface EndSessionOutput {
-  ok: boolean;
+  readonly ok: boolean;
 }
 
 export interface PushQuestionOutput {
-  question_id: string;
+  readonly question_id: string;
 }
 
 export interface GetAnswerInput {
-  question_id: string;
-  block?: boolean;
-  timeout?: number;
+  readonly question_id: string;
+  readonly block?: boolean;
+  readonly timeout?: number;
 }
 
 export interface GetAnswerOutput {
-  completed: boolean;
-  status: QuestionStatus;
-  response?: Answer;
-  reason?: "timeout" | "cancelled" | "pending";
+  readonly completed: boolean;
+  readonly status: QuestionStatus;
+  readonly response?: Answer;
+  readonly reason?: "timeout" | "cancelled" | "pending";
 }
 
 export interface GetNextAnswerInput {
-  session_id: string;
-  block?: boolean;
-  timeout?: number;
+  readonly session_id: string;
+  readonly block?: boolean;
+  readonly timeout?: number;
 }
 
 export type AnswerStatus = (typeof STATUSES)[keyof typeof STATUSES];
 
 export interface GetNextAnswerOutput {
-  completed: boolean;
-  question_id?: string;
-  question_type?: QuestionType;
-  status: AnswerStatus;
-  response?: Answer;
-  reason?: typeof STATUSES.TIMEOUT | typeof STATUSES.NONE_PENDING;
+  readonly completed: boolean;
+  readonly question_id?: string;
+  readonly question_type?: QuestionType;
+  readonly status: AnswerStatus;
+  readonly response?: Answer;
+  readonly reason?: typeof STATUSES.TIMEOUT | typeof STATUSES.NONE_PENDING;
 }
 
 export interface ListQuestionsOutput {
-  questions: Array<{
-    id: string;
-    type: QuestionType;
-    status: QuestionStatus;
-    createdAt: string;
-    answeredAt?: string;
+  readonly questions: Array<{
+    readonly id: string;
+    readonly type: QuestionType;
+    readonly status: QuestionStatus;
+    readonly createdAt: string;
+    readonly answeredAt?: string;
   }>;
 }
 
@@ -276,29 +276,29 @@ export const WS_MESSAGES = {
 } as const;
 
 export interface WsQuestionMessage {
-  type: "question";
-  id: string;
-  questionType: QuestionType;
-  config: BaseConfig;
+  readonly type: "question";
+  readonly id: string;
+  readonly questionType: QuestionType;
+  readonly config: BaseConfig;
 }
 
 export interface WsCancelMessage {
-  type: "cancel";
-  id: string;
+  readonly type: "cancel";
+  readonly id: string;
 }
 
 export interface WsEndMessage {
-  type: "end";
+  readonly type: "end";
 }
 
 export interface WsResponseMessage {
-  type: "response";
-  id: string;
-  answer: Answer;
+  readonly type: "response";
+  readonly id: string;
+  readonly answer: Answer;
 }
 
 export interface WsConnectedMessage {
-  type: "connected";
+  readonly type: "connected";
 }
 
 export type WsServerMessage = WsQuestionMessage | WsCancelMessage | WsEndMessage;

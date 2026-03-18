@@ -1,5 +1,7 @@
 import { tool } from "@opencode-ai/plugin/tool";
 import { spawn, which } from "bun";
+import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 
 /**
  * Check if btca CLI is available on the system.
@@ -19,8 +21,6 @@ export async function checkBtcaAvailable(): Promise<{ available: boolean; messag
   };
 }
 
-const BTCA_TIMEOUT_MS = 120000; // 2 minutes for long clones
-
 async function runBtca(args: string[]): Promise<{ output: string; error?: string }> {
   try {
     const proc = spawn(["btca", ...args], {
@@ -33,7 +33,7 @@ async function runBtca(args: string[]): Promise<{ output: string; error?: string
       setTimeout(() => {
         proc.kill();
         reject(new Error("btca command timed out after 2 minutes"));
-      }, BTCA_TIMEOUT_MS);
+      }, config.timeouts.btcaMs);
     });
 
     // Race between process completion and timeout
@@ -49,15 +49,15 @@ async function runBtca(args: string[]): Promise<{ output: string; error?: string
 
     return { output: stdout.trim() };
   } catch (e) {
-    const err = e as Error;
-    if (err.message?.includes("ENOENT")) {
+    const msg = extractErrorMessage(e);
+    if (msg.includes("ENOENT")) {
       return {
         output: "",
         error:
           "btca CLI not found. Install from: https://github.com/davis7dotsh/better-context\n" + "  bun add -g btca",
       };
     }
-    return { output: "", error: err.message };
+    return { output: "", error: msg };
   }
 }
 
@@ -71,12 +71,12 @@ export const btca_ask = tool({
     question: tool.schema.string().describe("Question to ask about the library source code"),
   },
   execute: async (args) => {
-    const result = await runBtca(["ask", "-t", args.tech, "-q", args.question]);
+    const btcaOutput = await runBtca(["ask", "-t", args.tech, "-q", args.question]);
 
-    if (result.error) {
-      return `Error: ${result.error}`;
+    if (btcaOutput.error) {
+      return `Error: ${btcaOutput.error}`;
     }
 
-    return result.output || "No answer found";
+    return btcaOutput.output || "No answer found";
   },
 });
