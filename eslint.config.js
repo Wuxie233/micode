@@ -53,6 +53,15 @@ export default [
           selector: "ClassDeclaration:not([superClass.name='Error'])",
           message: "No classes for business logic. Use factory functions with closed-over state.",
         },
+        {
+          selector: "VariableDeclarator > Identifier.id[name=/^.+(Map|List|Dict|Fn|Func|Callback)$/]",
+          message:
+            "No Hungarian notation. Name by domain meaning, not data structure (e.g., providerMap -> providers).",
+        },
+        {
+          selector: "FunctionDeclaration > Identifier.id[name=/^.+(Map|List|Dict|Fn|Func|Callback)$/]",
+          message: "No Hungarian notation. Name by domain meaning, not data structure.",
+        },
       ],
 
       // --- Structural limits ---

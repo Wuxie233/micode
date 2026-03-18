@@ -54,9 +54,9 @@ categories:
     const { createConstraintReviewerHook } = await import("../../src/hooks/constraint-reviewer");
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => '{"status": "BLOCKED", "violations": []}';
+    const mockReviewer = async () => '{"status": "BLOCKED", "violations": []}';
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "some code" };
     await hook["tool.execute.after"]({ tool: "Write", sessionID: "test", args: { file_path: "test.ts" } }, output);
@@ -72,12 +72,12 @@ categories:
 
     let reviewCalled = false;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCalled = true;
       return '{"status": "PASS", "violations": [], "summary": "OK"}';
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "some result" };
     await hook["tool.execute.after"]({ tool: "Read", sessionID: "test", args: { file_path: "test.ts" } }, output);
@@ -92,12 +92,12 @@ categories:
 
     let reviewCalled = false;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCalled = true;
       return '{"status": "PASS", "violations": [], "summary": "OK"}';
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "some code" };
     await hook["tool.execute.after"](
@@ -119,12 +119,12 @@ categories:
 
     let reviewCalled = false;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCalled = true;
       return '{"status": "PASS", "violations": [], "summary": "OK"}';
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "edited code" };
     await hook["tool.execute.after"](
@@ -145,9 +145,9 @@ categories:
     const { createConstraintReviewerHook } = await import("../../src/hooks/constraint-reviewer");
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => '{"status": "PASS", "violations": [], "summary": "All good"}';
+    const mockReviewer = async () => '{"status": "PASS", "violations": [], "summary": "All good"}';
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "clean code" };
     await hook["tool.execute.after"](
@@ -168,7 +168,7 @@ categories:
     const { createConstraintReviewerHook } = await import("../../src/hooks/constraint-reviewer");
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () =>
+    const mockReviewer = async () =>
       JSON.stringify({
         status: "BLOCKED",
         violations: [
@@ -184,7 +184,7 @@ categories:
         summary: "Found 1 violation",
       });
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "bad code" };
     await hook["tool.execute.after"](
@@ -209,7 +209,7 @@ categories:
     );
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () =>
+    const mockReviewer = async () =>
       JSON.stringify({
         status: "BLOCKED",
         violations: [
@@ -225,7 +225,7 @@ categories:
         summary: "Found 1 violation",
       });
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // First call - increments retry count
     const output1 = { output: "bad code" };
@@ -263,7 +263,7 @@ categories:
 
     let reviewCalled = false;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCalled = true;
       return JSON.stringify({
         status: "BLOCKED",
@@ -281,7 +281,7 @@ categories:
       });
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // First, set override via chat message
     await hook["chat.message"](
@@ -312,12 +312,12 @@ categories:
 
     let reviewCallCount = 0;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCallCount++;
       return '{"status": "PASS", "violations": [], "summary": "OK"}';
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // Set override
     await hook["chat.message"](
@@ -357,12 +357,12 @@ categories:
 
     let reviewCalled = false;
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       reviewCalled = true;
       return '{"status": "PASS", "violations": [], "summary": "OK"}';
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     const output = { output: "some code" };
     await hook["tool.execute.after"]({ tool: "Write", sessionID: "test", args: {} }, output);
@@ -376,11 +376,11 @@ categories:
     const { createConstraintReviewerHook } = await import("../../src/hooks/constraint-reviewer");
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () => {
+    const mockReviewer = async () => {
       throw new Error("Review service unavailable");
     };
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // Should not throw, should gracefully degrade
     const output = { output: "some code" };
@@ -405,13 +405,13 @@ categories:
     );
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () =>
+    const mockReviewer = async () =>
       JSON.stringify({
         status: "BLOCKED",
         violations: [{ file: "test", rule: "rule", constraint_file: "c.md", found: "x", expected: "y" }],
       });
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // First file - first retry
     const output1 = { output: "code" };
@@ -447,13 +447,13 @@ categories:
     const { createConstraintReviewerHook } = await import("../../src/hooks/constraint-reviewer");
 
     const mockCtx = createMockCtx(testDir);
-    const mockReviewFn = async () =>
+    const mockReviewer = async () =>
       JSON.stringify({
         status: "BLOCKED",
         violations: [{ file: "test", rule: "rule", constraint_file: "c.md", found: "x", expected: "y" }],
       });
 
-    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewFn);
+    const hook = createConstraintReviewerHook(mockCtx as any, mockReviewer);
 
     // Build up some state
     await hook["tool.execute.after"](

@@ -6,7 +6,7 @@ import { QUESTION_TYPES, QUESTIONS, STATUSES } from "@/octto/session";
 import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "@/octto/state";
 import { config } from "@/utils/config";
 import { log } from "@/utils/logger";
-import { formatBranchStatus, formatFindings, formatFindingsList, formatQASummary } from "./formatters";
+import { formatBranchStatus, formatFindingSummary, formatFindings, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools, OpencodeClient } from "./types";
 import { generateSessionId } from "./utils";
@@ -330,7 +330,7 @@ function buildEndBrainstormTool(store: StateStore, sessions: SessionStore, track
         }
       }
 
-      const findings = formatFindingsList(state);
+      const findings = formatFindingSummary(state);
       await store.deleteSession(args.session_id);
 
       return `<brainstorm_ended>

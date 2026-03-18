@@ -223,20 +223,20 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const octtoSessionStore = createSessionStore();
 
   // Track octto sessions per opencode session for cleanup
-  const octtoSessionsMap = new Map<string, Set<string>>();
+  const octtoSessions = new Map<string, Set<string>>();
 
   const octtoTools = createOcttoTools(octtoSessionStore, ctx.client, {
     onCreated: (parentSessionId, octtoSessionId) => {
-      const sessions = octtoSessionsMap.get(parentSessionId) ?? new Set<string>();
+      const sessions = octtoSessions.get(parentSessionId) ?? new Set<string>();
       sessions.add(octtoSessionId);
-      octtoSessionsMap.set(parentSessionId, sessions);
+      octtoSessions.set(parentSessionId, sessions);
     },
     onEnded: (parentSessionId, octtoSessionId) => {
-      const sessions = octtoSessionsMap.get(parentSessionId);
+      const sessions = octtoSessions.get(parentSessionId);
       if (!sessions) return;
       sessions.delete(octtoSessionId);
       if (sessions.size === 0) {
-        octtoSessionsMap.delete(parentSessionId);
+        octtoSessions.delete(parentSessionId);
       }
     },
   });
@@ -252,14 +252,14 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     fetchTrackerHook.cleanupSession(sessionId);
 
     // Cleanup octto sessions
-    const octtoSessions = octtoSessionsMap.get(sessionId);
-    if (octtoSessions) {
-      for (const octtoSessionId of octtoSessions) {
+    const sessionOcttoIds = octtoSessions.get(sessionId);
+    if (sessionOcttoIds) {
+      for (const octtoSessionId of sessionOcttoIds) {
         await octtoSessionStore.endSession(octtoSessionId).catch((_e: unknown) => {
           /* fire-and-forget */
         });
       }
-      octtoSessionsMap.delete(sessionId);
+      octtoSessions.delete(sessionId);
     }
   }
 

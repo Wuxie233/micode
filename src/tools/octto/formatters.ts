@@ -32,7 +32,7 @@ export function formatFindings(state: BrainstormState): string {
   return `<findings>\n${branches}\n</findings>`;
 }
 
-export function formatFindingsList(state: BrainstormState): string {
+export function formatFindingSummary(state: BrainstormState): string {
   const items = state.branch_order
     .map((id) => {
       const b = state.branches[id];
