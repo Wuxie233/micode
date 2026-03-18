@@ -3,27 +3,27 @@
 
 export interface BaseConfig {
   /** Window title */
-  title?: string;
+  readonly title?: string;
   /** Timeout in seconds (0 = no timeout) */
-  timeout?: number;
+  readonly timeout?: number;
   /** Theme preference */
-  theme?: "light" | "dark" | "auto";
+  readonly theme?: "light" | "dark" | "auto";
 }
 
 export interface Option {
   /** Unique identifier */
-  id: string;
+  readonly id: string;
   /** Display label */
-  label: string;
+  readonly label: string;
   /** Optional description */
-  description?: string;
+  readonly description?: string;
 }
 
 export interface OptionWithPros extends Option {
   /** Pros/advantages */
-  pros?: string[];
+  readonly pros?: string[];
   /** Cons/disadvantages */
-  cons?: string[];
+  readonly cons?: string[];
 }
 
 export interface RatedOption extends Option {
@@ -40,132 +40,132 @@ export interface RankedOption extends Option {
 
 export interface PickOneConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Available options */
-  options: Option[];
+  readonly options: Option[];
   /** Recommended option id (highlighted) */
-  recommended?: string;
+  readonly recommended?: string;
   /** Allow custom "other" input */
-  allowOther?: boolean;
+  readonly allowOther?: boolean;
 }
 
 export interface PickManyConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Available options */
-  options: Option[];
+  readonly options: Option[];
   /** Recommended option ids (highlighted) */
-  recommended?: string[];
+  readonly recommended?: string[];
   /** Minimum selections required */
-  min?: number;
+  readonly min?: number;
   /** Maximum selections allowed */
-  max?: number;
+  readonly max?: number;
   /** Allow custom "other" input */
-  allowOther?: boolean;
+  readonly allowOther?: boolean;
 }
 
 export interface ConfirmConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context/details to show */
-  context?: string;
+  readonly context?: string;
   /** Custom label for yes button */
-  yesLabel?: string;
+  readonly yesLabel?: string;
   /** Custom label for no button */
-  noLabel?: string;
+  readonly noLabel?: string;
   /** Show cancel option */
-  allowCancel?: boolean;
+  readonly allowCancel?: boolean;
 }
 
 export interface RankConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Items to rank */
-  options: Option[];
+  readonly options: Option[];
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
 }
 
 export interface RateConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Items to rate */
-  options: Option[];
+  readonly options: Option[];
   /** Minimum rating value */
-  min?: number;
+  readonly min?: number;
   /** Maximum rating value */
-  max?: number;
+  readonly max?: number;
   /** Rating step (default 1) */
-  step?: number;
+  readonly step?: number;
   /** Labels for min/max */
-  labels?: { min?: string; max?: string };
+  readonly labels?: { readonly min?: string; readonly max?: string };
 }
 
 export interface AskTextConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Placeholder text */
-  placeholder?: string;
+  readonly placeholder?: string;
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
   /** Multi-line input */
-  multiline?: boolean;
+  readonly multiline?: boolean;
   /** Minimum length */
-  minLength?: number;
+  readonly minLength?: number;
   /** Maximum length */
-  maxLength?: number;
+  readonly maxLength?: number;
 }
 
 export interface AskImageConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
   /** Allow multiple images */
-  multiple?: boolean;
+  readonly multiple?: boolean;
   /** Maximum number of images */
-  maxImages?: number;
+  readonly maxImages?: number;
   /** Allowed mime types */
-  accept?: string[];
+  readonly accept?: string[];
 }
 
 export interface AskFileConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
   /** Allow multiple files */
-  multiple?: boolean;
+  readonly multiple?: boolean;
   /** Maximum number of files */
-  maxFiles?: number;
+  readonly maxFiles?: number;
   /** Allowed file extensions or mime types */
-  accept?: string[];
+  readonly accept?: string[];
   /** Maximum file size in bytes */
-  maxSize?: number;
+  readonly maxSize?: number;
 }
 
 export interface AskCodeConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
   /** Programming language for syntax highlighting */
-  language?: string;
+  readonly language?: string;
   /** Placeholder code */
-  placeholder?: string;
+  readonly placeholder?: string;
 }
 
 export interface ShowDiffConfig extends BaseConfig {
   /** Title/description of the change */
-  question: string;
+  readonly question: string;
   /** Original content */
-  before: string;
+  readonly before: string;
   /** Modified content */
-  after: string;
+  readonly after: string;
   /** File path (for context) */
-  filePath?: string;
+  readonly filePath?: string;
   /** Language for syntax highlighting */
-  language?: string;
+  readonly language?: string;
 }
 
 export interface PlanSection {
@@ -179,64 +179,64 @@ export interface PlanSection {
 
 export interface ShowPlanConfig extends BaseConfig {
   /** Plan title */
-  question: string;
+  readonly question: string;
   /** Plan sections */
-  sections?: PlanSection[];
+  readonly sections?: PlanSection[];
   /** Full markdown (alternative to sections) */
-  markdown?: string;
+  readonly markdown?: string;
 }
 
 export interface ShowOptionsConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Options with pros/cons */
-  options: OptionWithPros[];
+  readonly options: OptionWithPros[];
   /** Recommended option id */
-  recommended?: string;
+  readonly recommended?: string;
   /** Allow text feedback with selection */
-  allowFeedback?: boolean;
+  readonly allowFeedback?: boolean;
 }
 
 export interface ReviewSectionConfig extends BaseConfig {
   /** Section title */
-  question: string;
+  readonly question: string;
   /** Section content (markdown) */
-  content: string;
+  readonly content: string;
   /** Context about what to review */
-  context?: string;
+  readonly context?: string;
 }
 
 export interface ThumbsConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context to show */
-  context?: string;
+  readonly context?: string;
 }
 
 export interface EmojiReactConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context to show */
-  context?: string;
+  readonly context?: string;
   /** Available emoji options (default: common set) */
-  emojis?: string[];
+  readonly emojis?: string[];
 }
 
 export interface SliderConfig extends BaseConfig {
   /** Question/prompt to display */
-  question: string;
+  readonly question: string;
   /** Context/instructions */
-  context?: string;
+  readonly context?: string;
   /** Minimum value */
-  min: number;
+  readonly min: number;
   /** Maximum value */
-  max: number;
+  readonly max: number;
   /** Step size */
-  step?: number;
+  readonly step?: number;
   /** Default value */
-  defaultValue?: number;
+  readonly defaultValue?: number;
   /** Labels for values */
-  labels?: { min?: string; max?: string; mid?: string };
+  readonly labels?: { readonly min?: string; readonly max?: string; readonly mid?: string };
 }
 
 // Response types

@@ -8,14 +8,14 @@ import { log } from "@/utils/logger";
 import { type MindmodelManifest, parseManifest } from "./types";
 
 export interface LoadedMindmodel {
-  directory: string;
-  manifest: MindmodelManifest;
+  readonly directory: string;
+  readonly manifest: MindmodelManifest;
 }
 
 export interface LoadedExample {
-  path: string;
-  description: string;
-  content: string;
+  readonly path: string;
+  readonly description: string;
+  readonly content: string;
 }
 
 export async function loadMindmodel(projectDir: string): Promise<LoadedMindmodel | null> {

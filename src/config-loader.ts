@@ -9,16 +9,16 @@ import { type ParseError, parse as parseJsonc } from "jsonc-parser";
 
 // Minimal type for provider validation - only what we need
 export interface ProviderInfo {
-  id: string;
-  models: Record<string, unknown>;
+  readonly id: string;
+  readonly models: Record<string, unknown>;
 }
 
 /**
  * OpenCode config structure for reading default model and available models
  */
 interface OpencodeConfig {
-  model?: string;
-  provider?: Record<string, { models?: Record<string, unknown> }>;
+  readonly model?: string;
+  readonly provider?: Record<string, { models?: Record<string, unknown> }>;
 }
 
 /**
@@ -132,17 +132,17 @@ const SAFE_AGENT_PROPERTIES = ["model", "temperature", "maxTokens", "thinking"] 
 const BUILTIN_MODELS = new Set(["opencode/big-pickle"]);
 
 export interface AgentOverride {
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  thinking?: {
-    type: string;
-    budgetTokens: number;
+  readonly model?: string;
+  readonly temperature?: number;
+  readonly maxTokens?: number;
+  readonly thinking?: {
+    readonly type: string;
+    readonly budgetTokens: number;
   };
 }
 
 export interface MicodeFeatures {
-  mindmodelInjection?: boolean;
+  readonly mindmodelInjection?: boolean;
 }
 
 export interface MicodeConfig {

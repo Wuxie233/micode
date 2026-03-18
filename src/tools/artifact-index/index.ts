@@ -10,53 +10,53 @@ const ERR_DB_NOT_INITIALIZED = "Database not initialized";
 const DEFAULT_SEARCH_LIMIT = 10;
 
 export interface PlanRecord {
-  id: string;
-  title?: string;
-  filePath: string;
-  overview?: string;
-  approach?: string;
+  readonly id: string;
+  readonly title?: string;
+  readonly filePath: string;
+  readonly overview?: string;
+  readonly approach?: string;
 }
 
 export interface LedgerRecord {
-  id: string;
-  sessionName?: string;
-  filePath: string;
-  goal?: string;
-  stateNow?: string;
-  keyDecisions?: string;
-  filesRead?: string;
-  filesModified?: string;
+  readonly id: string;
+  readonly sessionName?: string;
+  readonly filePath: string;
+  readonly goal?: string;
+  readonly stateNow?: string;
+  readonly keyDecisions?: string;
+  readonly filesRead?: string;
+  readonly filesModified?: string;
 }
 
 export interface MilestoneArtifactRecord {
-  id: string;
-  milestoneId: string;
-  artifactType: string;
-  sourceSessionId?: string;
-  createdAt?: string;
-  tags?: string[];
-  payload: string;
+  readonly id: string;
+  readonly milestoneId: string;
+  readonly artifactType: string;
+  readonly sourceSessionId?: string;
+  readonly createdAt?: string;
+  readonly tags?: string[];
+  readonly payload: string;
 }
 
 export interface SearchResult {
-  type: "plan" | "ledger";
-  id: string;
-  filePath: string;
-  title?: string;
-  summary?: string;
-  score: number;
+  readonly type: "plan" | "ledger";
+  readonly id: string;
+  readonly filePath: string;
+  readonly title?: string;
+  readonly summary?: string;
+  readonly score: number;
 }
 
 export interface MilestoneArtifactSearchResult {
-  type: "milestone";
-  id: string;
-  milestoneId: string;
-  artifactType: string;
-  sourceSessionId?: string;
-  createdAt?: string;
-  tags: string[];
-  payload: string;
-  score: number;
+  readonly type: "milestone";
+  readonly id: string;
+  readonly milestoneId: string;
+  readonly artifactType: string;
+  readonly sourceSessionId?: string;
+  readonly createdAt?: string;
+  readonly tags: string[];
+  readonly payload: string;
+  readonly score: number;
 }
 
 const PLANS_SCHEMA = `

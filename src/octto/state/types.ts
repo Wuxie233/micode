@@ -36,16 +36,16 @@ export interface BrainstormState {
 }
 
 export interface CreateBranchInput {
-  id: string;
-  scope: string;
+  readonly id: string;
+  readonly scope: string;
 }
 
 export interface BranchProbeResult {
-  done: boolean;
-  reason: string;
-  finding?: string;
-  question?: {
-    type: QuestionType;
-    config: BaseConfig;
+  readonly done: boolean;
+  readonly reason: string;
+  readonly finding?: string;
+  readonly question?: {
+    readonly type: QuestionType;
+    readonly config: BaseConfig;
   };
 }

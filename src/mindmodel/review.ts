@@ -1,17 +1,17 @@
 // src/mindmodel/review.ts
 export interface Violation {
-  file: string;
-  line?: number;
-  rule: string;
-  constraint_file: string;
-  found: string;
-  expected: string;
+  readonly file: string;
+  readonly line?: number;
+  readonly rule: string;
+  readonly constraint_file: string;
+  readonly found: string;
+  readonly expected: string;
 }
 
 export interface ReviewResult {
-  status: "PASS" | "BLOCKED";
-  violations: Violation[];
-  summary: string;
+  readonly status: "PASS" | "BLOCKED";
+  readonly violations: Violation[];
+  readonly summary: string;
 }
 
 export function parseReviewResponse(response: string): ReviewResult {

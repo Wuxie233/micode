@@ -11,27 +11,27 @@ type ExtendedContext = ToolContext & {
 const MS_PER_SECOND = 1000;
 
 interface SessionCreateResponse {
-  data?: { id?: string };
+  readonly data?: { readonly id?: string };
 }
 
 interface MessagePart {
-  type: string;
-  text?: string;
+  readonly type: string;
+  readonly text?: string;
 }
 
 interface SessionMessage {
-  info?: { role?: "user" | "assistant" };
-  parts?: MessagePart[];
+  readonly info?: { readonly role?: "user" | "assistant" };
+  readonly parts?: MessagePart[];
 }
 
 interface SessionMessagesResponse {
-  data?: SessionMessage[];
+  readonly data?: SessionMessage[];
 }
 
 interface AgentTask {
-  agent: string;
-  prompt: string;
-  description: string;
+  readonly agent: string;
+  readonly prompt: string;
+  readonly description: string;
 }
 
 function updateProgress(

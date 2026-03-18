@@ -12,8 +12,8 @@ export const FETCH_TOOLS = new Set(["webfetch", "context7_query-docs", "context7
 // --- LRU Cache (factory pattern) ---
 
 interface CacheEntry {
-  content: string;
-  timestamp: number;
+  readonly content: string;
+  readonly timestamp: number;
 }
 
 interface LRUCache<V> {
