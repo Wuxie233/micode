@@ -1576,10 +1576,10 @@ export function getHtmlBundle(): string {
       const ranking = answer.ranking || [];
       let html = '<div class="readonly-answer-label">Final Ranking</div>';
       html += '<div class="options">';
-      for (const item of ranking) {
-        const opt = (q.config.options || []).find(o => o.id === item.id);
+      for (const rankedEntry of ranking) {
+        const opt = (q.config.options || []).find(o => o.id === rankedEntry.id);
         html += '<div class="readonly-option selected">';
-        html += '<strong>' + item.rank + '.</strong> ' + escapeHtml(opt ? opt.label : item.id);
+        html += '<strong>' + rankedEntry.rank + '.</strong> ' + escapeHtml(opt ? opt.label : rankedEntry.id);
         html += '</div>';
       }
       html += '</div>';

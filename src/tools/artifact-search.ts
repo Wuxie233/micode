@@ -1,5 +1,6 @@
 // src/tools/artifact-search.ts
 import { tool } from "@opencode-ai/plugin/tool";
+import { extractErrorMessage } from "@/utils/errors";
 import { getArtifactIndex } from "./artifact-index";
 
 const DEFAULT_SEARCH_LIMIT = 10;
@@ -57,7 +58,7 @@ Returns ranked results with file paths for further reading.`,
 
       return output;
     } catch (e) {
-      return `Error searching artifacts: ${e instanceof Error ? e.message : String(e)}`;
+      return `Error searching artifacts: ${extractErrorMessage(e)}`;
     }
   },
 });

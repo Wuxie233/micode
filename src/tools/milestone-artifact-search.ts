@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin/tool";
-
+import { extractErrorMessage } from "@/utils/errors";
 import { getArtifactIndex } from "./artifact-index";
 
 const ARTIFACT_TYPES = ["feature", "decision", "session"] as const;
@@ -42,7 +42,7 @@ Returns ranked results filtered by milestone metadata.`,
 
       return output;
     } catch (error) {
-      return `Error searching milestone artifacts: ${error instanceof Error ? error.message : String(error)}`;
+      return `Error searching milestone artifacts: ${extractErrorMessage(error)}`;
     }
   },
 });

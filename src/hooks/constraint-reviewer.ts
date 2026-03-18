@@ -10,6 +10,7 @@ import {
   type ReviewResult,
 } from "@/mindmodel";
 import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 type ReviewFn = (prompt: string) => Promise<string>;
@@ -34,14 +35,14 @@ interface ConstraintReviewerHooks {
 }
 
 export function createConstraintReviewerHook(ctx: PluginInput, reviewFn: ReviewFn): ConstraintReviewerHooks {
-  let cachedMindmodel: LoadedMindmodel | null | undefined;
+  let mindmodel: LoadedMindmodel | null | undefined;
   const sessionState = new Map<string, ReviewState>();
 
   async function getMindmodel(): Promise<LoadedMindmodel | null> {
-    if (cachedMindmodel === undefined) {
-      cachedMindmodel = await loadMindmodel(ctx.directory);
+    if (mindmodel === undefined) {
+      mindmodel = await loadMindmodel(ctx.directory);
     }
-    return cachedMindmodel;
+    return mindmodel;
   }
 
   function getSessionState(sessionID: string): ReviewState {
@@ -81,7 +82,7 @@ function handleReviewError(error: unknown): void {
   if (error instanceof ConstraintViolationError) {
     throw error;
   }
-  log.warn("mindmodel", `Review failed: ${error instanceof Error ? error.message : "unknown"}`);
+  log.warn("mindmodel", `Review failed: ${extractErrorMessage(error)}`);
 }
 
 async function reviewToolOutput(
@@ -108,14 +109,14 @@ async function reviewToolOutput(
   try {
     const reviewPrompt = buildReviewPrompt(output.output || "", filePath, mindmodel);
     const reviewResponse = await reviewFn(reviewPrompt);
-    const result = parseReviewResponse(reviewResponse);
+    const review = parseReviewResponse(reviewResponse);
 
-    if (result.status === "PASS") {
+    if (review.status === "PASS") {
       state.retryCountByFile.delete(filePath);
       return;
     }
 
-    handleViolations(state, filePath, result, output);
+    handleViolations(state, filePath, review, output);
   } catch (error) {
     handleReviewError(error);
   }
@@ -127,10 +128,10 @@ function handleViolations(
   result: ReviewResult,
   output: { output?: string },
 ): void {
-  const currentRetryCount = state.retryCountByFile.get(filePath) || 0;
+  const retryCount = state.retryCountByFile.get(filePath) || 0;
 
-  if (currentRetryCount < config.mindmodel.reviewMaxRetries) {
-    state.retryCountByFile.set(filePath, currentRetryCount + 1);
+  if (retryCount < config.mindmodel.reviewMaxRetries) {
+    state.retryCountByFile.set(filePath, retryCount + 1);
     const violationsText = formatViolationsForRetry(result.violations);
     output.output = `${output.output}\n\n<constraint-violations>\n${violationsText}\n</constraint-violations>`;
     return;

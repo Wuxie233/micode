@@ -54,8 +54,8 @@ function withSessionLock<T>(
   sessionId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const currentQueue = queues.get(sessionId) ?? Promise.resolve();
-  const newOperation = currentQueue.then(operation, operation);
+  const queue = queues.get(sessionId) ?? Promise.resolve();
+  const newOperation = queue.then(operation, operation);
   queues.set(
     sessionId,
     newOperation.then(

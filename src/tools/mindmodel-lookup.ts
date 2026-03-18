@@ -3,17 +3,18 @@ import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
 import { formatExamplesForInjection, type LoadedMindmodel, loadExamples, loadMindmodel } from "@/mindmodel";
+import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 const MAX_QUERY_LOG_LENGTH = 100;
 
-let cachedMindmodel: LoadedMindmodel | null | undefined;
+let mindmodel: LoadedMindmodel | null | undefined;
 
 async function getMindmodel(directory: string): Promise<LoadedMindmodel | null> {
-  if (cachedMindmodel === undefined) {
-    cachedMindmodel = await loadMindmodel(directory);
+  if (mindmodel === undefined) {
+    mindmodel = await loadMindmodel(directory);
   }
-  return cachedMindmodel;
+  return mindmodel;
 }
 
 // Simple keyword-based category matching (no LLM needed)
@@ -77,7 +78,7 @@ Returns relevant code examples and patterns to follow.`,
 
         return formatted;
       } catch (error) {
-        log.warn("mindmodel", `Lookup failed: ${error instanceof Error ? error.message : "unknown"}`);
+        log.warn("mindmodel", `Lookup failed: ${extractErrorMessage(error)}`);
         return "Failed to load patterns. Proceed using general best practices.";
       }
     },

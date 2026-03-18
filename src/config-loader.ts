@@ -27,11 +27,11 @@ interface OpencodeConfig {
  */
 function parseConfigJson(content: string): unknown {
   const errors: ParseError[] = [];
-  const result: unknown = parseJsonc(content, errors, { allowTrailingComma: true });
+  const parsed: unknown = parseJsonc(content, errors, { allowTrailingComma: true });
   if (errors.length > 0) {
     throw new Error(`Invalid JSON/JSONC: ${errors.length} parse error(s)`);
   }
-  return result;
+  return parsed;
 }
 
 /**
@@ -172,29 +172,29 @@ export async function loadMicodeConfig(configDir?: string): Promise<MicodeConfig
 }
 
 function buildMicodeConfig(parsed: Record<string, unknown>): MicodeConfig {
-  const result: MicodeConfig = {};
+  const micodeConfig: MicodeConfig = {};
 
   if (parsed.agents && typeof parsed.agents === "object") {
-    result.agents = sanitizeAgents(parsed.agents as Record<string, unknown>);
+    micodeConfig.agents = sanitizeAgents(parsed.agents as Record<string, unknown>);
   }
 
   if (parsed.features && typeof parsed.features === "object") {
     const features = parsed.features as Record<string, unknown>;
-    result.features = { mindmodelInjection: features.mindmodelInjection === true };
+    micodeConfig.features = { mindmodelInjection: features.mindmodelInjection === true };
   }
 
   if (typeof parsed.compactionThreshold === "number") {
     const threshold = parsed.compactionThreshold;
     if (threshold >= 0 && threshold <= 1) {
-      result.compactionThreshold = threshold;
+      micodeConfig.compactionThreshold = threshold;
     }
   }
 
   if (parsed.fragments && typeof parsed.fragments === "object") {
-    result.fragments = sanitizeFragments(parsed.fragments as Record<string, unknown>);
+    micodeConfig.fragments = sanitizeFragments(parsed.fragments as Record<string, unknown>);
   }
 
-  return result;
+  return micodeConfig;
 }
 
 function sanitizeAgents(agents: Record<string, unknown>): Record<string, AgentOverride> {
@@ -209,13 +209,13 @@ function sanitizeAgents(agents: Record<string, unknown>): Record<string, AgentOv
 }
 
 function pickSafeProperties(config: Record<string, unknown>): AgentOverride {
-  const result: AgentOverride = {};
+  const override: AgentOverride = {};
   for (const prop of SAFE_AGENT_PROPERTIES) {
     if (prop in config) {
-      (result as Record<string, unknown>)[prop] = config[prop];
+      (override as Record<string, unknown>)[prop] = config[prop];
     }
   }
-  return result;
+  return override;
 }
 
 function sanitizeFragments(fragments: Record<string, unknown>): Record<string, string[]> {

@@ -89,9 +89,9 @@ async function resolveInjection(
   matchedTasks: LRUCache<string>,
 ): Promise<string | null> {
   const taskHash = hashTask(task);
-  const cachedInjection = matchedTasks.get(taskHash);
-  if (cachedInjection !== undefined) {
-    return cachedInjection || null;
+  const injection = matchedTasks.get(taskHash);
+  if (injection !== undefined) {
+    return injection || null;
   }
 
   const categories = matchCategories(task, mindmodel.manifest);

@@ -175,14 +175,14 @@ export async function processAnswer(
   const branch = updatedState.branches[branchId];
   if (!branch || branch.status === BRANCH_STATUSES.DONE) return;
 
-  const result = await runProbeAgent(client, updatedState, branchId);
+  const probeResult = await runProbeAgent(client, updatedState, branchId);
 
-  if (result.done) {
-    await stateStore.completeBranch(sessionId, branchId, result.finding || "No finding");
+  if (probeResult.done) {
+    await stateStore.completeBranch(sessionId, branchId, probeResult.finding || "No finding");
     return;
   }
 
-  if (result.question) {
+  if (probeResult.question) {
     await pushFollowUpQuestion(
       stateStore,
       sessions,
@@ -190,7 +190,7 @@ export async function processAnswer(
       browserSessionId,
       branchId,
       branch.scope,
-      result.question,
+      probeResult.question,
     );
   }
 }

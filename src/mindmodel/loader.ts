@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 import { type MindmodelManifest, parseManifest } from "./types";
 
@@ -37,7 +38,7 @@ export async function loadMindmodel(projectDir: string): Promise<LoadedMindmodel
       manifest,
     };
   } catch (error) {
-    log.warn("mindmodel", `Failed to load manifest: ${error instanceof Error ? error.message : String(error)}`);
+    log.warn("mindmodel", `Failed to load manifest: ${extractErrorMessage(error)}`);
     return null;
   }
 }

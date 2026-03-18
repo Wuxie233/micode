@@ -133,17 +133,17 @@ interface ReviewResult {
 }
 
 async function waitForReviewApproval(sessions: SessionStore, browserSessionId: string): Promise<ReviewResult> {
-  const result = await sessions.getNextAnswer({
+  const answer = await sessions.getNextAnswer({
     session_id: browserSessionId,
     block: true,
     timeout: config.octto.reviewTimeoutMs,
   });
 
-  if (!result.completed || !result.response) {
+  if (!answer.completed || !answer.response) {
     return { approved: false, feedback: "" };
   }
 
-  const response = result.response as ReviewAnswer;
+  const response = answer.response as ReviewAnswer;
   return {
     approved: response.decision === "approve",
     feedback: response.feedback ?? "",
@@ -300,11 +300,11 @@ function buildGetSessionSummaryTool(store: StateStore): OcttoTool {
       if (!state) return `<error>Session not found: ${args.session_id}</error>`;
 
       const branches = state.branch_order.map((id) => formatBranchStatus(state.branches[id])).join("\n");
-      const allDone = Object.values(state.branches).every((b) => b.status === BRANCH_STATUSES.DONE);
+      const done = Object.values(state.branches).every((b) => b.status === BRANCH_STATUSES.DONE);
 
       return `<session_summary>
   <request>${state.request}</request>
-  <status>${allDone ? "complete" : "in_progress"}</status>
+  <status>${done ? "complete" : "in_progress"}</status>
   <branches>
 ${branches}
   </branches>
@@ -324,8 +324,8 @@ function buildEndBrainstormTool(store: StateStore, sessions: SessionStore, track
       if (!state) return `<error>Session not found: ${args.session_id}</error>`;
 
       if (state.browser_session_id) {
-        const result = await sessions.endSession(state.browser_session_id);
-        if (result.ok) {
+        const endStatus = await sessions.endSession(state.browser_session_id);
+        if (endStatus.ok) {
           tracker?.onEnded?.(context.sessionID, state.browser_session_id);
         }
       }

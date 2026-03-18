@@ -144,9 +144,9 @@ export const ast_grep_search = tool({
       sgArgs.push(".");
     }
 
-    const result = await runSg(sgArgs);
-    if (result.error) return `Error: ${result.error}`;
-    return formatMatches(result.matches);
+    const sgOutput = await runSg(sgArgs);
+    if (sgOutput.error) return `Error: ${sgOutput.error}`;
+    return formatMatches(sgOutput.matches);
   },
 });
 
@@ -175,17 +175,17 @@ export const ast_grep_replace = tool({
       sgArgs.push(".");
     }
 
-    const result = await runSg(sgArgs);
-    if (result.error) return `Error: ${result.error}`;
+    const sgOutput = await runSg(sgArgs);
+    if (sgOutput.error) return `Error: ${sgOutput.error}`;
 
     const isDryRun = !args.apply;
-    const output = formatMatches(result.matches, isDryRun);
+    const output = formatMatches(sgOutput.matches, isDryRun);
 
-    if (isDryRun && result.matches.length > 0) {
+    if (isDryRun && sgOutput.matches.length > 0) {
       return `${output}\n\n(Dry run - use apply=true to apply changes)`;
     }
-    if (args.apply && result.matches.length > 0) {
-      return `Applied ${result.matches.length} replacements:\n${output}`;
+    if (args.apply && sgOutput.matches.length > 0) {
+      return `Applied ${sgOutput.matches.length} replacements:\n${output}`;
     }
     return output;
   },

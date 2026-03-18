@@ -3,6 +3,7 @@ import { isAbsolute, join } from "node:path";
 
 import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
+import { extractErrorMessage } from "@/utils/errors";
 
 interface FileResult {
   path: string;
@@ -26,7 +27,7 @@ async function readSingleFile(filePath: string, baseDir: string, maxLines?: numb
     }
     return { path: filePath, content };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = extractErrorMessage(error);
     return { path: filePath, error: msg };
   }
 }
