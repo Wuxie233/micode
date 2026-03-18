@@ -6,9 +6,9 @@ import { tool } from "@opencode-ai/plugin/tool";
 import { extractErrorMessage } from "@/utils/errors";
 
 interface FileResult {
-  path: string;
-  content?: string;
-  error?: string;
+  readonly path: string;
+  readonly content?: string;
+  readonly error?: string;
 }
 
 function truncateContent(content: string, maxLines: number): string {

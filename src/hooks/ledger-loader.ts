@@ -6,9 +6,9 @@ import type { PluginInput } from "@opencode-ai/plugin";
 import { config } from "@/utils/config";
 
 export interface LedgerInfo {
-  sessionName: string;
-  filePath: string;
-  content: string;
+  readonly sessionName: string;
+  readonly filePath: string;
+  readonly content: string;
 }
 
 async function getFileMtime(filePath: string): Promise<number> {
