@@ -61,11 +61,11 @@ function registerWaiter<K, T>(
   return () => {
     const callbacks = waiters.get(key);
     if (!callbacks) return;
-    removeCallback(waiters, key, callbacks, callback);
+    unregister(waiters, key, callbacks, callback);
   };
 }
 
-function removeCallback<K, T>(
+function unregister<K, T>(
   waiters: Map<K, Array<(data: T) => void>>,
   key: K,
   callbacks: Array<(data: T) => void>,
