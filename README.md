@@ -1,6 +1,6 @@
 # micode
 
-[![CI](https://github.com/vtemian/micode/actions/workflows/ci.yml/badge.svg)](https://github.com/vtemian/micode/actions/workflows/ci.yml)
+[![Quality Gate](https://github.com/vtemian/micode/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/vtemian/micode/actions/workflows/quality-gate.yml)
 [![npm version](https://badge.fury.io/js/micode.svg)](https://www.npmjs.com/package/micode)
 
 OpenCode plugin with structured Brainstorm → Plan → Implement workflow and session continuity.
