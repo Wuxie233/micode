@@ -17,12 +17,22 @@
 
 ## Architecture
 
-- Agents are configuration objects, not implementations: pure data in `src/agents/`
-- Hooks are factory functions returning lifecycle handler objects in `src/hooks/`
-- Tools are Bun tool definitions created via the plugin's `tool()` function in `src/tools/`
-- Shared utilities live in `src/utils/`; centralized config in `src/utils/config.ts`
-- Use named exports only; do not add default exports in `src` (config files excepted)
+### Module Layout
+- `src/agents/` - Agent configuration objects (pure data, no logic). Each exports an `AgentConfig`
+- `src/hooks/` - Lifecycle hook factories: `createXHook(ctx: PluginInput) => { handlers }`. All receive `ctx: PluginInput` for dependency injection
+- `src/tools/` - Bun tool definitions via the plugin's `tool()` function from `@opencode-ai/plugin/tool`
+- `src/utils/` - Shared utilities: `config.ts` (centralized tunables), `errors.ts` (error extraction), `logger.ts` (structured logging), `model-limits.ts` (context window limits)
+- `src/config-loader.ts` - Loads and validates micode.json/opencode.json configuration, merges agent overrides
+- `src/mindmodel/` - Project-specific coding pattern constraints (.mindmodel/ directory): loader, classifier, formatter, review
+- `src/octto/` - Browser-based brainstorming UI: `session/` (WebSocket lifecycle), `state/` (branch persistence), `ui/` (HTML bundle)
+- `src/indexing/` - Milestone artifact classification and ingestion for thoughts/ search
+- `thoughts/` - Persistent artifact storage: `ledgers/` (session continuity), `shared/plans/` and `shared/designs/` (outputs)
+
+### Conventions
+- Use named exports only; no default exports in `src` (config files excepted)
 - Re-export public APIs through barrel files (`index.ts`)
+- Log via `log.info/warn/error/debug` from `@/utils/logger`, not direct `console.*`
+- Plugin commands: `/init`, `/mindmodel`, `/ledger`, `/search` (defined in `src/index.ts`)
 
 ## TypeScript
 
