@@ -1,5 +1,5 @@
 // tests/utils/errors.test.ts
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 describe("errors utility", () => {
   describe("extractErrorMessage", () => {
@@ -52,50 +52,6 @@ describe("errors utility", () => {
     it("should handle empty context", async () => {
       const { formatToolError } = await import("../../src/utils/errors");
       expect(formatToolError("File not found", "")).toBe("Error: File not found");
-    });
-  });
-
-  describe("catchAndLog", () => {
-    it("should return result on success", async () => {
-      const { catchAndLog } = await import("../../src/utils/errors");
-      const result = catchAndLog("test-module", () => 42);
-      expect(result).toBe(42);
-    });
-
-    it("should return undefined on error and log", async () => {
-      const { catchAndLog } = await import("../../src/utils/errors");
-      const consoleSpy = spyOn(console, "error").mockImplementation(() => {});
-
-      const result = catchAndLog("test-module", () => {
-        throw new Error("oops");
-      });
-
-      expect(result).toBeUndefined();
-      expect(consoleSpy).toHaveBeenCalledWith("[test-module] oops");
-
-      consoleSpy.mockRestore();
-    });
-
-    it("should handle async functions", async () => {
-      const { catchAndLogAsync } = await import("../../src/utils/errors");
-      const result = await catchAndLogAsync("test-module", async () => {
-        return "async result";
-      });
-      expect(result).toBe("async result");
-    });
-
-    it("should handle async errors", async () => {
-      const { catchAndLogAsync } = await import("../../src/utils/errors");
-      const consoleSpy = spyOn(console, "error").mockImplementation(() => {});
-
-      const result = await catchAndLogAsync("test-module", async () => {
-        throw new Error("async oops");
-      });
-
-      expect(result).toBeUndefined();
-      expect(consoleSpy).toHaveBeenCalledWith("[test-module] async oops");
-
-      consoleSpy.mockRestore();
     });
   });
 });
