@@ -20,16 +20,24 @@ import {
   getFileOps,
   warnUnknownAgents,
 } from "@/hooks";
-import { artifact_search } from "@/tools/artifact-search";
-import { ast_grep_replace, ast_grep_search, checkAstGrepAvailable } from "@/tools/ast-grep";
-import { createBatchReadTool } from "@/tools/batch-read";
-import { btca_ask, checkBtcaAvailable } from "@/tools/btca";
-import { look_at } from "@/tools/look-at";
-import { milestone_artifact_search } from "@/tools/milestone-artifact-search";
-import { createMindmodelLookupTool } from "@/tools/mindmodel-lookup";
-import { createOcttoTools, createSessionStore } from "@/tools/octto";
-import { createPTYManager, createPtyTools, loadBunPty } from "@/tools/pty";
-import { createSpawnAgentTool } from "@/tools/spawn-agent";
+import {
+  artifact_search,
+  ast_grep_replace,
+  ast_grep_search,
+  btca_ask,
+  checkAstGrepAvailable,
+  checkBtcaAvailable,
+  createBatchReadTool,
+  createMindmodelLookupTool,
+  createOcttoTools,
+  createPTYManager,
+  createPtyTools,
+  createSessionStore,
+  createSpawnAgentTool,
+  loadBunPty,
+  look_at,
+  milestone_artifact_search,
+} from "@/tools";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
