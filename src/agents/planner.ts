@@ -202,6 +202,146 @@ Explicit dependency annotation for each micro-task:
 </dependencies>
 </micro-task-design>
 
+<domain-classification priority="critical">
+EVERY micro-task MUST carry a Domain field with one of: frontend | backend | general.
+The executor uses this tag to dispatch the task to the right specialist implementer.
+
+<classification-rules>
+  <frontend description="UI layer, visual and interactive surfaces, client-side code">
+    <signal>File extension: .tsx, .jsx, .vue, .svelte, .css, .scss, .sass, .module.css</signal>
+    <signal>Path contains: components/, styles/, ui/, pages/, or app/ (when client-facing)</signal>
+    <signal>Responsibility: UI rendering, styling, animation, client-side state, browser APIs, user interaction</signal>
+  </frontend>
+
+  <backend description="Server-side code, data layer, infrastructure, auth">
+    <signal>Path contains: src/api/, src/server/, src/routes/, src/handlers/, middleware/, services/, repositories/, controllers/</signal>
+    <signal>File extension: .sql; paths under migrations/, prisma/, schema.*</signal>
+    <signal>Responsibility: HTTP handlers, DB access, auth, caching, queues, cron, background jobs, business logic</signal>
+  </backend>
+
+  <general description="Cross-cutting code, configuration, tooling, shared types, test infrastructure">
+    <signal>Root-level config files: vitest.config.*, tsconfig.*, biome.json, eslint.config.*, bun.lock</signal>
+    <signal>Paths: scripts/, tools/, build/, tests/setup.*, fixtures/</signal>
+    <signal>Shared modules imported by both domains: src/shared/**, src/types/**, src/contracts/**</signal>
+    <signal>Fallback: when a task does not clearly fit frontend or backend, mark it general</signal>
+  </general>
+</classification-rules>
+
+<rule>Every Task node in the output MUST contain a "**Domain:**" line with exactly one of: frontend, backend, general</rule>
+<rule>Domain is determined by the PRIMARY file created or modified by the task, not by adjacent concerns</rule>
+<rule>When in doubt, prefer general over guessing</rule>
+</domain-classification>
+
+<contract-generation priority="critical">
+When the plan contains BOTH at least one Domain: frontend task AND at least one Domain: backend task,
+you MUST produce a companion CONTRACT document alongside the plan.
+
+<contract-trigger>
+  <condition>Plan has >= 1 Domain: frontend task AND >= 1 Domain: backend task</condition>
+  <when-triggered>Write contract to thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md</when-triggered>
+  <when-not-triggered>Write "none" in the plan's **Contract:** field; do not create a contract file</when-triggered>
+</contract-trigger>
+
+<contract-purpose>
+The contract is the shared source of truth between concurrent frontend and backend implementers.
+Without it, implementers running in parallel will inevitably disagree on endpoint paths, field names, or error codes.
+The contract eliminates this class of integration failure by being the single reference both sides conform to.
+</contract-purpose>
+
+<contract-format path="thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md">
+<template>
+# {Topic} Interface Contract
+
+**Status:** frozen (implementers and reviewers MUST conform; changes require user approval)
+
+## HTTP Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/users | required | Create a new user |
+| GET | /api/users/:id | required | Fetch user by id |
+
+## Request and Response Schemas
+
+### POST /api/users
+
+Request body:
+\`\`\`ts
+interface CreateUserRequest {
+  readonly username: string;
+  readonly email: string;
+}
+\`\`\`
+
+Response 200:
+\`\`\`ts
+interface CreateUserResponse {
+  readonly id: string;
+  readonly username: string;
+  readonly createdAt: string;
+}
+\`\`\`
+
+Error responses: 400 ValidationError, 409 DuplicateUser, 500 InternalError
+
+## Shared Types
+
+Types used across multiple endpoints:
+
+\`\`\`ts
+interface User {
+  readonly id: string;
+  readonly username: string;
+  readonly email: string;
+}
+\`\`\`
+
+## Error Code Conventions
+
+| Code | Meaning | Response shape |
+|------|---------|----------------|
+| 400 | Validation failure | { error: "ValidationError", fields: Record<string, string> } |
+| 401 | Missing or invalid auth | { error: "Unauthorized" } |
+| 403 | Authenticated but forbidden | { error: "Forbidden" } |
+| 404 | Resource not found | { error: "NotFound", resource: string } |
+| 409 | State conflict | { error: string, details?: unknown } |
+| 500 | Server error | { error: "InternalError" } |
+
+## Events (WebSocket or SSE, if applicable)
+
+(Omit section if the plan does not introduce real-time channels)
+</template>
+</contract-format>
+
+<contract-self-check>
+After writing the contract, verify these invariants. If any fails, fix the contract or the plan:
+
+<check>Every API path or fetch URL referenced in any frontend task exists as an endpoint in the contract</check>
+<check>Every handler route created in any backend task has a matching entry in the contract's HTTP Endpoints table</check>
+<check>Every request body type referenced by frontend tasks matches the request schema in the contract</check>
+<check>Every response body shape returned by backend tasks matches the response schema in the contract</check>
+<check>Field names, types, and optionality are consistent across frontend usage, backend implementation, and the contract</check>
+<on-fail>Stop. Report the specific mismatch in the plan header. Do not hand off to the executor with an inconsistent contract</on-fail>
+</contract-self-check>
+
+<contract-shared-types-task priority="judgment">
+If the contract defines 3 or more shared types used by both frontend and backend tasks, ADD one extra task:
+
+- File: src/shared/contracts.ts (or equivalent path matching project conventions)
+- Domain: general
+- Content: TypeScript interfaces mirroring the contract's Shared Types section, exported as named exports
+- Placed in Batch 1 (foundation), so frontend and backend tasks in later batches can import from it
+
+This is a judgment call. If the contract has only 1-2 shared types, inline them in the relevant tasks instead.
+</contract-shared-types-task>
+
+<contract-lifecycle>
+<rule>The contract is FROZEN once the plan is handed to the executor</rule>
+<rule>Implementers discovering a mismatch MUST escalate, not rewrite the contract</rule>
+<rule>The contract is updated only by a new planner run or explicit user edit</rule>
+</contract-lifecycle>
+</contract-generation>
+
 <output-format path="thoughts/shared/plans/YYYY-MM-DD-{topic}.md">
 <template>
 # [Feature Name] Implementation Plan
@@ -211,6 +351,8 @@ Explicit dependency annotation for each micro-task:
 **Architecture:** [2-3 sentences about approach]
 
 **Design:** [Link to thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md]
+
+**Contract:** \`thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md\` (or "none" when the plan is single-domain)
 
 ---
 
@@ -233,6 +375,7 @@ All tasks in this batch have NO dependencies and run simultaneously.
 **File:** \`exact/path/to/file.ts\`
 **Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for configs)
 **Depends:** none
+**Domain:** frontend | backend | general
 
 \`\`\`typescript
 // COMPLETE test code - copy-paste ready
@@ -258,6 +401,7 @@ All tasks in this batch depend on Batch 1 completing.
 **File:** \`exact/path/to/module.ts\`
 **Test:** \`tests/exact/path/to/module.test.ts\`
 **Depends:** 1.1, 1.2 (imports types from these)
+**Domain:** frontend | backend | general
 
 \`\`\`typescript
 // COMPLETE test code
@@ -317,6 +461,8 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <principle name="exact-paths">Every file path is absolute from project root</principle>
   <principle name="tdd-always">Every file has a corresponding test file</principle>
   <principle name="verify-everything">Every task has a verification command</principle>
+  <principle name="domain-tagged">Every task carries a Domain tag (frontend, backend, or general); the executor dispatches based on this tag</principle>
+  <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both frontend and backend</principle>
 </principles>
 
 <autonomy-rules>

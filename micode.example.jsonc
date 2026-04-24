@@ -1,0 +1,59 @@
+// micode.example.jsonc
+//
+// Copy this file to `~/.config/opencode/micode.jsonc` and replace every placeholder
+// with a real model string. This repository will NEVER ship concrete provider or model
+// names: those belong to the user's own gateway configuration.
+//
+// Placeholder legend:
+//
+//   <YOUR_STRONG_REASONING_MODEL>
+//     A flagship reasoning model (think Claude Opus tier). Drives orchestration,
+//     planning, review, and brainstorm surfaces. Pay extra here; the downstream
+//     implementers amplify its decisions.
+//
+//   <YOUR_FRONTEND_MODEL>
+//     A model that is strong at UI, styling, component design, and modern
+//     frontend framework idioms (React / Vue / Svelte, CSS-in-JS, etc).
+//
+//   <YOUR_BACKEND_MODEL>
+//     A model that is strong at server-side code, APIs, databases, type systems,
+//     and general-purpose programming. Also a reasonable default for shared
+//     tooling and config tasks.
+//
+// Model string format: "provider_id/model_id". The provider_id must already be
+// registered in your opencode.json under the `provider` object.
+//
+// All fields below are optional. Micode merges this file with opencode.json
+// defaults and with its own plugin fallback (src/utils/config.ts:DEFAULT_MODEL),
+// so agents you omit here simply use the opencode default.
+{
+  "agents": {
+    // --- Orchestration and review (strong reasoning) ---
+    "commander":   { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "planner":     { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "executor":    { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "reviewer":    { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+
+    // --- Brainstorm entry points (both primary-mode, user picks per session) ---
+    "brainstormer": { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "octto":        { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+
+    // --- Domain-specialist implementers (the point of this fork) ---
+    "implementer-frontend": { "model": "<YOUR_FRONTEND_MODEL>" },
+    "implementer-backend":  { "model": "<YOUR_BACKEND_MODEL>" },
+    "implementer-general":  { "model": "<YOUR_BACKEND_MODEL>" }
+  }
+
+  // Other top-level keys you MAY add:
+  //
+  // "compactionThreshold": 0.7,
+  //
+  // "features": {
+  //   "mindmodelInjection": true
+  // },
+  //
+  // "fragments": {
+  //   "commander": ["Prefer TypeScript over plain JavaScript in examples"],
+  //   "implementer-frontend": ["This project uses Tailwind; no CSS modules"]
+  // }
+}
