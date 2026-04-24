@@ -2,6 +2,8 @@
 
 This document guides AI assistants through the micode plugin installation process.
 
+**Fork note:** This is the `Wuxie233/micode` fork. It adds domain-routed implementers (`implementer-frontend`, `implementer-backend`, `implementer-general`) and an auto-generated API contract workflow on top of upstream `vtemian/micode`. Install via `github:Wuxie233/micode`, not the npm `micode` package.
+
 ## Step 0: Ask User About Setup
 
 micode uses Claude Opus 4.5 for its primary agents (commander, brainstormer, project-initializer). Ask the user:
@@ -61,18 +63,18 @@ fi
 **If config exists:**
 ```bash
 if command -v jq &> /dev/null; then
-    jq '.plugin = ((.plugin // []) + ["micode"] | unique)' \
+    jq '.plugin = ((.plugin // []) + ["github:Wuxie233/micode"] | unique)' \
         ~/.config/opencode/opencode.json > /tmp/oc.json && \
         mv /tmp/oc.json ~/.config/opencode/opencode.json
 else
-    echo "Please add \"micode\" to the plugin array in ~/.config/opencode/opencode.json"
+    echo "Please add \"github:Wuxie233/micode\" to the plugin array in ~/.config/opencode/opencode.json"
 fi
 ```
 
 **If no config exists:**
 ```bash
 mkdir -p ~/.config/opencode
-echo '{"plugin":["micode"]}' > ~/.config/opencode/opencode.json
+echo '{"plugin":["github:Wuxie233/micode"]}' > ~/.config/opencode/opencode.json
 ```
 
 ## Step 3: Verify Setup
@@ -137,14 +139,19 @@ Never run this automatically without consent.
 
 | Agent | Model | Purpose |
 |-------|-------|---------|
-| commander | claude-opus-4-5 | Main orchestrator |
-| brainstormer | claude-opus-4-5 | Design exploration |
-| project-initializer | claude-opus-4-5 | Generate docs |
+| commander | strong-reasoning | Main orchestrator |
+| brainstormer | strong-reasoning | Design exploration (text) |
+| octto | strong-reasoning | Design exploration (browser UI) |
+| planner | strong-reasoning | Plans with Domain tags + optional contracts |
+| executor | strong-reasoning | Dispatches by Domain |
+| reviewer | strong-reasoning | Reviews, verifies contract conformance |
+| **implementer-frontend** | frontend-strong | Executes frontend tasks |
+| **implementer-backend** | backend-strong | Executes backend tasks |
+| **implementer-general** | backend-strong | Executes cross-cutting tasks |
+| project-initializer | strong-reasoning | Generate docs |
 | codebase-locator | - | Find files |
 | codebase-analyzer | - | Analyze code |
 | pattern-finder | - | Find patterns |
-| implementer | - | Execute tasks |
-| reviewer | - | Review code |
 
 ### Available Commands
 
@@ -172,14 +179,16 @@ micode respects your OpenCode default model. Set it in `~/.config/opencode/openc
 
 This model will be used for **all** micode agents automatically.
 
-#### Per-Agent Overrides
+#### Per-Agent Overrides (domain routing)
 
-To override specific agents, create `~/.config/opencode/micode.json`:
+This fork's main value is routing each agent to a model suited to its role. Copy `micode.example.jsonc` from the fork repo to `~/.config/opencode/micode.jsonc` and fill in placeholders. At minimum:
 
-```json
+```jsonc
 {
   "agents": {
-    "brainstormer": { "model": "openai/gpt-4o" }
+    "implementer-frontend": { "model": "<your-frontend-strong-model>" },
+    "implementer-backend":  { "model": "<your-backend-strong-model>" },
+    "implementer-general":  { "model": "<your-backend-strong-model>" }
   }
 }
 ```
