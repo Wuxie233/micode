@@ -9,6 +9,9 @@ import { codebaseLocatorAgent } from "./codebase-locator";
 import { PRIMARY_AGENT_NAME, primaryAgent } from "./commander";
 import { executorAgent } from "./executor";
 import { implementerAgent } from "./implementer";
+import { implementerBackendAgent } from "./implementer-backend";
+import { implementerFrontendAgent } from "./implementer-frontend";
+import { implementerGeneralAgent } from "./implementer-general";
 import { ledgerCreatorAgent } from "./ledger-creator";
 import {
   antiPatternDetectorAgent,
@@ -38,7 +41,9 @@ export const agents: Record<string, AgentConfig> = {
   "codebase-analyzer": { ...codebaseAnalyzerAgent, model: DEFAULT_MODEL },
   "pattern-finder": { ...patternFinderAgent, model: DEFAULT_MODEL },
   planner: { ...plannerAgent, model: DEFAULT_MODEL },
-  implementer: { ...implementerAgent, model: DEFAULT_MODEL },
+  "implementer-frontend": { ...implementerFrontendAgent, model: DEFAULT_MODEL },
+  "implementer-backend": { ...implementerBackendAgent, model: DEFAULT_MODEL },
+  "implementer-general": { ...implementerGeneralAgent, model: DEFAULT_MODEL },
   reviewer: { ...reviewerAgent, model: DEFAULT_MODEL },
   executor: { ...executorAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
@@ -71,6 +76,9 @@ export {
   patternFinderAgent,
   plannerAgent,
   implementerAgent,
+  implementerFrontendAgent,
+  implementerBackendAgent,
+  implementerGeneralAgent,
   reviewerAgent,
   executorAgent,
   ledgerCreatorAgent,

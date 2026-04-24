@@ -6,7 +6,7 @@ describe("executor agent", () => {
     const source = await fs.readFile("src/agents/executor.ts", "utf-8");
 
     expect(source).toContain("spawn_agent tool");
-    expect(source).toContain('agent="implementer"');
+    expect(source).toContain('agent="implementer-');
     expect(source).toContain('agent="reviewer"');
   });
 

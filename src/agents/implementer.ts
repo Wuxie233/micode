@@ -1,10 +1,11 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
-export const implementerAgent: AgentConfig = {
-  description: "Executes ONE micro-task: creates ONE file + its test, runs verification",
-  mode: "subagent",
-  temperature: 0.1,
-  prompt: `<environment>
+export interface ImplementerOptions {
+  readonly description: string;
+  readonly domainSuffix: string;
+}
+
+export const BASE_IMPLEMENTER_PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 You are a SUBAGENT spawned by the executor to implement specific tasks.
 </environment>
@@ -201,5 +202,18 @@ Blocked. Escalating.
 <forbidden>Don't skip running the test</forbidden>
 <forbidden>Don't re-apply changes that are already done</forbidden>
 <forbidden>Don't escalate for minor path differences - find the correct path</forbidden>
-</never-do>`,
-};
+</never-do>`;
+
+export function createImplementerAgent(opts: ImplementerOptions): AgentConfig {
+  return {
+    description: opts.description,
+    mode: "subagent",
+    temperature: 0.1,
+    prompt: BASE_IMPLEMENTER_PROMPT + opts.domainSuffix,
+  };
+}
+
+export const implementerAgent: AgentConfig = createImplementerAgent({
+  description: "Executes ONE micro-task: creates ONE file + its test, runs verification",
+  domainSuffix: "",
+});
