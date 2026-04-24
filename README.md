@@ -1,7 +1,13 @@
-# micode
+# micode (Wuxie233 fork)
 
-[![Quality Gate](https://github.com/vtemian/micode/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/vtemian/micode/actions/workflows/quality-gate.yml)
-[![npm version](https://badge.fury.io/js/micode.svg)](https://www.npmjs.com/package/micode)
+> Fork of [vtemian/micode](https://github.com/vtemian/micode) adding **domain-routed implementers** and **auto-generated API contracts** for the cross-domain plan case.
+>
+> What this fork changes:
+> - `implementer` is split into `implementer-frontend` / `implementer-backend` / `implementer-general`, so each can run on a model that is strong in that domain (frontend-strong model for UI, backend-strong model for APIs, etc).
+> - `planner` tags every task with a `Domain` field, and when a plan spans both frontend and backend it emits a frozen API contract document the concurrent implementers must conform to.
+> - `executor` dispatches each task to the matching specialist implementer and injects the contract path into implementer and reviewer spawn prompts.
+>
+> Everything else (brainstormer, octto, mindmodel, ledger, hooks, tools) is unchanged from upstream.
 
 OpenCode plugin with structured Brainstorm → Plan → Implement workflow and session continuity.
 
@@ -12,8 +18,10 @@ https://github.com/user-attachments/assets/85236ad3-e78a-4ff7-a840-620f6ea2f512
 Add to `~/.config/opencode/opencode.json`:
 
 ```json
-{ "plugin": ["micode"] }
+{ "plugin": ["github:Wuxie233/micode"] }
 ```
+
+Copy [`micode.example.jsonc`](./micode.example.jsonc) to `~/.config/opencode/micode.jsonc` and replace the placeholders with your real model strings (this repo ships no concrete provider or model names).
 
 Then run `/init` to generate `ARCHITECTURE.md` and `CODE_STYLE.md`.
 
@@ -26,13 +34,15 @@ Brainstorm → Plan → Implement
 ```
 
 ### Brainstorm
-Refine ideas into designs through collaborative questioning. Fires research subagents in parallel. Output: `thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md`
+Refine ideas into designs through collaborative questioning. Two entry points: `brainstormer` (text-based) and `octto` (browser UI with 16 question types, bundled). Fires research subagents in parallel. Output: `thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md`
 
-### Plan  
-Transform designs into implementation plans with bite-sized tasks (2-5 min each), exact file paths, and TDD workflow. Output: `thoughts/shared/plans/YYYY-MM-DD-{topic}.md`
+### Plan
+Transform designs into implementation plans with bite-sized tasks (2-5 min each), exact file paths, and TDD workflow. Every task is tagged with a `Domain` (frontend, backend, or general). When the plan spans both frontend and backend tasks, the planner additionally emits a **frozen API contract document** that concurrent implementers must conform to. Outputs:
+- `thoughts/shared/plans/YYYY-MM-DD-{topic}.md`
+- `thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md` (cross-domain plans only)
 
 ### Implement
-Execute in git worktree for isolation. The **Executor** orchestrates implementer→reviewer cycles with parallel execution via fire-and-check pattern.
+Execute in git worktree for isolation. The **Executor** reads each task's `Domain` and dispatches to the matching specialist implementer (`implementer-frontend`, `implementer-backend`, or `implementer-general`), injecting the contract path into every implementer and reviewer spawn prompt. Runs implementer → reviewer cycles with parallel execution via fire-and-check pattern. Implementers that detect a contract mismatch escalate; they do not edit the contract.
 
 ### Session Continuity
 Maintain context across sessions with structured compaction. Run `/ledger` to create/update `thoughts/ledgers/CONTINUITY_{session}.md`.
@@ -50,11 +60,14 @@ Maintain context across sessions with structured compaction. Run `/ledger` to cr
 | Agent | Purpose |
 |-------|---------|
 | commander | Orchestrator |
-| brainstormer | Design exploration |
-| planner | Implementation plans |
-| executor | Orchestrate implement→review |
-| implementer | Execute tasks |
-| reviewer | Check correctness |
+| brainstormer | Design exploration (text) |
+| octto | Design exploration (browser UI with 16 question types) |
+| planner | Implementation plans with Domain tags and optional API contracts |
+| executor | Dispatches by Domain, orchestrates implement→review cycles |
+| **implementer-frontend** | Executes frontend tasks (React/Vue/Svelte, CSS, UI) |
+| **implementer-backend** | Executes backend tasks (APIs, DB, middleware, services) |
+| **implementer-general** | Executes cross-cutting tasks (configs, shared types, scripts) |
+| reviewer | Check correctness, verify contract conformance |
 | codebase-locator | Find file locations |
 | codebase-analyzer | Deep code analysis |
 | pattern-finder | Find existing patterns |
@@ -102,29 +115,32 @@ micode reads your default model from `opencode.json`:
 
 All micode agents will use this model automatically.
 
-### micode.json
+### micode.json (domain routing)
 
-Create `~/.config/opencode/micode.json` for micode-specific settings:
+This fork's main value is routing each agent to a model that fits its role. Copy [`micode.example.jsonc`](./micode.example.jsonc) to `~/.config/opencode/micode.jsonc` and fill in the three placeholder types:
 
 ```jsonc
 {
   "agents": {
-    "brainstormer": { "model": "openai/gpt-4o", "temperature": 0.8 },
-    "commander": {
-      "maxTokens": 8192,
-      // Configure reasoning effort per agent
-      "thinking": { "type": "enabled", "budgetTokens": 100000 }
-    }
-  },
-  "features": {
-    "mindmodelInjection": true
-  },
-  "compactionThreshold": 0.5,
-  "fragments": {
-    "commander": ["custom-instructions.md"]
+    // Orchestration and review (strong reasoning model)
+    "commander":   { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "planner":     { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "executor":    { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "reviewer":    { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+
+    // Brainstorm entry points (primary-mode, user picks per session)
+    "brainstormer": { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+    "octto":        { "model": "<YOUR_STRONG_REASONING_MODEL>" },
+
+    // Domain specialists
+    "implementer-frontend": { "model": "<YOUR_FRONTEND_MODEL>" },
+    "implementer-backend":  { "model": "<YOUR_BACKEND_MODEL>" },
+    "implementer-general":  { "model": "<YOUR_BACKEND_MODEL>" }
   }
 }
 ```
+
+The repo ships no concrete provider or model names. Fill in what your gateway supports. The example file documents each placeholder and all optional top-level keys (features, fragments, compactionThreshold).
 
 > **Note:** Both `.json` and `.jsonc` formats are supported. JSONC allows comments and trailing commas.
 
@@ -162,7 +178,7 @@ Use `"model": "github-copilot/gpt-5-mini"` (not `github/copilot:gpt-5-mini`).
 ## Development
 
 ```bash
-git clone git@github.com:vtemian/micode.git ~/.micode
+git clone git@github.com:Wuxie233/micode.git ~/.micode
 cd ~/.micode && bun install && bun run build
 ```
 
@@ -170,6 +186,19 @@ cd ~/.micode && bun install && bun run build
 // Use local path
 { "plugin": ["~/.micode"] }
 ```
+
+### Syncing with upstream
+
+This fork tracks `vtemian/micode` as the `upstream` remote. To pull upstream changes:
+
+```bash
+git fetch upstream
+git rebase upstream/main
+bun run check          # verify the rebase did not break anything
+git push origin main --force-with-lease
+```
+
+The fork's changes are isolated to new files (`src/agents/implementer-{frontend,backend,general}.ts`, four new test files, `micode.example.jsonc`) plus prompt edits in `planner.ts`, `executor.ts`, and registry updates in `agents/index.ts`, so rebase conflicts are limited in scope.
 
 ### Release
 
