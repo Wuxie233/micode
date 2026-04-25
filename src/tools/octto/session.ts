@@ -1,8 +1,9 @@
 // src/tools/octto/session.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
-import type { SessionStore } from "@/octto/session";
+import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
 import { extractErrorMessage } from "@/utils/errors";
+import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools } from "./types";
 
 const MISSING_QUESTIONS_ERROR = `## ERROR: questions parameter is REQUIRED
@@ -37,38 +38,48 @@ function formatSessionStartOutput(sessionId: string, url: string, questionIds?: 
   return output;
 }
 
-const sessionQuestionSchema = tool.schema
-  .array(
-    tool.schema.object({
-      type: tool.schema
-        .enum([
-          "pick_one",
-          "pick_many",
-          "confirm",
-          "ask_text",
-          "ask_image",
-          "ask_file",
-          "ask_code",
-          "show_diff",
-          "show_plan",
-          "show_options",
-          "review_section",
-          "thumbs",
-          "slider",
-          "rank",
-          "rate",
-          "emoji_react",
-        ])
-        .describe("Question type"),
-      config: tool.schema
-        .looseObject({
-          question: tool.schema.string().optional(),
-          context: tool.schema.string().optional(),
-        })
-        .describe("Question config (varies by type)"),
-    }),
-  )
-  .describe("REQUIRED: Initial questions to display when browser opens. Must have at least 1.");
+interface SessionQuestionInput {
+  type: QuestionType;
+  config: BaseConfig;
+}
+
+const sessionQuestionItemSchema = tool.schema.object({
+  type: tool.schema
+    .enum([
+      "pick_one",
+      "pick_many",
+      "confirm",
+      "ask_text",
+      "ask_image",
+      "ask_file",
+      "ask_code",
+      "show_diff",
+      "show_plan",
+      "show_options",
+      "review_section",
+      "thumbs",
+      "slider",
+      "rank",
+      "rate",
+      "emoji_react",
+    ])
+    .describe("Question type"),
+  config: tool.schema
+    .looseObject({
+      question: tool.schema.string().optional(),
+      context: tool.schema.string().optional(),
+    })
+    .describe("Question config (varies by type)"),
+});
+
+const sessionQuestionSchema = sequenceSchema(sessionQuestionItemSchema).describe(
+  "REQUIRED: Initial questions to display when browser opens. Must have at least 1.",
+);
+
+const normalizeQuestions = (questions: unknown): SessionQuestionInput[] =>
+  normalizeSequence(
+    questions as SessionQuestionInput | SessionQuestionInput[] | Record<string, SessionQuestionInput> | undefined,
+  );
 
 function buildStartSessionTool(sessions: SessionStore, tracker?: OcttoSessionTracker): OcttoTool {
   return tool({
@@ -80,10 +91,11 @@ REQUIRED: You MUST provide at least 1 question. Will fail without questions.`,
       questions: sessionQuestionSchema,
     },
     execute: async (args, context) => {
-      if (!args.questions || args.questions.length === 0) return MISSING_QUESTIONS_ERROR;
+      const questions = normalizeQuestions(args.questions);
+      if (questions.length === 0) return MISSING_QUESTIONS_ERROR;
 
       try {
-        const session = await sessions.startSession({ title: args.title, questions: args.questions });
+        const session = await sessions.startSession({ title: args.title, questions });
         tracker?.onCreated?.(context.sessionID, session.session_id);
         return formatSessionStartOutput(session.session_id, session.url, session.question_ids);
       } catch (error) {

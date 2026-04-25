@@ -2,8 +2,18 @@
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { SessionStore } from "@/octto/session";
-import type { ConfirmConfig, PickManyConfig, PickOneConfig, RankConfig, RateConfig } from "@/octto/types";
+import type {
+  ConfirmConfig,
+  Option,
+  OptionWithPros,
+  PickManyConfig,
+  PickOneConfig,
+  PlanSection,
+  RankConfig,
+  RateConfig,
+} from "@/octto/types";
 import { createQuestionToolFactory } from "./factory";
+import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoTool, OcttoTools } from "./types";
 
 const DESC_QUESTION = "Question to display";
@@ -11,18 +21,26 @@ const DESC_CONTEXT = "Instructions/context";
 const ERR_OPTIONS_EMPTY = "options array must not be empty";
 const DEFAULT_RATING_MAX = 5;
 
-const optionsSchema = tool.schema
-  .array(
-    tool.schema.object({
-      id: tool.schema.string().describe("Unique option identifier"),
-      label: tool.schema.string().describe("Display label"),
-      description: tool.schema.string().optional().describe("Optional description"),
-    }),
-  )
-  .describe("Available options");
+const stringSequenceSchema = sequenceSchema(tool.schema.string());
 
-function requireOptions(args: { options?: unknown[] }): string | null {
-  if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
+const optionItemSchema = tool.schema.object({
+  id: tool.schema.string().describe("Unique option identifier"),
+  label: tool.schema.string().describe("Display label"),
+  description: tool.schema.string().optional().describe("Optional description"),
+});
+
+const optionsSchema = sequenceSchema(optionItemSchema).describe("Available options");
+
+const normalizeOptions = (input: unknown): Option[] =>
+  normalizeSequence(input as Option | Option[] | Record<string, Option> | undefined);
+
+const normalizeStrings = (input: unknown): string[] | undefined => {
+  if (input === undefined) return undefined;
+  return normalizeSequence(input as string | string[] | Record<string, string>);
+};
+
+function requireOptions(args: { options?: unknown }): string | null {
+  if (normalizeOptions(args.options).length === 0) return ERR_OPTIONS_EMPTY;
   return null;
 }
 
@@ -41,7 +59,7 @@ Response format: { selected: string } where selected is the chosen option id.`,
     validate: requireOptions,
     toConfig: (args) => ({
       question: args.question,
-      options: args.options,
+      options: normalizeOptions(args.options),
       recommended: args.recommended,
       allowOther: args.allowOther,
     }),
@@ -57,13 +75,13 @@ Response format: { selected: string[] } where selected is array of chosen option
     args: {
       question: tool.schema.string().describe(DESC_QUESTION),
       options: optionsSchema,
-      recommended: tool.schema.array(tool.schema.string()).optional().describe("Recommended option ids"),
+      recommended: stringSequenceSchema.optional().describe("Recommended option ids"),
       min: tool.schema.number().optional().describe("Minimum selections required"),
       max: tool.schema.number().optional().describe("Maximum selections allowed"),
       allowOther: tool.schema.boolean().optional().describe("Allow custom 'other' input"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
+      if (normalizeOptions(args.options).length === 0) return ERR_OPTIONS_EMPTY;
       if (args.min !== undefined && args.max !== undefined && args.min > args.max) {
         return `min (${args.min}) cannot be greater than max (${args.max})`;
       }
@@ -71,8 +89,8 @@ Response format: { selected: string[] } where selected is array of chosen option
     },
     toConfig: (args) => ({
       question: args.question,
-      options: args.options,
-      recommended: args.recommended,
+      options: normalizeOptions(args.options),
+      recommended: normalizeStrings(args.recommended),
       min: args.min,
       max: args.max,
       allowOther: args.allowOther,
@@ -117,7 +135,7 @@ Response format: { ranked: string[] } where ranked is array of option ids in use
     validate: requireOptions,
     toConfig: (args) => ({
       question: args.question,
-      options: args.options,
+      options: normalizeOptions(args.options),
       context: args.context,
     }),
   });
@@ -144,7 +162,7 @@ Response format: { ratings: Record<string, number> } where key is option id, val
         .describe("Optional labels for min/max"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
+      if (normalizeOptions(args.options).length === 0) return ERR_OPTIONS_EMPTY;
       const min = args.min ?? 1;
       const max = args.max ?? DEFAULT_RATING_MAX;
       if (min >= max) return `min (${min}) must be less than max (${max})`;
@@ -152,7 +170,7 @@ Response format: { ratings: Record<string, number> } where key is option id, val
     },
     toConfig: (args) => ({
       question: args.question,
-      options: args.options,
+      options: normalizeOptions(args.options),
       min: args.min ?? 1,
       max: args.max ?? DEFAULT_RATING_MAX,
       step: args.step,
@@ -247,14 +265,14 @@ function buildAskImageTool(sessions: SessionStore): OcttoTool {
       context: tool.schema.string().optional().describe(DESC_CONTEXT),
       multiple: tool.schema.boolean().optional().describe("Allow multiple images"),
       maxImages: tool.schema.number().optional().describe("Maximum number of images"),
-      accept: tool.schema.array(tool.schema.string()).optional().describe("Allowed image types"),
+      accept: stringSequenceSchema.optional().describe("Allowed image types"),
     },
     toConfig: (args) => ({
       question: args.question,
       context: args.context,
       multiple: args.multiple,
       maxImages: args.maxImages,
-      accept: args.accept,
+      accept: normalizeStrings(args.accept),
     }),
   });
 }
@@ -269,7 +287,7 @@ function buildAskFileTool(sessions: SessionStore): OcttoTool {
       context: tool.schema.string().optional().describe(DESC_CONTEXT),
       multiple: tool.schema.boolean().optional().describe("Allow multiple files"),
       maxFiles: tool.schema.number().optional().describe("Maximum number of files"),
-      accept: tool.schema.array(tool.schema.string()).optional().describe("Allowed file types"),
+      accept: stringSequenceSchema.optional().describe("Allowed file types"),
       maxSize: tool.schema.number().optional().describe("Maximum file size in bytes"),
     },
     toConfig: (args) => ({
@@ -277,7 +295,7 @@ function buildAskFileTool(sessions: SessionStore): OcttoTool {
       context: args.context,
       multiple: args.multiple,
       maxFiles: args.maxFiles,
-      accept: args.accept,
+      accept: normalizeStrings(args.accept),
       maxSize: args.maxSize,
     }),
   });
@@ -344,23 +362,37 @@ interface ReviewConfig {
   context?: string;
 }
 
-const sectionSchema = tool.schema.array(
-  tool.schema.object({
-    id: tool.schema.string().describe("Section identifier"),
-    title: tool.schema.string().describe("Section title"),
-    content: tool.schema.string().describe("Section content (markdown)"),
-  }),
-);
+const sectionItemSchema = tool.schema.object({
+  id: tool.schema.string().describe("Section identifier"),
+  title: tool.schema.string().describe("Section title"),
+  content: tool.schema.string().describe("Section content (markdown)"),
+});
 
-const prosConsOptionSchema = tool.schema.array(
-  tool.schema.object({
-    id: tool.schema.string().describe("Unique option identifier"),
-    label: tool.schema.string().describe("Display label"),
-    description: tool.schema.string().optional().describe("Optional description"),
-    pros: tool.schema.array(tool.schema.string()).optional().describe("Advantages"),
-    cons: tool.schema.array(tool.schema.string()).optional().describe("Disadvantages"),
-  }),
-);
+const sectionSchema = sequenceSchema(sectionItemSchema);
+
+const prosConsOptionItemSchema = tool.schema.object({
+  id: tool.schema.string().describe("Unique option identifier"),
+  label: tool.schema.string().describe("Display label"),
+  description: tool.schema.string().optional().describe("Optional description"),
+  pros: stringSequenceSchema.optional().describe("Advantages"),
+  cons: stringSequenceSchema.optional().describe("Disadvantages"),
+});
+
+const prosConsOptionSchema = sequenceSchema(prosConsOptionItemSchema);
+
+const normalizeSections = (input: unknown): PlanSection[] | undefined => {
+  if (input === undefined) return undefined;
+  return normalizeSequence(input as PlanSection | PlanSection[] | Record<string, PlanSection>);
+};
+
+const normalizeProsConsOptions = (input: unknown): OptionWithPros[] =>
+  normalizeSequence(input as OptionWithPros | OptionWithPros[] | Record<string, OptionWithPros> | undefined).map(
+    (option) => ({
+      ...option,
+      pros: normalizeStrings(option.pros),
+      cons: normalizeStrings(option.cons),
+    }),
+  );
 
 function buildShowDiffTool(sessions: SessionStore): OcttoTool {
   const createTool = createQuestionToolFactory(sessions);
@@ -397,7 +429,7 @@ Response format: { approved: boolean, annotations?: Record<sectionId, string> }`
     },
     toConfig: (args) => ({
       question: args.question,
-      sections: args.sections,
+      sections: normalizeSections(args.sections),
       markdown: args.markdown,
     }),
   });
@@ -416,12 +448,12 @@ Response format: { selected: string, feedback?: string } where selected is the c
       allowFeedback: tool.schema.boolean().optional().describe("Allow text feedback with selection"),
     },
     validate: (args) => {
-      if (!args.options || args.options.length === 0) return ERR_OPTIONS_EMPTY;
+      if (normalizeProsConsOptions(args.options).length === 0) return ERR_OPTIONS_EMPTY;
       return null;
     },
     toConfig: (args) => ({
       question: args.question,
-      options: args.options,
+      options: normalizeProsConsOptions(args.options),
       recommended: args.recommended,
       allowFeedback: args.allowFeedback,
     }),
@@ -505,12 +537,12 @@ function buildEmojiReactTool(sessions: SessionStore): OcttoTool {
     args: {
       question: tool.schema.string().describe(DESC_QUESTION),
       context: tool.schema.string().optional().describe("Context to show"),
-      emojis: tool.schema.array(tool.schema.string()).optional().describe("Available emoji options"),
+      emojis: stringSequenceSchema.optional().describe("Available emoji options"),
     },
     toConfig: (args) => ({
       question: args.question,
       context: args.context,
-      emojis: args.emojis,
+      emojis: normalizeStrings(args.emojis),
     }),
   });
 }
