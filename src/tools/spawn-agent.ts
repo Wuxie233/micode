@@ -16,11 +16,11 @@ const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.all.
 
 Canonical shape: { agents: [{ agent, prompt, description }, ...] }.
-For LLM-call compatibility, the tool also accepts a top-level single task
-object { agent, prompt, description }, a top-level task array
-[{ agent, prompt, description }, ...], or a wrapped single task
-{ agents: { agent, prompt, description } }. Invalid or empty inputs return
-a stable failure message instead of throwing.
+You SHOULD always use the canonical array form. As a fallback, the tool
+also accepts a single task object under \`agents\`
+({ agents: { agent, prompt, description } }), which will be wrapped into
+an array of one. Invalid or empty inputs return a stable failure message
+instead of throwing.
 
 Example:
 spawn_agent({
@@ -150,18 +150,36 @@ async function runParallelAgents(
   return `# ${agents.length} agents completed in ${totalTime}s (parallel)\n\n${outputs.join("\n\n---\n\n")}`;
 }
 
+// Module-level task object schema, reused by `buildAgentsSchema` and by tests
+// that need to assert what shapes the schema layer accepts vs. rejects.
+const taskObjectSchema = tool.schema.object({
+  agent: tool.schema.string().describe("Agent name to spawn"),
+  prompt: tool.schema.string().describe("Full prompt/instructions for the agent"),
+  description: tool.schema.string().describe("Short human-readable description"),
+});
+
+type TaskObjectSchema = typeof taskObjectSchema;
+type AgentsSchema = ReturnType<
+  typeof tool.schema.union<[ReturnType<typeof tool.schema.array<TaskObjectSchema>>, TaskObjectSchema]>
+>;
+
 // The OpenCode tool dispatcher validates `args` against this zod schema BEFORE
-// calling `execute`. A strict `z.array(z.object({...}))` therefore rejects every
-// non-canonical shape (e.g. a single task object under `agents`) before the
-// runtime normalizer can adapt it. We deliberately accept `z.unknown()` here so
-// that all supported shapes reach `execute`, where `normalizeSpawnAgentArgs`
-// validates and converts the input into a canonical `AgentTask[]`.
-function buildAgentsSchema(): ReturnType<typeof tool.schema.unknown> {
+// calling `execute`. We expose a precise union — `array(taskObj) | taskObj` —
+// so that the JSON Schema surfaced to LLMs has full structural hints
+// (anyOf [array, object]) and the canonical / wrapped-object shapes both pass
+// the gate. The runtime `normalizeSpawnAgentArgs` keeps its own defensive
+// branches for callers that bypass this schema layer entirely.
+export function buildAgentsSchema(): AgentsSchema {
   return tool.schema
-    .unknown()
+    .union([tool.schema.array(taskObjectSchema), taskObjectSchema])
     .describe(
-      "Agents to spawn. Canonical: array of {agent, prompt, description}. Also accepts a single task object {agent, prompt, description} for compatibility.",
-    );
+      "Tasks to spawn. Canonical: array of {agent, prompt, description}. A single task object is also accepted (will be wrapped in an array).",
+    ) as AgentsSchema;
+}
+
+// Convenience for tests: the full args shape passed to `tool({ args, ... })`.
+export function buildArgsShape(): { agents: AgentsSchema } {
+  return { agents: buildAgentsSchema() };
 }
 
 const dispatchTasks = async (
