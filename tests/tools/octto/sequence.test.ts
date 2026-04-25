@@ -1,7 +1,7 @@
 // tests/tools/octto/sequence.test.ts
 import { describe, expect, it } from "bun:test";
 
-import { normalizeSequence } from "../../../src/tools/octto/sequence";
+import { normalizeSequence } from "../../../src/tools/sequence";
 
 describe("octto sequence arguments", () => {
   const first = { id: "a" };

@@ -52,6 +52,40 @@ describe("normalizeSpawnAgentArgs", () => {
         expect(outcome.tasks).toEqual([sampleTask, secondTask]);
       }
     });
+
+    it("normalizes wrapped indexed record { agents: { '0': task, '1': task } }", () => {
+      const outcome = normalizeSpawnAgentArgs({
+        agents: { "0": sampleTask, "1": secondTask },
+      });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask, secondTask]);
+      }
+    });
+
+    it("normalizes wrapped indexed record in numeric (not insertion) order", () => {
+      const outcome = normalizeSpawnAgentArgs({
+        agents: { "1": secondTask, "0": sampleTask },
+      });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask, secondTask]);
+      }
+    });
+
+    it("normalizes top-level indexed record { '0': task, '1': task } when no agents key", () => {
+      const outcome = normalizeSpawnAgentArgs({
+        "0": sampleTask,
+        "1": secondTask,
+      });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask, secondTask]);
+      }
+    });
   });
 
   describe("empty inputs", () => {
