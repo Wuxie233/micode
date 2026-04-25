@@ -8,6 +8,7 @@ import { config } from "@/utils/config";
 import { log } from "@/utils/logger";
 import { formatBranchStatus, formatFindingSummary, formatFindings, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
+import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools, OpencodeClient } from "./types";
 import { generateSessionId } from "./utils";
 
@@ -240,21 +241,22 @@ ${branchesXml}
 </brainstorm_created>`;
 }
 
-const brainstormBranchSchema = tool.schema
-  .array(
-    tool.schema.object({
-      id: tool.schema.string(),
-      scope: tool.schema.string(),
-      initial_question: tool.schema.object({
-        type: tool.schema.enum(QUESTION_TYPES),
-        config: tool.schema.looseObject({
-          question: tool.schema.string().optional(),
-          context: tool.schema.string().optional(),
-        }),
-      }),
+const brainstormBranchItemSchema = tool.schema.object({
+  id: tool.schema.string(),
+  scope: tool.schema.string(),
+  initial_question: tool.schema.object({
+    type: tool.schema.enum(QUESTION_TYPES),
+    config: tool.schema.looseObject({
+      question: tool.schema.string().optional(),
+      context: tool.schema.string().optional(),
     }),
-  )
-  .describe("Branches to explore");
+  }),
+});
+
+const brainstormBranchSchema = sequenceSchema(brainstormBranchItemSchema).describe("Branches to explore");
+
+const normalizeBranches = (branches: unknown): BranchInput[] =>
+  normalizeSequence(branches as BranchInput | BranchInput[] | Record<string, BranchInput> | undefined);
 
 function buildCreateBrainstormTool(
   store: StateStore,
@@ -268,23 +270,24 @@ function buildCreateBrainstormTool(
       branches: brainstormBranchSchema,
     },
     execute: async (args, context) => {
+      const branches = normalizeBranches(args.branches);
       const sessionId = generateSessionId();
       await store.createSession(
         sessionId,
         args.request,
-        args.branches.map((b) => ({ id: b.id, scope: b.scope })),
+        branches.map((b) => ({ id: b.id, scope: b.scope })),
       );
 
       const browserSession = await sessions.startSession({
         title: "Brainstorming Session",
-        questions: buildInitialQuestions(args.branches),
+        questions: buildInitialQuestions(branches),
       });
 
       tracker?.onCreated?.(context.sessionID, browserSession.session_id);
       await store.setBrowserSessionId(sessionId, browserSession.session_id);
-      await registerBranchQuestions(store, sessionId, args.branches, browserSession.question_ids);
+      await registerBranchQuestions(store, sessionId, branches, browserSession.question_ids);
 
-      return formatCreatedXml(sessionId, browserSession.session_id, browserSession.url, args.branches);
+      return formatCreatedXml(sessionId, browserSession.session_id, browserSession.url, branches);
     },
   });
 }
