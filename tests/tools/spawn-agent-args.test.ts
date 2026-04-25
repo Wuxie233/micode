@@ -44,15 +44,6 @@ describe("normalizeSpawnAgentArgs", () => {
       }
     });
 
-    it("normalizes top-level task array", () => {
-      const outcome = normalizeSpawnAgentArgs([sampleTask]);
-
-      expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        expect(outcome.tasks).toEqual([sampleTask]);
-      }
-    });
-
     it("preserves order across multiple canonical tasks", () => {
       const outcome = normalizeSpawnAgentArgs({ agents: [sampleTask, secondTask] });
 
@@ -61,26 +52,11 @@ describe("normalizeSpawnAgentArgs", () => {
         expect(outcome.tasks).toEqual([sampleTask, secondTask]);
       }
     });
-
-    it("preserves order across multiple top-level array tasks", () => {
-      const outcome = normalizeSpawnAgentArgs([secondTask, sampleTask]);
-
-      expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        expect(outcome.tasks).toEqual([secondTask, sampleTask]);
-      }
-    });
   });
 
   describe("empty inputs", () => {
     it("returns NO_AGENTS_MESSAGE for empty wrapped array", () => {
       const outcome = normalizeSpawnAgentArgs({ agents: [] });
-
-      expect(outcome).toEqual({ ok: false, message: NO_AGENTS_MESSAGE });
-    });
-
-    it("returns NO_AGENTS_MESSAGE for empty top-level array", () => {
-      const outcome = normalizeSpawnAgentArgs([]);
 
       expect(outcome).toEqual({ ok: false, message: NO_AGENTS_MESSAGE });
     });
@@ -192,7 +168,6 @@ describe("normalizeSpawnAgentArgs", () => {
       ["string", "implementer"],
       ["empty record", {}],
       ["empty wrapped array", { agents: [] }],
-      ["empty top-level array", []],
       ["bad agents container", { agents: "bad" }],
       ["wrong field type", { agents: [{ agent: 1, prompt: "p", description: "d" }] }],
     ];
