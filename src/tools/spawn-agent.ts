@@ -1,5 +1,6 @@
 import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
+import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { extractErrorMessage } from "@/utils/errors";
 
 // Extended context with metadata (available but not typed in plugin API)
@@ -9,6 +10,25 @@ type ExtendedContext = ToolContext & {
 };
 
 const MS_PER_SECOND = 1000;
+const FAILURE_HEADER = "## spawn_agent Failed";
+
+const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
+All agents in the array run concurrently via Promise.all.
+
+Canonical shape: { agents: [{ agent, prompt, description }, ...] }.
+For LLM-call compatibility, the tool also accepts a top-level single task
+object { agent, prompt, description }, a top-level task array
+[{ agent, prompt, description }, ...], or a wrapped single task
+{ agents: { agent, prompt, description } }. Invalid or empty inputs return
+a stable failure message instead of throwing.
+
+Example:
+spawn_agent({
+  agents: [
+    {agent: "mm-stack-detector", prompt: "...", description: "Detect stack"},
+    {agent: "mm-dependency-mapper", prompt: "...", description: "Map deps"}
+  ]
+})`;
 
 interface SessionCreateResponse {
   readonly data?: { readonly id?: string };
@@ -26,12 +46,6 @@ interface SessionMessage {
 
 interface SessionMessagesResponse {
   readonly data?: SessionMessage[];
-}
-
-interface AgentTask {
-  readonly agent: string;
-  readonly prompt: string;
-  readonly description: string;
 }
 
 function updateProgress(
@@ -108,7 +122,11 @@ async function runAgent(
   }
 }
 
-async function runParallelAgents(ctx: PluginInput, agents: AgentTask[], extCtx: ExtendedContext): Promise<string> {
+async function runParallelAgents(
+  ctx: PluginInput,
+  agents: readonly AgentTask[],
+  extCtx: ExtendedContext,
+): Promise<string> {
   const startTime = Date.now();
   const progressState = { completed: 0, total: agents.length, startTime };
 
@@ -124,49 +142,50 @@ async function runParallelAgents(ctx: PluginInput, agents: AgentTask[], extCtx: 
     return agentOutput;
   };
 
-  const results = await Promise.all(agents.map(runWithProgress));
+  const outputs = await Promise.all(agents.map(runWithProgress));
   const totalTime = ((Date.now() - startTime) / MS_PER_SECOND).toFixed(1);
 
   extCtx.metadata?.({ title: `${agents.length} agents completed in ${totalTime}s` });
 
-  return `# ${agents.length} agents completed in ${totalTime}s (parallel)\n\n${results.join("\n\n---\n\n")}`;
+  return `# ${agents.length} agents completed in ${totalTime}s (parallel)\n\n${outputs.join("\n\n---\n\n")}`;
 }
+
+function buildAgentsSchema(): ReturnType<typeof tool.schema.array> {
+  return tool.schema
+    .array(
+      tool.schema.object({
+        agent: tool.schema.string().describe("Agent to spawn"),
+        prompt: tool.schema.string().describe("Full prompt/instructions"),
+        description: tool.schema.string().describe("Short description"),
+      }),
+    )
+    .describe("Agents to spawn in parallel");
+}
+
+const dispatchTasks = async (
+  ctx: PluginInput,
+  tasks: readonly AgentTask[],
+  extCtx: ExtendedContext,
+): Promise<string> => {
+  if (tasks.length === 1) {
+    const onlyTask = tasks[0];
+    extCtx.metadata?.({ title: `Running ${onlyTask.agent}...` });
+    return runAgent(ctx, onlyTask, extCtx);
+  }
+  return runParallelAgents(ctx, tasks, extCtx);
+};
 
 export function createSpawnAgentTool(ctx: PluginInput): ToolDefinition {
   return tool({
-    description: `Spawn subagents to execute tasks in PARALLEL.
-All agents in the array run concurrently via Promise.all.
-
-Example:
-spawn_agent({
-  agents: [
-    {agent: "mm-stack-detector", prompt: "...", description: "Detect stack"},
-    {agent: "mm-dependency-mapper", prompt: "...", description: "Map deps"}
-  ]
-})`,
-    args: {
-      agents: tool.schema
-        .array(
-          tool.schema.object({
-            agent: tool.schema.string().describe("Agent to spawn"),
-            prompt: tool.schema.string().describe("Full prompt/instructions"),
-            description: tool.schema.string().describe("Short description"),
-          }),
-        )
-        .describe("Agents to spawn in parallel"),
-    },
+    description: TOOL_DESCRIPTION,
+    args: { agents: buildAgentsSchema() },
     execute: async (args, toolCtx) => {
-      const { agents } = args;
       const extCtx = toolCtx as ExtendedContext;
-
-      if (!agents || agents.length === 0) return "## spawn_agent Failed\n\nNo agents specified.";
-
-      if (agents.length === 1) {
-        extCtx.metadata?.({ title: `Running ${agents[0].agent}...` });
-        return runAgent(ctx, agents[0], extCtx);
+      const outcome = normalizeSpawnAgentArgs(args);
+      if (!outcome.ok) {
+        return `${FAILURE_HEADER}\n\n${outcome.message}`;
       }
-
-      return runParallelAgents(ctx, agents, extCtx);
+      return dispatchTasks(ctx, outcome.tasks, extCtx);
     },
   });
 }
