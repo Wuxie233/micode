@@ -127,6 +127,23 @@ describe("createSpawnAgentTool execute", () => {
       expect(fake.recorder.createCalls).toBe(1);
     });
 
+    it("runs indexed record { agents: { '0': taskA, '1': taskB } } in order", async () => {
+      const output = await callExecute(toolDef, {
+        agents: { "0": taskA, "1": taskB },
+      });
+
+      expect(output.startsWith("# 2 agents completed in")).toBe(true);
+      expect(output.indexOf(taskA.description)).toBeLessThan(output.indexOf(taskB.description));
+      expect(fake.recorder.createCalls).toBe(2);
+    });
+
+    it("runs single-element indexed record { agents: { '0': taskA } }", async () => {
+      const output = await callExecute(toolDef, { agents: { "0": taskA } });
+
+      expect(output.startsWith(`## ${taskA.description}`)).toBe(true);
+      expect(fake.recorder.createCalls).toBe(1);
+    });
+
     it("preserves order in parallel output", async () => {
       const output = await callExecute(toolDef, { agents: [taskB, taskA] });
 
@@ -139,14 +156,14 @@ describe("createSpawnAgentTool execute", () => {
     it("returns stable failure for { agents: [] } and skips session.create", async () => {
       const output = await callExecute(toolDef, { agents: [] });
 
-      expect(output).toBe("## spawn_agent Failed\n\nNo agents specified.");
+      expect(output.startsWith("## spawn_agent Failed\n\nNo agents specified.")).toBe(true);
       expect(fake.recorder.createCalls).toBe(0);
     });
 
     it("returns stable failure for top-level [] and skips session.create", async () => {
       const output = await callExecute(toolDef, []);
 
-      expect(output).toBe("## spawn_agent Failed\n\nNo agents specified.");
+      expect(output.startsWith("## spawn_agent Failed\n\nNo agents specified.")).toBe(true);
       expect(fake.recorder.createCalls).toBe(0);
     });
   });
@@ -244,6 +261,18 @@ describe("spawn_agent args schema (LLM gate layer)", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts indexed record { agents: { '0': task } } at the schema layer", () => {
+    const result = argsSchema.safeParse({ agents: { "0": validTask } });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts two-element indexed record { agents: { '0': task, '1': task } }", () => {
+    const result = argsSchema.safeParse({
+      agents: { "0": validTask, "1": validTask },
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects top-level task without `agents` key", () => {
     const result = argsSchema.safeParse({ ...validTask });
     expect(result.success).toBe(false);
@@ -261,7 +290,7 @@ describe("spawn_agent args schema (LLM gate layer)", () => {
     expect(result.success).toBe(false);
   });
 
-  it("emits anyOf JSON Schema with array + object branches for LLMs", () => {
+  it("emits anyOf JSON Schema with array + object + record branches for LLMs", () => {
     // zod v4 ships z.toJSONSchema; older versions don't. If absent, this test
     // will surface that we can no longer rely on the LLM seeing structure.
     const toJSONSchema = (tool.schema as unknown as { toJSONSchema?: (s: unknown) => unknown }).toJSONSchema;
@@ -274,6 +303,7 @@ describe("spawn_agent args schema (LLM gate layer)", () => {
     const agentsSchema = json.properties?.agents;
     expect(agentsSchema).toBeDefined();
     expect(Array.isArray(agentsSchema?.anyOf)).toBe(true);
-    expect(agentsSchema?.anyOf?.length).toBe(2);
+    // sequenceSchema produces array | item | record (3 branches)
+    expect(agentsSchema?.anyOf?.length).toBe(3);
   });
 });

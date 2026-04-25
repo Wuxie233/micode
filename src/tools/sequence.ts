@@ -1,4 +1,4 @@
-// src/tools/octto/sequence.ts
+// src/tools/sequence.ts
 import { tool } from "@opencode-ai/plugin/tool";
 
 type ToolSchema = Parameters<typeof tool.schema.array>[0];

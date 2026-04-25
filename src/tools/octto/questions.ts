@@ -12,8 +12,8 @@ import type {
   RankConfig,
   RateConfig,
 } from "@/octto/types";
+import { normalizeSequence, sequenceSchema } from "@/tools/sequence";
 import { createQuestionToolFactory } from "./factory";
-import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoTool, OcttoTools } from "./types";
 
 const DESC_QUESTION = "Question to display";

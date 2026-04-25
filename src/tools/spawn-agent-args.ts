@@ -1,6 +1,8 @@
 // src/tools/spawn-agent-args.ts
 import * as v from "valibot";
 
+import { normalizeSequence } from "@/tools/sequence";
+
 export const AgentTaskSchema = v.object({
   agent: v.string(),
   prompt: v.string(),
@@ -29,8 +31,16 @@ const success = (tasks: readonly AgentTask[]): NormalizeSpawnAgentResult => ({
   tasks,
 });
 
+const INDEX_KEY_PATTERN = /^(?:0|[1-9]\d*)$/u;
+
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isIndexedRecord = (value: unknown): value is Record<string, unknown> => {
+  if (!isPlainRecord(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length > 0 && keys.every((key) => INDEX_KEY_PATTERN.test(key));
+};
 
 const parseSingleTask = (candidate: unknown): AgentTask | null => {
   const parsed = v.safeParse(AgentTaskSchema, candidate);
@@ -62,7 +72,13 @@ const normalizeAgentsKey = (value: unknown): NormalizeSpawnAgentResult => {
     return normalizeArrayInput(value);
   }
   const single = parseSingleTask(value);
-  return single === null ? failure(INVALID_ARGS_MESSAGE) : success([single]);
+  if (single !== null) {
+    return success([single]);
+  }
+  if (isIndexedRecord(value)) {
+    return normalizeArrayInput(normalizeSequence(value));
+  }
+  return failure(INVALID_ARGS_MESSAGE);
 };
 
 export function normalizeSpawnAgentArgs(input: unknown): NormalizeSpawnAgentResult {
@@ -76,5 +92,11 @@ export function normalizeSpawnAgentArgs(input: unknown): NormalizeSpawnAgentResu
     return normalizeAgentsKey(input[AGENTS_KEY]);
   }
   const single = parseSingleTask(input);
-  return single === null ? failure(INVALID_ARGS_MESSAGE) : success([single]);
+  if (single !== null) {
+    return success([single]);
+  }
+  if (isIndexedRecord(input)) {
+    return normalizeArrayInput(normalizeSequence(input));
+  }
+  return failure(INVALID_ARGS_MESSAGE);
 }

@@ -2,8 +2,8 @@
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
+import { normalizeSequence, sequenceSchema } from "@/tools/sequence";
 import { extractErrorMessage } from "@/utils/errors";
-import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools } from "./types";
 
 const MISSING_QUESTIONS_ERROR = `## ERROR: questions parameter is REQUIRED

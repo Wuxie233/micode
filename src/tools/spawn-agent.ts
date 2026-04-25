@@ -1,5 +1,7 @@
 import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
+import { dumpRawArgs, isDebugDumpEnabled } from "@/tools/diagnostics";
+import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { extractErrorMessage } from "@/utils/errors";
 
@@ -158,23 +160,18 @@ const taskObjectSchema = tool.schema.object({
   description: tool.schema.string().describe("Short human-readable description"),
 });
 
-type TaskObjectSchema = typeof taskObjectSchema;
-type AgentsSchema = ReturnType<
-  typeof tool.schema.union<[ReturnType<typeof tool.schema.array<TaskObjectSchema>>, TaskObjectSchema]>
->;
+type AgentsSchema = ReturnType<typeof sequenceSchema>;
 
 // The OpenCode tool dispatcher validates `args` against this zod schema BEFORE
-// calling `execute`. We expose a precise union — `array(taskObj) | taskObj` —
-// so that the JSON Schema surfaced to LLMs has full structural hints
-// (anyOf [array, object]) and the canonical / wrapped-object shapes both pass
-// the gate. The runtime `normalizeSpawnAgentArgs` keeps its own defensive
-// branches for callers that bypass this schema layer entirely.
+// calling `execute`. We use the shared `sequenceSchema` (array | object | record)
+// so spawn_agent tolerates the same set of LLM argument shapes as octto, in
+// particular the indexed-record form ({ "0": task }) the dispatcher sometimes
+// produces after re-serialising args. The runtime `normalizeSpawnAgentArgs`
+// keeps its own defensive branches for callers that bypass this layer.
 export function buildAgentsSchema(): AgentsSchema {
-  return tool.schema
-    .union([tool.schema.array(taskObjectSchema), taskObjectSchema])
-    .describe(
-      "Tasks to spawn. Canonical: array of {agent, prompt, description}. A single task object is also accepted (will be wrapped in an array).",
-    ) as AgentsSchema;
+  return sequenceSchema(taskObjectSchema).describe(
+    "Tasks to spawn. Canonical: array of {agent, prompt, description}. A single task object or an indexed record is also accepted.",
+  );
 }
 
 // Convenience for tests: the full args shape passed to `tool({ args, ... })`.
@@ -195,15 +192,25 @@ const dispatchTasks = async (
   return runParallelAgents(ctx, tasks, extCtx);
 };
 
+const TOOL_NAME = "spawn-agent";
+
+function logDumpPath(path: string | null): string {
+  return path === null ? "" : ` Raw args dumped to ${path}.`;
+}
+
 export function createSpawnAgentTool(ctx: PluginInput): ToolDefinition {
   return tool({
     description: TOOL_DESCRIPTION,
     args: { agents: buildAgentsSchema() },
     execute: async (args, toolCtx) => {
       const extCtx = toolCtx as ExtendedContext;
+      if (isDebugDumpEnabled()) {
+        dumpRawArgs(TOOL_NAME, args);
+      }
       const outcome = normalizeSpawnAgentArgs(args);
       if (!outcome.ok) {
-        return `${FAILURE_HEADER}\n\n${outcome.message}`;
+        const dumped = dumpRawArgs(TOOL_NAME, args);
+        return `${FAILURE_HEADER}\n\n${outcome.message}${logDumpPath(dumped)}`;
       }
       return dispatchTasks(ctx, outcome.tasks, extCtx);
     },

@@ -4,11 +4,12 @@ import { tool } from "@opencode-ai/plugin/tool";
 import type { Answer, ReviewAnswer, SessionStore } from "@/octto/session";
 import { QUESTION_TYPES, QUESTIONS, STATUSES } from "@/octto/session";
 import { BRANCH_STATUSES, type BrainstormState, createStateStore, type StateStore } from "@/octto/state";
+import { dumpRawArgs, isDebugDumpEnabled } from "@/tools/diagnostics";
+import { normalizeSequence, sequenceSchema } from "@/tools/sequence";
 import { config } from "@/utils/config";
 import { log } from "@/utils/logger";
 import { formatBranchStatus, formatFindingSummary, formatFindings, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
-import { normalizeSequence, sequenceSchema } from "./sequence";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools, OpencodeClient } from "./types";
 import { generateSessionId } from "./utils";
 
@@ -198,10 +199,16 @@ interface BranchInput {
   };
 }
 
+function hasInitialQuestion(branch: BranchInput | null | undefined): branch is BranchInput {
+  if (branch === null || branch === undefined) return false;
+  const candidate = branch as Partial<BranchInput>;
+  return Boolean(candidate.id && candidate.scope && candidate.initial_question);
+}
+
 function buildInitialQuestions(
   branches: BranchInput[],
 ): Array<{ type: (typeof QUESTION_TYPES)[number]; config: Record<string, unknown> }> {
-  return branches.map((b) => {
+  return branches.filter(hasInitialQuestion).map((b) => {
     const { type, config } = b.initial_question;
     const context = `[${b.scope}] ${config.context ?? ""}`.trim();
     return { type, config: { ...config, context } };
@@ -217,6 +224,7 @@ async function registerBranchQuestions(
   for (const [i, branch] of branches.entries()) {
     const questionId = questionIds?.[i];
     if (!questionId) continue;
+    if (!hasInitialQuestion(branch)) continue;
 
     const { type, config } = branch.initial_question;
     await store.addQuestionToBranch(sessionId, branch.id, {
@@ -255,8 +263,22 @@ const brainstormBranchItemSchema = tool.schema.object({
 
 const brainstormBranchSchema = sequenceSchema(brainstormBranchItemSchema).describe("Branches to explore");
 
+const CREATE_BRAINSTORM_TOOL_NAME = "create-brainstorm";
+
 const normalizeBranches = (branches: unknown): BranchInput[] =>
   normalizeSequence(branches as BranchInput | BranchInput[] | Record<string, BranchInput> | undefined);
+
+function branchesAreUsable(branches: BranchInput[]): boolean {
+  return branches.length > 0 && branches.some(hasInitialQuestion);
+}
+
+function buildBranchesUnusableError(args: unknown): string {
+  log.error("octto", "create_brainstorm: branches lost initial_question after dispatch", { args });
+  console.error("octto create_brainstorm raw args:", JSON.stringify(args));
+  const path = dumpRawArgs(CREATE_BRAINSTORM_TOOL_NAME, args);
+  const dumpHint = path === null ? "(dump failed)" : path;
+  return `<error>create_brainstorm: branches[i].initial_question missing or unrecognized; raw shape dumped to ${dumpHint} for diagnosis</error>`;
+}
 
 function buildCreateBrainstormTool(
   store: StateStore,
@@ -270,7 +292,14 @@ function buildCreateBrainstormTool(
       branches: brainstormBranchSchema,
     },
     execute: async (args, context) => {
+      if (isDebugDumpEnabled()) {
+        dumpRawArgs(CREATE_BRAINSTORM_TOOL_NAME, args);
+      }
       const branches = normalizeBranches(args.branches);
+      if (!branchesAreUsable(branches)) {
+        return buildBranchesUnusableError(args);
+      }
+
       const sessionId = generateSessionId();
       await store.createSession(
         sessionId,
