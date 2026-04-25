@@ -2,8 +2,9 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin/tool";
 
-import { createSpawnAgentTool } from "../../src/tools/spawn-agent";
+import { buildArgsShape, createSpawnAgentTool } from "../../src/tools/spawn-agent";
 import { INVALID_ARGS_MESSAGE } from "../../src/tools/spawn-agent-args";
 
 const taskA = {
@@ -211,5 +212,68 @@ describe("createSpawnAgentTool execute", () => {
     it("resolves the promise on invalid input rather than rejecting", async () => {
       await expect(callExecute(toolDef, null)).resolves.toContain("## spawn_agent Failed");
     });
+  });
+});
+
+describe("spawn_agent args schema (LLM gate layer)", () => {
+  // The OpenCode tool dispatcher parses the LLM's tool call against this
+  // zod object before invoking `execute`. We assert here that:
+  //   1. canonical { agents: [task, ...] }                    -> accepted
+  //   2. wrapped single task { agents: task }                 -> accepted
+  //   3. top-level task without `agents` key                  -> rejected
+  //
+  // Case 3 is intentionally rejected at the schema layer because the tool
+  // description tells LLMs to always wrap tasks under `agents`. The runtime
+  // normalizer still tolerates that shape for non-LLM callers, but we don't
+  // want it advertised through the JSON Schema.
+  const argsSchema = tool.schema.object(buildArgsShape());
+
+  const validTask = {
+    agent: "agent-x",
+    prompt: "do work",
+    description: "Task X",
+  };
+
+  it("accepts canonical { agents: [task, ...] }", () => {
+    const result = argsSchema.safeParse({ agents: [validTask] });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts wrapped single task { agents: task }", () => {
+    const result = argsSchema.safeParse({ agents: validTask });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects top-level task without `agents` key", () => {
+    const result = argsSchema.safeParse({ ...validTask });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects { agents: 'string' }", () => {
+    const result = argsSchema.safeParse({ agents: "implementer" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects task missing required field", () => {
+    const result = argsSchema.safeParse({
+      agents: [{ agent: "x", prompt: "p" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("emits anyOf JSON Schema with array + object branches for LLMs", () => {
+    // zod v4 ships z.toJSONSchema; older versions don't. If absent, this test
+    // will surface that we can no longer rely on the LLM seeing structure.
+    const toJSONSchema = (tool.schema as unknown as { toJSONSchema?: (s: unknown) => unknown }).toJSONSchema;
+    expect(typeof toJSONSchema).toBe("function");
+    if (typeof toJSONSchema !== "function") return;
+
+    const json = toJSONSchema(argsSchema) as {
+      properties?: { agents?: { anyOf?: unknown[] } };
+    };
+    const agentsSchema = json.properties?.agents;
+    expect(agentsSchema).toBeDefined();
+    expect(Array.isArray(agentsSchema?.anyOf)).toBe(true);
+    expect(agentsSchema?.anyOf?.length).toBe(2);
   });
 });
