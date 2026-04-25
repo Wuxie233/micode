@@ -150,16 +150,18 @@ async function runParallelAgents(
   return `# ${agents.length} agents completed in ${totalTime}s (parallel)\n\n${outputs.join("\n\n---\n\n")}`;
 }
 
-function buildAgentsSchema(): ReturnType<typeof tool.schema.array> {
+// The OpenCode tool dispatcher validates `args` against this zod schema BEFORE
+// calling `execute`. A strict `z.array(z.object({...}))` therefore rejects every
+// non-canonical shape (e.g. a single task object under `agents`) before the
+// runtime normalizer can adapt it. We deliberately accept `z.unknown()` here so
+// that all supported shapes reach `execute`, where `normalizeSpawnAgentArgs`
+// validates and converts the input into a canonical `AgentTask[]`.
+function buildAgentsSchema(): ReturnType<typeof tool.schema.unknown> {
   return tool.schema
-    .array(
-      tool.schema.object({
-        agent: tool.schema.string().describe("Agent to spawn"),
-        prompt: tool.schema.string().describe("Full prompt/instructions"),
-        description: tool.schema.string().describe("Short description"),
-      }),
-    )
-    .describe("Agents to spawn in parallel");
+    .unknown()
+    .describe(
+      "Agents to spawn. Canonical: array of {agent, prompt, description}. Also accepts a single task object {agent, prompt, description} for compatibility.",
+    );
 }
 
 const dispatchTasks = async (
