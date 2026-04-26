@@ -160,4 +160,41 @@ describe("config utility", () => {
       expect(config.limits.contextCacheMaxSize).toBe(100);
     });
   });
+
+  describe("issue workflow config", () => {
+    it("should have octto portal defaults", async () => {
+      const { config } = await import("../../src/utils/config");
+
+      expect(config.octto.portalToken).toBe((process.env.OCTTO_PORTAL_TOKEN ?? "").trim());
+      expect(config.octto.portalBaseUrl).toBe("https://octto.wuxie233.com");
+      expect(config.octto.persistedSessionTtlHours).toBe(168);
+      expect(config.octto.persistedSessionsDir).toBe("thoughts/octto/sessions");
+      expect(config.octto.conversationsPollIntervalMs).toBe(3000);
+    });
+
+    it("should have lifecycle defaults", async () => {
+      const { config } = await import("../../src/utils/config");
+
+      expect(config.lifecycle).toEqual({
+        autoPush: true,
+        mergeStrategy: "auto",
+        failedSessionTtlHours: 24,
+        pushRetryBackoffMs: 5000,
+        prCheckTimeoutMs: 600_000,
+        lifecycleDir: "thoughts/lifecycle",
+      });
+    });
+
+    it("should have subagent defaults", async () => {
+      const { config } = await import("../../src/utils/config");
+
+      expect(config.subagent).toEqual({
+        transientRetries: 2,
+        transientBackoffMs: [5000, 15000],
+        maxResumesPerSession: 3,
+        failedSessionTtlHours: 24,
+        resumeSweepIntervalMs: 600_000,
+      });
+    });
+  });
 });

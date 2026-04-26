@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin";
+import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
 
 import { agents, PRIMARY_AGENT_NAME } from "@/agents";
@@ -20,6 +20,24 @@ import {
   getFileOps,
   warnUnknownAgents,
 } from "@/hooks";
+import { createLifecycleStore } from "@/lifecycle";
+import { createLifecycleRunner } from "@/lifecycle/runner";
+import {
+  type AutoResumeDispatcher,
+  type ClientPromptRequest,
+  createAutoResumeDispatcher,
+} from "@/octto/auto-resume/dispatcher";
+import { buildContinuePrompt } from "@/octto/auto-resume/prompt";
+import { type AutoResumeRegistry, createAutoResumeRegistry } from "@/octto/auto-resume/registry";
+import {
+  createPersistedSessionStore,
+  createPersistenceListener,
+  type PersistenceListener,
+  type ReconcileReport,
+  reconcilePersistedSessions,
+} from "@/octto/persistence";
+import { type SessionListeners, safelyInvoke } from "@/octto/session/listeners";
+import type { Session } from "@/octto/session/types";
 import {
   artifact_search,
   ast_grep_replace,
@@ -38,6 +56,9 @@ import {
   look_at,
   milestone_artifact_search,
 } from "@/tools";
+import { createLifecycleTools } from "@/tools/lifecycle";
+import { createResumeSubagentTool } from "@/tools/resume-subagent";
+import { createPreservedRegistry, type PreservedRegistry } from "@/tools/spawn-agent/registry";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
@@ -100,11 +121,102 @@ const PLUGIN_COMMANDS = {
   },
 };
 
+const PERSIST_START_LABEL = "persist.start";
+const PERSIST_PUSH_LABEL = "persist.push";
+const PERSIST_ANSWERED_LABEL = "persist.answered";
+const PERSIST_END_LABEL = "persist.end";
+const AUTO_RESUME_LABEL = "autoresume";
+const PERSISTENCE_LOG_SCOPE = "octto.persistence";
+
+interface OcttoListenerInput {
+  readonly persistenceListener: PersistenceListener;
+  readonly autoResumeRegistry: AutoResumeRegistry;
+  readonly autoResumeDispatcher: AutoResumeDispatcher;
+}
+
+interface AutoResumeClientAdapter {
+  readonly session: {
+    readonly prompt: (request: ClientPromptRequest) => Promise<unknown>;
+  };
+}
+
+interface ReleasableHandle {
+  readonly unref?: () => void;
+}
+
 function extractTextFromParts(parts: Array<{ type: string; text?: string }>): string {
   return parts
     .filter((p) => p.type === "text" && "text" in p)
     .map((p) => (p as { text: string }).text)
     .join("");
+}
+
+function dispatchAutoResume(input: OcttoListenerInput, session: Session, questionId: string): void {
+  const owner = input.autoResumeRegistry.lookup(session.id);
+  if (!owner) return;
+
+  safelyInvoke(
+    AUTO_RESUME_LABEL,
+    () =>
+      void input.autoResumeDispatcher.handle({
+        conversationId: session.id,
+        ownerSessionId: owner,
+        questionId,
+        answeredAt: Date.now(),
+      }),
+  );
+}
+
+function createOcttoListeners(input: OcttoListenerInput): SessionListeners {
+  return {
+    onSessionStarted: (session) => {
+      safelyInvoke(PERSIST_START_LABEL, () => void input.persistenceListener.onSessionStarted(session));
+    },
+    onQuestionPushed: (session) => {
+      safelyInvoke(PERSIST_PUSH_LABEL, () => void input.persistenceListener.onQuestionPushed(session));
+    },
+    onQuestionAnswered: (session, questionId) => {
+      safelyInvoke(PERSIST_ANSWERED_LABEL, () => void input.persistenceListener.onQuestionAnswered(session));
+      dispatchAutoResume(input, session, questionId);
+    },
+    onSessionEnded: (sessionId) => {
+      safelyInvoke(PERSIST_END_LABEL, () => void input.persistenceListener.onSessionEnded(sessionId));
+      input.autoResumeRegistry.unregister(sessionId);
+    },
+  };
+}
+
+function logReconcileReport(report: ReconcileReport): void {
+  log.info(
+    PERSISTENCE_LOG_SCOPE,
+    `Reconciled persisted sessions: loaded=${report.loaded}, expired=${report.expired}, skippedInvalid=${report.skippedInvalid}`,
+  );
+}
+
+function releaseInterval(handle: ReturnType<typeof setInterval>): void {
+  const candidate = handle as ReleasableHandle;
+  candidate.unref?.();
+}
+
+function startResumeSweep(registry: PreservedRegistry): void {
+  const handle = setInterval(() => {
+    registry.sweep(Date.now());
+  }, config.subagent.resumeSweepIntervalMs);
+  releaseInterval(handle);
+}
+
+function createAutoResumeClient(client: PluginInput["client"]): AutoResumeClientAdapter {
+  return {
+    session: {
+      prompt: (request: ClientPromptRequest) =>
+        Promise.resolve(
+          client.session.prompt({
+            path: request.path,
+            body: { parts: request.body.parts.map((part) => ({ type: part.type, text: part.text })) },
+          }),
+        ),
+    },
+  };
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -221,14 +333,39 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   }
   const ptyTools = ptyManager.available ? createPtyTools(ptyManager) : {};
 
+  const preservedRegistry = createPreservedRegistry({
+    maxResumes: config.subagent.maxResumesPerSession,
+    ttlHours: config.subagent.failedSessionTtlHours,
+  });
+  startResumeSweep(preservedRegistry);
+
   // Spawn agent tool (for subagents to spawn other subagents)
-  const spawn_agent = createSpawnAgentTool(ctx);
+  const spawn_agent = createSpawnAgentTool(ctx, { registry: preservedRegistry });
+  const resume_subagent = createResumeSubagentTool(ctx, { registry: preservedRegistry });
 
   // Batch read tool (for parallel file reads)
   const batch_read = createBatchReadTool(ctx);
 
+  const lifecycleHandle = createLifecycleStore({ runner: createLifecycleRunner(), worktreesRoot: process.cwd() });
+  const lifecycleTools = createLifecycleTools(lifecycleHandle);
+
   // Octto (browser-based brainstorming) tools
-  const octtoSessionStore = createSessionStore();
+  const persistedSessionStore = createPersistedSessionStore({});
+  const persistenceListener = createPersistenceListener({ persistedStore: persistedSessionStore });
+  const autoResumeRegistry = createAutoResumeRegistry();
+  const autoResumeDispatcher = createAutoResumeDispatcher({
+    client: createAutoResumeClient(ctx.client),
+    registry: autoResumeRegistry,
+    buildPrompt: buildContinuePrompt,
+  });
+  const octtoSessionStore = createSessionStore({
+    listeners: createOcttoListeners({ persistenceListener, autoResumeRegistry, autoResumeDispatcher }),
+  });
+  const reconcileReport = await reconcilePersistedSessions({
+    store: octtoSessionStore,
+    persistedStore: persistedSessionStore,
+  });
+  logReconcileReport(reconcileReport);
 
   // Track octto sessions per opencode session for cleanup
   const octtoSessions = new Map<string, Set<string>>();
@@ -238,8 +375,10 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       const sessions = octtoSessions.get(parentSessionId) ?? new Set<string>();
       sessions.add(octtoSessionId);
       octtoSessions.set(parentSessionId, sessions);
+      autoResumeRegistry.register(octtoSessionId, parentSessionId);
     },
     onEnded: (parentSessionId, octtoSessionId) => {
+      autoResumeRegistry.unregister(octtoSessionId);
       const sessions = octtoSessions.get(parentSessionId);
       if (!sessions) return;
       sessions.delete(octtoSessionId);
@@ -281,10 +420,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       artifact_search,
       milestone_artifact_search,
       spawn_agent,
+      resume_subagent,
       batch_read,
       ...mindmodelLookupTool,
       ...ptyTools,
       ...octtoTools,
+      ...lifecycleTools,
     },
 
     config: async (config) => {

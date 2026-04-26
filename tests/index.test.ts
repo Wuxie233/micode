@@ -1,6 +1,70 @@
 // tests/index.test.ts
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { PluginInput } from "@opencode-ai/plugin";
+
+import { OpenCodeConfigPlugin } from "../src/index";
+import { stopSharedServer } from "../src/octto/session/server";
+import { config } from "../src/utils/config";
+
+const ISSUE_WORKFLOW_TOOL_KEYS = [
+  "lifecycle_start_request",
+  "lifecycle_record_artifact",
+  "lifecycle_commit",
+  "lifecycle_finish",
+  "resume_subagent",
+] as const;
+const PREFIX = "micode-index-tools-";
+const SESSION_ID = "index-tools-session";
+
+const originalPersistedSessionsDir = config.octto.persistedSessionsDir;
+let tempRoot: string | undefined;
+
+function restorePersistedSessionsDir(): void {
+  Object.defineProperty(config.octto, "persistedSessionsDir", {
+    configurable: true,
+    value: originalPersistedSessionsDir,
+    writable: true,
+  });
+}
+
+function setPersistedSessionsDir(baseDir: string): void {
+  Object.defineProperty(config.octto, "persistedSessionsDir", {
+    configurable: true,
+    value: join(baseDir, "sessions"),
+    writable: true,
+  });
+}
+
+function createCtx(directory: string): PluginInput {
+  return {
+    directory,
+    client: {
+      session: {
+        create: async () => ({ data: { id: SESSION_ID } }),
+        prompt: async () => ({ data: { parts: [] } }),
+        delete: async () => ({ data: { id: SESSION_ID } }),
+        messages: async () => ({ data: [] }),
+        abort: async () => ({ data: { id: SESSION_ID } }),
+        summarize: async () => ({ data: { id: SESSION_ID } }),
+      },
+      tui: {
+        showToast: async () => undefined,
+      },
+    },
+  } as unknown as PluginInput;
+}
+
+afterEach(async () => {
+  await stopSharedServer();
+  restorePersistedSessionsDir();
+  if (!tempRoot) return;
+  rmSync(tempRoot, { recursive: true, force: true });
+  tempRoot = undefined;
+});
 
 describe("index.ts constraint-reviewer integration", () => {
   it("should import createConstraintReviewerHook", async () => {
@@ -49,5 +113,26 @@ describe("index.ts commands", () => {
     const mindmodelMatch = source.match(/mindmodel:\s*\{[^}]*agent:\s*["']([^"']+)["']/);
     expect(mindmodelMatch).not.toBeNull();
     expect(mindmodelMatch?.[1]).toBe("mm-orchestrator");
+  });
+});
+
+describe("index.ts issue workflow tools", () => {
+  it("should expose issue workflow tools from the returned tool map", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    setPersistedSessionsDir(tempRoot);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const keys = Object.keys(plugin.tool ?? {});
+
+      for (const key of ISSUE_WORKFLOW_TOOL_KEYS) {
+        expect(keys).toContain(key);
+      }
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });

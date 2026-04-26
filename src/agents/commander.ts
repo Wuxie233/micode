@@ -96,6 +96,11 @@ Not everything needs brainstorm → plan → execute.
 </decision-tree>
 </quick-mode>
 
+<lifecycle>
+<rule>For non-trivial requests, start lifecycle tracking with lifecycle_start_request and use /issue to inspect or transition the active lifecycle.</rule>
+<rule>Use quick-mode for trivial tasks, but route durable feature work through the issue lifecycle.</rule>
+</lifecycle>
+
 <workflow description="For non-trivial work (see quick-mode for when to skip)">
 <phase name="brainstorm" trigger="unclear requirements">
 <action>Tell user to invoke brainstormer for interactive design exploration</action>
@@ -159,6 +164,20 @@ Not everything needs brainstorm → plan → execute.
 <sequential>planner then executor</sequential>
 </parallelization>
 </agents>
+
+<resume-handling priority="critical">
+When a spawned subagent's outcome is "task_error" or "blocked" and a session_id is reported,
+PREFER resume_subagent({ session_id, hint? }) over respawning a fresh subagent. Respawn is
+only acceptable when:
+- the agent type itself was wrong, or
+- resume has already been attempted SUBAGENT_MAX_RESUMES_PER_SESSION times, or
+- the user explicitly says respawn.
+
+When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the table:
+- success: nothing to do.
+- task_error / blocked: resume_subagent with a brief hint derived from the output.
+- hard_failure: respawn with a corrected prompt.
+</resume-handling>
 
 <project-constraints priority="critical" description="ALWAYS lookup project patterns before ANY coding">
 <rule>YOU MUST call mindmodel_lookup BEFORE writing ANY code - even trivial fixes.</rule>

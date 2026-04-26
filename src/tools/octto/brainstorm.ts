@@ -8,10 +8,14 @@ import { dumpRawArgs, isDebugDumpEnabled } from "@/tools/diagnostics";
 import { normalizeSequence, sequenceSchema } from "@/tools/sequence";
 import { config } from "@/utils/config";
 import { log } from "@/utils/logger";
+import { formatForbidden } from "./forbidden";
 import { formatBranchStatus, formatFindingSummary, formatFindings, formatQASummary } from "./formatters";
 import { processAnswer } from "./processor";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools, OpencodeClient } from "./types";
 import { generateSessionId } from "./utils";
+
+const SESSION_LOST_ERROR = "<error>Session lost</error>";
+const BROWSER_SESSION_MISMATCH_ERROR = "<error>Browser session does not match brainstorm session</error>";
 
 // --- Extracted helper functions ---
 
@@ -127,6 +131,20 @@ function buildReviewSections(state: BrainstormState): ReviewSection[] {
       };
     }),
   ];
+}
+
+function formatBrowserSessionNotFound(browserSessionId: string): string {
+  return `<error>Session not found: ${browserSessionId}</error>`;
+}
+
+function validateBrowserSessionOwnership(
+  sessions: SessionStore,
+  browserSessionId: string,
+  ownerSessionID: string,
+): string | null {
+  if (!sessions.hasSession(browserSessionId)) return formatBrowserSessionNotFound(browserSessionId);
+  if (!sessions.isOwner(browserSessionId, ownerSessionID)) return formatForbidden(browserSessionId);
+  return null;
 }
 
 interface ReviewResult {
@@ -310,6 +328,7 @@ function buildCreateBrainstormTool(
       const browserSession = await sessions.startSession({
         title: "Brainstorming Session",
         questions: buildInitialQuestions(branches),
+        ownerSessionID: context.sessionID,
       });
 
       tracker?.onCreated?.(context.sessionID, browserSession.session_id);
@@ -321,15 +340,19 @@ function buildCreateBrainstormTool(
   });
 }
 
-function buildGetSessionSummaryTool(store: StateStore): OcttoTool {
+function buildGetSessionSummaryTool(store: StateStore, sessions: SessionStore): OcttoTool {
   return tool({
     description: "Get summary of all branches and their findings",
     args: {
       session_id: tool.schema.string().describe("Brainstorm session ID"),
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
       const state = await store.getSession(args.session_id);
       if (!state) return `<error>Session not found: ${args.session_id}</error>`;
+      if (state.browser_session_id) {
+        const ownershipError = validateBrowserSessionOwnership(sessions, state.browser_session_id, context.sessionID);
+        if (ownershipError) return ownershipError;
+      }
 
       const branches = state.branch_order.map((id) => formatBranchStatus(state.branches[id])).join("\n");
       const done = Object.values(state.branches).every((b) => b.status === BRANCH_STATUSES.DONE);
@@ -354,6 +377,10 @@ function buildEndBrainstormTool(store: StateStore, sessions: SessionStore, track
     execute: async (args, context) => {
       const state = await store.getSession(args.session_id);
       if (!state) return `<error>Session not found: ${args.session_id}</error>`;
+      if (state.browser_session_id) {
+        const ownershipError = validateBrowserSessionOwnership(sessions, state.browser_session_id, context.sessionID);
+        if (ownershipError) return ownershipError;
+      }
 
       if (state.browser_session_id) {
         const endStatus = await sessions.endSession(state.browser_session_id);
@@ -374,6 +401,66 @@ function buildEndBrainstormTool(store: StateStore, sessions: SessionStore, track
   });
 }
 
+interface AwaitBrainstormArgs {
+  session_id: string;
+  browser_session_id: string;
+}
+
+async function validateAwaitBrainstormOwnership(
+  store: StateStore,
+  sessions: SessionStore,
+  args: AwaitBrainstormArgs,
+  ownerSessionID: string,
+): Promise<string | null> {
+  const suppliedOwnershipError = validateBrowserSessionOwnership(sessions, args.browser_session_id, ownerSessionID);
+  if (suppliedOwnershipError) return suppliedOwnershipError;
+
+  const state = await store.getSession(args.session_id);
+  if (!state) return SESSION_LOST_ERROR;
+  if (!state.browser_session_id) return null;
+
+  const storedOwnershipError = validateBrowserSessionOwnership(sessions, state.browser_session_id, ownerSessionID);
+  if (storedOwnershipError) return storedOwnershipError;
+  if (state.browser_session_id !== args.browser_session_id) return BROWSER_SESSION_MISMATCH_ERROR;
+  return null;
+}
+
+async function executeAwaitBrainstormComplete(
+  store: StateStore,
+  sessions: SessionStore,
+  client: OpencodeClient,
+  args: AwaitBrainstormArgs,
+  ownerSessionID: string,
+): Promise<string> {
+  const ownershipError = await validateAwaitBrainstormOwnership(store, sessions, args, ownerSessionID);
+  if (ownershipError) return ownershipError;
+
+  const { state, allComplete } = await collectAnswers(
+    store,
+    sessions,
+    args.session_id,
+    args.browser_session_id,
+    client,
+  );
+
+  if (!state) return SESSION_LOST_ERROR;
+  if (!allComplete) return formatInProgressResult(state);
+
+  const sections = buildReviewSections(state);
+
+  try {
+    sessions.pushQuestion(args.browser_session_id, QUESTIONS.SHOW_PLAN, {
+      question: "Review Design Plan",
+      sections,
+    });
+  } catch {
+    return formatSkippedReviewResult(state);
+  }
+
+  const { approved, feedback } = await waitForReviewApproval(sessions, args.browser_session_id);
+  return formatCompletionResult(state, approved, feedback);
+}
+
 function buildAwaitBrainstormCompleteTool(
   store: StateStore,
   sessions: SessionStore,
@@ -387,31 +474,8 @@ This is the recommended way to run a brainstorm - just create_brainstorm then aw
       session_id: tool.schema.string().describe("Brainstorm session ID (state session)"),
       browser_session_id: tool.schema.string().describe("Browser session ID (for collecting answers)"),
     },
-    execute: async (args) => {
-      const { state, allComplete } = await collectAnswers(
-        store,
-        sessions,
-        args.session_id,
-        args.browser_session_id,
-        client,
-      );
-
-      if (!state) return "<error>Session lost</error>";
-      if (!allComplete) return formatInProgressResult(state);
-
-      const sections = buildReviewSections(state);
-
-      try {
-        sessions.pushQuestion(args.browser_session_id, QUESTIONS.SHOW_PLAN, {
-          question: "Review Design Plan",
-          sections,
-        });
-      } catch {
-        return formatSkippedReviewResult(state);
-      }
-
-      const { approved, feedback } = await waitForReviewApproval(sessions, args.browser_session_id);
-      return formatCompletionResult(state, approved, feedback);
+    execute: async (args, context) => {
+      return executeAwaitBrainstormComplete(store, sessions, client, args, context.sessionID);
     },
   });
 }
@@ -425,7 +489,7 @@ export function createBrainstormTools(
 
   return {
     create_brainstorm: buildCreateBrainstormTool(store, sessions, tracker),
-    get_session_summary: buildGetSessionSummaryTool(store),
+    get_session_summary: buildGetSessionSummaryTool(store, sessions),
     end_brainstorm: buildEndBrainstormTool(store, sessions, tracker),
     await_brainstorm_complete: buildAwaitBrainstormCompleteTool(store, sessions, client),
   };
