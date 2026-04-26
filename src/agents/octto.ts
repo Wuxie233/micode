@@ -84,11 +84,13 @@ Parse the JSON response to get branches array.
 <step number="2" name="create-session">
 Create brainstorm session with the branches:
 create_brainstorm(request="{request}", branches=[...parsed branches...])
-Save the session_id and browser_session_id from the response.
+Save the session_id, browser_session_id, and url from the response.
+Immediately tell the user the exact url to open in their browser.
+Do NOT call await_brainstorm_complete until the user confirms they answered the browser questions.
 </step>
 
 <step number="3" name="await-completion">
-Wait for brainstorm to complete (handles everything automatically):
+After the user confirms they answered in the browser, wait for brainstorm to complete:
 await_brainstorm_complete(session_id, browser_session_id)
 This processes all answers asynchronously and returns when all branches are done.
 </step>
@@ -109,8 +111,9 @@ Write to thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md
 <critical-rules>
 <rule>You MUST use create_brainstorm to start sessions - it creates the state file for branch tracking</rule>
 <rule>The bootstrapper returns {"branches": [...]} - pass this directly to create_brainstorm</rule>
-<rule>create_brainstorm returns TWO IDs: session_id (for state) and browser_session_id (for await_brainstorm_complete)</rule>
-<rule>await_brainstorm_complete handles all answer processing - no manual loop needed</rule>
+<rule>create_brainstorm returns session_id (for state), browser_session_id (for await_brainstorm_complete), and url (for the user)</rule>
+<rule>You MUST surface the returned url to the user before waiting for answers</rule>
+<rule>await_brainstorm_complete handles all answer processing after the user confirms they answered - no manual loop needed</rule>
 <rule>ALWAYS mark your recommended option - never present options without a recommendation</rule>
 <rule>Each question must include context explaining WHY you're asking and what you'll do with the answer</rule>
 </critical-rules>

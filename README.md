@@ -247,6 +247,21 @@ Both are OpenCode plugins, but with different philosophies:
 - You like **category-based task delegation** (visual-engineering, infrastructure)
 - You want **visual monitoring** via tmux integration
 
+## Octto Configuration
+
+Octto runs a single shared HTTP server per OpenCode plugin process. Sessions are exposed on session-scoped URLs.
+
+Each Octto session belongs to the OpenCode conversation that created it. Tool calls from another conversation return `## Forbidden` and do not modify session state.
+
+| Env var | Default | Effect |
+|---------|---------|--------|
+| `OCTTO_PORT` | `0` (Bun chooses a free port) | Port the shared Octto server binds to. |
+| `OCTTO_PUBLIC_BASE_URL` | unset | URL prefix returned to agents when behind a reverse proxy. Trailing `/` is stripped. Example: `https://octto.wuxie233.com`. |
+
+Public reverse proxies must route each session page at `<base>/s/<sessionId>` and its WebSocket at `<base>/ws/<sessionId>`. Browsers on HTTPS use `wss://` for the WebSocket automatically.
+
+The browser UI uses draft-before-send: clicking a question's Submit stores a local draft. The answer is sent to the agent only when you click `Send N answer(s)`, and each draft can be changed with `Edit` before sending.
+
 ## Inspiration
 
 - [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) - Plugin architecture

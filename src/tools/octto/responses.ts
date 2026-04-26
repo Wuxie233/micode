@@ -3,7 +3,17 @@ import { tool } from "@opencode-ai/plugin/tool";
 
 import { type SessionStore, STATUSES } from "@/octto/session";
 
+import { formatForbidden } from "./forbidden";
 import type { OcttoTool, OcttoTools } from "./types";
+
+function listOwnedQuestions(sessions: SessionStore, ownerSessionID: string): ReturnType<SessionStore["listQuestions"]> {
+  const questions = sessions
+    .listOwnedSessions(ownerSessionID)
+    .flatMap((sessionId) => sessions.listQuestions(sessionId).questions)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  return { questions };
+}
 
 function buildGetAnswerTool(sessions: SessionStore): OcttoTool {
   return tool({
@@ -19,7 +29,12 @@ NOTE: Prefer get_next_answer for better flow - it returns whichever question use
         .optional()
         .describe("Max milliseconds to wait if blocking (default: 300000 = 5 min)"),
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const sessionId = sessions.findSessionIdByQuestion(args.question_id);
+      if (sessionId && sessions.hasSession(sessionId) && !sessions.isOwner(sessionId, context.sessionID)) {
+        return formatForbidden(sessionId);
+      }
+
       const answer = await sessions.getAnswer({
         question_id: args.question_id,
         block: args.block,
@@ -50,7 +65,11 @@ Push multiple questions, then call this repeatedly to get answers as they come.`
         .optional()
         .describe("Max milliseconds to wait if blocking (default: 300000 = 5 min)"),
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      if (sessions.hasSession(args.session_id) && !sessions.isOwner(args.session_id, context.sessionID)) {
+        return formatForbidden(args.session_id);
+      }
+
       const answer = await sessions.getNextAnswer({
         session_id: args.session_id,
         block: args.block,
@@ -77,8 +96,18 @@ function buildListQuestionsTool(sessions: SessionStore): OcttoTool {
     args: {
       session_id: tool.schema.string().optional().describe("Session ID (omit for all sessions)"),
     },
-    execute: async (args) => {
-      const listing = sessions.listQuestions(args.session_id);
+    execute: async (args, context) => {
+      if (
+        args.session_id &&
+        sessions.hasSession(args.session_id) &&
+        !sessions.isOwner(args.session_id, context.sessionID)
+      ) {
+        return formatForbidden(args.session_id);
+      }
+
+      const listing = args.session_id
+        ? sessions.listQuestions(args.session_id)
+        : listOwnedQuestions(sessions, context.sessionID);
       if (listing.questions.length === 0) return "No questions found.";
 
       let output =
@@ -98,7 +127,12 @@ The question will be removed from the user's queue.`,
     args: {
       question_id: tool.schema.string().describe("Question ID to cancel"),
     },
-    execute: async (args) => {
+    execute: async (args, context) => {
+      const sessionId = sessions.findSessionIdByQuestion(args.question_id);
+      if (sessionId && sessions.hasSession(sessionId) && !sessions.isOwner(sessionId, context.sessionID)) {
+        return formatForbidden(sessionId);
+      }
+
       const cancellation = sessions.cancelQuestion(args.question_id);
       if (cancellation.ok) return `Question ${args.question_id} cancelled.`;
       return `Could not cancel question ${args.question_id}. It may already be answered or not exist.`;

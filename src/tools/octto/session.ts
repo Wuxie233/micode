@@ -4,6 +4,7 @@ import { tool } from "@opencode-ai/plugin/tool";
 import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
 import { normalizeSequence, sequenceSchema } from "@/tools/sequence";
 import { extractErrorMessage } from "@/utils/errors";
+import { formatForbidden } from "./forbidden";
 import type { OcttoSessionTracker, OcttoTool, OcttoTools } from "./types";
 
 const MISSING_QUESTIONS_ERROR = `## ERROR: questions parameter is REQUIRED
@@ -95,7 +96,11 @@ REQUIRED: You MUST provide at least 1 question. Will fail without questions.`,
       if (questions.length === 0) return MISSING_QUESTIONS_ERROR;
 
       try {
-        const session = await sessions.startSession({ title: args.title, questions });
+        const session = await sessions.startSession({
+          title: args.title,
+          questions,
+          ownerSessionID: context.sessionID,
+        });
         tracker?.onCreated?.(context.sessionID, session.session_id);
         return formatSessionStartOutput(session.session_id, session.url, session.question_ids);
       } catch (error) {
@@ -113,6 +118,13 @@ Closes the browser window and cleans up resources.`,
       session_id: tool.schema.string().describe("Session ID to end"),
     },
     execute: async (args, context) => {
+      if (!sessions.hasSession(args.session_id)) {
+        return `Failed to end session ${args.session_id}. It may not exist.`;
+      }
+      if (!sessions.isOwner(args.session_id, context.sessionID)) {
+        return formatForbidden(args.session_id);
+      }
+
       const endStatus = await sessions.endSession(args.session_id);
       if (endStatus.ok) {
         tracker?.onEnded?.(context.sessionID, args.session_id);
