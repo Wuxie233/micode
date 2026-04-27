@@ -106,3 +106,11 @@
 - Pre-commit hook (lefthook) runs Biome check + ESLint fix on staged files
 - CI runs full `bun run check` on every PR
 - Run `bun run check` after substantive changes. If build/runtime-sensitive code changed, also run `bun run build`
+
+## Local OpenCode Runtime
+
+- On this server, `~/.config/opencode/opencode.json` loads the live micode plugin from `/root/.micode`.
+- `/root/CODE/micode` is a separate working copy. Editing, committing, or pushing it does not update the running plugin by itself.
+- `package.json` points both `module` and `main` to `dist/index.js`, so OpenCode loads the built bundle, not raw `src` files.
+- For runtime-sensitive fixes, sync the change into `/root/.micode`, run `bun run build` there, then restart OpenCode only after explicit user approval.
+- If a live smoke test still shows old behavior after a restart, first verify the loaded path and that `/root/.micode/dist/index.js` contains the change.
