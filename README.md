@@ -193,6 +193,8 @@ the calling agent should include the replacement model on future relevant `spawn
 
 micode validates explicit `provider/model` values and can resolve unambiguous aliases against configured models, for example `gpt5.5` to `openai/gpt-5.5`.
 
+Primary-agent escape hatch: among primary agents, `brainstormer` is the only one allowed to choose `spawn_agent` for model overrides. It may do so only when the user's message includes a concrete model literal token such as `claude`, `opus`, `sonnet`, `gpt`, or `gemini`; otherwise primary agents should use Task. `octto` currently stays at its upstream default, `spawn_agent` is not explicitly disabled there, and separate follow-up evaluation is needed before changing that behavior. See `thoughts/shared/designs/2026-04-27-primary-agent-model-override-escape-hatch-design.md`. Sunset: when OpenCode Task adds a `model` parameter, this escape hatch should be removed immediately.
+
 ## Development
 
 ```bash

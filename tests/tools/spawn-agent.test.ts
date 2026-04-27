@@ -1,6 +1,6 @@
 // tests/tools/spawn-agent.test.ts
 
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
@@ -88,10 +88,21 @@ const callExecute = async (toolDef: ReturnType<typeof createSpawnAgentTool>, arg
 describe("createSpawnAgentTool execute", () => {
   let fake: FakeCtx;
   let toolDef: ReturnType<typeof createSpawnAgentTool>;
+  let restoreConsoleLog: (() => void) | null;
 
   beforeEach(() => {
+    const originalLog = console.log;
+    console.log = (_message?: unknown, ..._optional: unknown[]) => undefined;
+    restoreConsoleLog = () => {
+      console.log = originalLog;
+    };
     fake = createFakeCtx();
     toolDef = createSpawnAgentTool(fake.ctx);
+  });
+
+  afterEach(() => {
+    restoreConsoleLog?.();
+    restoreConsoleLog = null;
   });
 
   describe("accepted shapes", () => {
@@ -268,6 +279,19 @@ describe("createSpawnAgentTool execute", () => {
     it("resolves the promise on invalid input rather than rejecting", async () => {
       await expect(callExecute(toolDef, null)).resolves.toContain("## spawn_agent Failed");
     });
+  });
+});
+
+describe("spawn_agent tool description", () => {
+  it("tool description carries the primary-agent caller policy", () => {
+    const fake = createFakeCtx();
+    const toolDef = createSpawnAgentTool(fake.ctx);
+    const description = toolDef.description ?? "";
+
+    expect(description).toContain("Primary-agent caller policy");
+    expect(description).toContain("brainstormer");
+    expect(description).toContain("Task");
+    expect(description).toContain("model literal token");
   });
 });
 

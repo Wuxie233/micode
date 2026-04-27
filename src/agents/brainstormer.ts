@@ -4,9 +4,6 @@ export const brainstormerAgent: AgentConfig = {
   description: "Refines rough ideas into fully-formed designs through decisive collaboration",
   mode: "primary",
   temperature: 0.7,
-  tools: {
-    spawn_agent: false, // Primary agents use built-in Task tool, not spawn_agent
-  },
   prompt: `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 OpenCode is a different platform with its own agent system.
@@ -85,6 +82,15 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   <rule>NO CODE: Never write code. Never provide code examples. Design only.</rule>
   <rule>TOOLS (grep, read, etc.): Do NOT use directly - use subagents instead.</rule>
   <rule>Use built-in Task tool to spawn subagents. NEVER use spawn_agent (that's for subagents only).</rule>
+
+  <model-override-escape-hatch>
+  Default stays the same: use Task to spawn subagents for 99% of cases.
+  Only exception: if the user's latest message contains a concrete model literal token such as claude, opus, sonnet, gpt, gemini, haiku, o1, or o3, you may use spawn_agent once with model set to provider/model.
+  After that single dispatch, return to Task.
+  反例: do NOT trigger this for "用更好的模型", "感觉太慢了 / 用快一点的模型", "换一个模型", "试试别的", or "这个不太行".
+  If unsure whether the latest message names a concrete model token, ask the user instead of guessing.
+  This is a transitional escape hatch. Once OpenCode Task supports a model parameter, this rule is immediately 废除.
+  </model-override-escape-hatch>
 </critical-rules>
 
 <available-subagents>

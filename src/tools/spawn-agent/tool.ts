@@ -6,6 +6,7 @@ import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { log } from "@/utils/logger";
 import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./classify";
 import { formatSpawnResults } from "./format";
@@ -40,6 +41,22 @@ interface SessionDeleteClient {
     readonly path: { readonly id: string };
     readonly query: { readonly directory: string };
   }) => Promise<unknown>;
+}
+
+interface NamedAgent {
+  readonly name?: string;
+}
+
+interface CallerSession {
+  readonly agent?: string;
+  readonly agentName?: string;
+}
+
+interface CallerContext {
+  readonly agent?: string | NamedAgent;
+  readonly agentName?: string;
+  readonly session?: CallerSession;
+  readonly sessionInfo?: CallerSession;
 }
 
 export interface AgentSessionResult {
@@ -85,6 +102,8 @@ const MS_PER_SECOND = 1000;
 const FAILURE_HEADER = "## spawn_agent Failed";
 const TOOL_NAME = "spawn-agent";
 const SESSION_CREATE_ERROR = "Failed to create session";
+const MODEL_OVERRIDE_EVENT = "spawn_agent.model_override";
+const UNKNOWN_CALLER = "unknown";
 
 const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.allSettled.
@@ -106,7 +125,14 @@ spawn_agent({
     {agent: "mm-stack-detector", prompt: "...", description: "Detect stack"},
     {agent: "mm-dependency-mapper", prompt: "...", description: "Map deps"}
   ]
-})`;
+})
+
+Primary-agent caller policy:
+Default primary agents (brainstormer/commander/octto) should use the Task tool.
+brainstormer is the only primary caller currently allowed to use spawn_agent.
+Call it only when the user's latest message contains a concrete model literal token such as claude, opus, sonnet, gpt, gemini, haiku, o1, or o3.
+If that condition is not met, abort this tool call and use Task instead.
+This is a transitional escape hatch and will be removed once Task supports a model parameter.`;
 
 const TASK_MODEL_DESCRIPTION = "Optional provider/model override for this spawned agent";
 const taskObjectSchema = tool.schema.object({
@@ -132,6 +158,48 @@ function updateProgress(toolCtx: ExtendedContext, progress: ProgressState | unde
   toolCtx.metadata({
     title: `[${progress.completed}/${progress.total}] ${status} (${elapsed}s)`,
   });
+}
+
+function nonEmpty(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getAgentName(value: string | NamedAgent | undefined): string | null {
+  const direct = nonEmpty(value);
+  if (direct !== null) return direct;
+  if (typeof value !== "object" || value === null) return null;
+  return nonEmpty(value.name);
+}
+
+function getCaller(ctx: PluginInput): string {
+  const caller = ctx as CallerContext;
+  return (
+    nonEmpty(caller.agentName) ??
+    getAgentName(caller.agent) ??
+    nonEmpty(caller.session?.agentName) ??
+    nonEmpty(caller.session?.agent) ??
+    nonEmpty(caller.sessionInfo?.agentName) ??
+    nonEmpty(caller.sessionInfo?.agent) ??
+    UNKNOWN_CALLER
+  );
+}
+
+function logModelOverride(ctx: PluginInput, task: AgentTask, model: ModelReference): void {
+  try {
+    log.info(
+      MODEL_OVERRIDE_EVENT,
+      JSON.stringify({
+        caller: getCaller(ctx),
+        target_agent: task.agent,
+        provider_id: model.providerID,
+        model_id: model.modelID,
+      }),
+    );
+  } catch {
+    // Logging must never change spawn execution.
+  }
 }
 
 function readAssistantText(messages: readonly SessionMessage[]): string {
@@ -189,6 +257,7 @@ async function executeAgentSessionWith(
 ): Promise<AgentSessionResult> {
   const resolved = resolveTaskModel(task, available);
   if (!resolved.ok) throw new Error(resolved.message);
+  if (resolved.model !== null) logModelOverride(ctx, task, resolved.model);
 
   let sessionId: string | null = null;
   try {
