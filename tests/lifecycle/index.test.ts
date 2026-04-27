@@ -90,7 +90,7 @@ describe("lifecycle handle", () => {
   });
 
   it("exposes factory methods and public constants", () => {
-    const handle = createLifecycleStore({ runner: createRunner(), worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner: createRunner(), worktreesRoot, cwd: worktreesRoot, baseDir });
 
     expect(LIFECYCLE_STATES.ABORTED).toBe("aborted");
     expect(ARTIFACT_KINDS.WORKTREE).toBe("worktree");
@@ -99,7 +99,7 @@ describe("lifecycle handle", () => {
 
   it("runs a full lifecycle with a fake runner", async () => {
     const runner = createRunner();
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
     const started = await handle.start({
       summary: SUMMARY,
@@ -134,7 +134,7 @@ describe("lifecycle handle", () => {
 
   it("enables issues on owned forks before opening issue", async () => {
     const runner = createRunner(createRepoView({ hasIssuesEnabled: false }));
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
     const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
@@ -149,7 +149,7 @@ describe("lifecycle handle", () => {
     const runner = createRunner(
       createRepoView({ isFork: false, parent: null, viewerPermission: "ADMIN", hasIssuesEnabled: false }),
     );
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
     const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
@@ -170,7 +170,7 @@ describe("lifecycle handle", () => {
         parent: null,
       }),
     );
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
     const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
@@ -181,7 +181,7 @@ describe("lifecycle handle", () => {
 
   it("records artifacts idempotently", async () => {
     const runner = createRunner();
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
     const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
     await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
@@ -192,7 +192,7 @@ describe("lifecycle handle", () => {
 
   it("sets lifecycle state through the handle", async () => {
     const runner = createRunner();
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
     const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
     const record = await handle.setState(started.issueNumber, LIFECYCLE_STATES.IN_DESIGN);
@@ -201,8 +201,47 @@ describe("lifecycle handle", () => {
   });
 
   it("returns null when loading a missing record", async () => {
-    const handle = createLifecycleStore({ runner: createRunner(), worktreesRoot, baseDir });
+    const handle = createLifecycleStore({ runner: createRunner(), worktreesRoot, cwd: worktreesRoot, baseDir });
 
     await expect(handle.load(404)).resolves.toBeNull();
+  });
+
+  it("uses input.cwd (not process.cwd()) when invoking git for ownership pre-flight", async () => {
+    const customCwd = mkdtempSync(join(tmpdir(), `${PREFIX}cwd-`));
+    try {
+      const runner = createRunner();
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd: customCwd, baseDir });
+
+      await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+
+      const remoteCall = runner.calls.find(
+        (call) => call.bin === "git" && call.args[0] === "remote" && call.args[1] === "get-url",
+      );
+      expect(remoteCall).toBeDefined();
+      expect(remoteCall?.cwd).toBe(customCwd);
+    } finally {
+      rmSync(customCwd, { recursive: true, force: true });
+    }
+  });
+
+  it("derives store baseDir from cwd when baseDir is not provided", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), `${PREFIX}cwd-default-`));
+    try {
+      const runner = createRunner();
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd });
+
+      const started = await handle.start({
+        summary: SUMMARY,
+        goals: [],
+        constraints: [],
+        ownerLogin: OWNER,
+        repo: REPO,
+      });
+
+      const reloaded = await handle.load(started.issueNumber);
+      expect(reloaded?.issueNumber).toBe(started.issueNumber);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

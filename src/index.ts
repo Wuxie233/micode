@@ -347,7 +347,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Batch read tool (for parallel file reads)
   const batch_read = createBatchReadTool(ctx);
 
-  const lifecycleHandle = createLifecycleStore({ runner: createLifecycleRunner(), worktreesRoot: process.cwd() });
+  const lifecycleHandle = createLifecycleStore({
+    runner: createLifecycleRunner(),
+    worktreesRoot: ctx.directory,
+    cwd: ctx.directory,
+  });
   const lifecycleTools = createLifecycleTools(lifecycleHandle);
 
   // Octto (browser-based brainstorming) tools
