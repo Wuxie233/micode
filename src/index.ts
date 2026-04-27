@@ -10,6 +10,7 @@ import {
   createConstraintReviewerHook,
   createContextInjectorHook,
   createContextWindowMonitorHook,
+  createConversationTitleHook,
   createFetchTrackerHook,
   createFileOpsTrackerHook,
   createFragmentInjectorHook,
@@ -273,6 +274,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Track internal sessions to prevent hook recursion (used by reviewer)
   const internalSessions = new Set<string>();
 
+  // Conversation title hook - keeps the main agent's session title in sync with milestone events
+  const conversationTitleHook = createConversationTitleHook(ctx, {
+    isInternalSession: (sessionID) => internalSessions.has(sessionID),
+  });
+
   // Mindmodel injector hook - matches tasks to patterns via keywords and injects them
   // Feature-flagged: set features.mindmodelInjection=true in micode.json to enable
   const mindmodelInjectorHook = userConfig?.features?.mindmodelInjection ? createMindmodelInjectorHook(ctx) : null;
@@ -480,6 +486,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Check for override command
       await constraintReviewerHook["chat.message"](input, output);
+
+      // Update conversation title from the very first user message of a new session
+      await conversationTitleHook["chat.message"](input, output);
     },
 
     "chat.params": async (input, output) => {
@@ -597,6 +606,12 @@ IMPORTANT:
         { tool: input.tool, sessionID: input.sessionID, args: input.args },
         output,
       );
+
+      // Update conversation title on milestone tool events (lifecycle, plan write, executor spawn)
+      await conversationTitleHook["tool.execute.after"](
+        { tool: input.tool, sessionID: input.sessionID, args: input.args },
+        output,
+      );
     },
 
     // Transform messages: match task keywords and prepare mindmodel injection
@@ -649,6 +664,9 @@ IMPORTANT:
 
       // Fetch tracker cleanup
       await fetchTrackerHook.event({ event });
+
+      // Conversation title cleanup
+      await conversationTitleHook.event({ event });
     },
   };
 };

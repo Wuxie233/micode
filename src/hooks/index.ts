@@ -5,6 +5,11 @@ export { ConstraintViolationError, createConstraintReviewerHook } from "./constr
 export { createContextInjectorHook } from "./context-injector";
 export { type ContextWindowMonitorConfig, createContextWindowMonitorHook } from "./context-window-monitor";
 export {
+  type ConversationTitleConfig,
+  type ConversationTitleHook,
+  createConversationTitleHook,
+} from "./conversation-title";
+export {
   clearSession,
   createFetchTrackerHook,
   FETCH_TOOLS,
