@@ -164,6 +164,15 @@ describe("createSpawnAgentTool execute", () => {
       expect(fake.recorder.promptCalls[0]?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" });
     });
 
+    it("normalizes stringified spawn-agent payload and still applies model override", async () => {
+      toolDef = createSpawnAgentTool(fake.ctx);
+
+      await callExecute(toolDef, { agents: JSON.stringify([{ ...taskA, model: "openai/gpt-5.5" }]) });
+
+      expect(fake.recorder.promptCalls[0]?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" });
+      expect(fake.recorder.createCalls).toBe(1);
+    });
+
     it("resolves an explicit spawned-agent model alias when configured", async () => {
       toolDef = createSpawnAgentTool(fake.ctx, { availableModels: new Set(["openai/gpt-5.5"]) });
 

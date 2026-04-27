@@ -21,6 +21,8 @@ export const INVALID_ARGS_MESSAGE =
   "Invalid spawn_agent arguments: each task must provide string agent, prompt, and description fields.";
 
 const AGENTS_KEY = "agents";
+const JSON_OBJECT_PREFIX = "{";
+const JSON_ARRAY_PREFIX = "[";
 
 const failure = (message: string): NormalizeSpawnAgentResult => ({
   ok: false,
@@ -41,6 +43,24 @@ const isIndexedRecord = (value: unknown): value is Record<string, unknown> => {
   if (!isPlainRecord(value)) return false;
   const keys = Object.keys(value);
   return keys.length > 0 && keys.every((key) => INDEX_KEY_PATTERN.test(key));
+};
+
+const tryParseStringifiedJson = (value: unknown): unknown => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const text = value.trim();
+  if (!text.startsWith(JSON_OBJECT_PREFIX) && !text.startsWith(JSON_ARRAY_PREFIX)) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    // Host runtime may stringify; parse failure means downstream validation should reject it.
+    return value;
+  }
 };
 
 const parseSingleTask = (candidate: unknown): AgentTask | null => {
@@ -69,35 +89,37 @@ const normalizeArrayInput = (candidates: readonly unknown[]): NormalizeSpawnAgen
 };
 
 const normalizeAgentsKey = (value: unknown): NormalizeSpawnAgentResult => {
-  if (Array.isArray(value)) {
-    return normalizeArrayInput(value);
+  const decoded = tryParseStringifiedJson(value);
+  if (Array.isArray(decoded)) {
+    return normalizeArrayInput(decoded);
   }
-  const single = parseSingleTask(value);
+  const single = parseSingleTask(decoded);
   if (single !== null) {
     return success([single]);
   }
-  if (isIndexedRecord(value)) {
-    return normalizeArrayInput(normalizeSequence(value));
+  if (isIndexedRecord(decoded)) {
+    return normalizeArrayInput(normalizeSequence(decoded));
   }
   return failure(INVALID_ARGS_MESSAGE);
 };
 
 export function normalizeSpawnAgentArgs(input: unknown): NormalizeSpawnAgentResult {
-  if (Array.isArray(input)) {
-    return normalizeArrayInput(input);
+  const decoded = tryParseStringifiedJson(input);
+  if (Array.isArray(decoded)) {
+    return normalizeArrayInput(decoded);
   }
-  if (!isPlainRecord(input)) {
+  if (!isPlainRecord(decoded)) {
     return failure(INVALID_ARGS_MESSAGE);
   }
-  if (Object.hasOwn(input, AGENTS_KEY)) {
-    return normalizeAgentsKey(input[AGENTS_KEY]);
+  if (Object.hasOwn(decoded, AGENTS_KEY)) {
+    return normalizeAgentsKey(decoded[AGENTS_KEY]);
   }
-  const single = parseSingleTask(input);
+  const single = parseSingleTask(decoded);
   if (single !== null) {
     return success([single]);
   }
-  if (isIndexedRecord(input)) {
-    return normalizeArrayInput(normalizeSequence(input));
+  if (isIndexedRecord(decoded)) {
+    return normalizeArrayInput(normalizeSequence(decoded));
   }
   return failure(INVALID_ARGS_MESSAGE);
 }
