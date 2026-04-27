@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import * as v from "valibot";
 
+import { config } from "@/utils/config";
 import { commitAndPush } from "./commits";
 import { renderIssueBody } from "./issue-body";
 import { finishLifecycle } from "./merge";
@@ -45,6 +46,7 @@ export interface LifecycleHandle {
 export interface LifecycleStoreInput {
   readonly runner: LifecycleRunner;
   readonly worktreesRoot: string;
+  readonly cwd: string;
   readonly baseDir?: string;
 }
 
@@ -444,8 +446,8 @@ const createStateSetter = (context: LifecycleContext): LifecycleHandle["setState
 };
 
 export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandle {
-  const store = createJsonLifecycleStore({ baseDir: input.baseDir });
-  const context = { runner: input.runner, store, worktreesRoot: input.worktreesRoot, cwd: process.cwd() };
+  const store = createJsonLifecycleStore({ baseDir: input.baseDir ?? join(input.cwd, config.lifecycle.lifecycleDir) });
+  const context = { runner: input.runner, store, worktreesRoot: input.worktreesRoot, cwd: input.cwd };
 
   return {
     start: createStart(context),
