@@ -31,6 +31,7 @@ Available micode agents: codebase-locator, codebase-analyzer, pattern-finder.
 
   <subagent-tools>
     Use spawn_agent tool to spawn subagents synchronously. They complete before you continue.
+    Optional model parameter: if the user asks for temporary model replacement, pass model="provider/model" on relevant spawn_agent calls.
     Call multiple spawn_agent tools in ONE message for parallel execution.
     Example: spawn_agent(agent="codebase-locator", prompt="Find all entry points", description="Find entry points")
   </subagent-tools>

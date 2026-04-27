@@ -175,6 +175,24 @@ Models use `provider/model` format. The provider must match exactly what's in yo
 
 Use `"model": "github-copilot/gpt-5-mini"` (not `github/copilot:gpt-5-mini`).
 
+#### LLM-Controlled Spawn Model Overrides
+
+The assistant can choose a model for an individual spawned subagent by passing `model` to `spawn_agent`. This is not an automatic chat parser and does not rewrite config. The LLM reads your instruction, then sets the optional tool parameter when it delegates work.
+
+For example, if you say:
+
+```text
+接下来一段时间原来 opus 的模型用 gpt5.5 替代
+```
+
+the calling agent should include the replacement model on future relevant `spawn_agent` calls:
+
+```jsonc
+{ "agents": [{ "agent": "reviewer", "prompt": "...", "description": "Review", "model": "openai/gpt-5.5" }] }
+```
+
+micode validates explicit `provider/model` values and can resolve unambiguous aliases against configured models, for example `gpt5.5` to `openai/gpt-5.5`.
+
 ## Development
 
 ```bash

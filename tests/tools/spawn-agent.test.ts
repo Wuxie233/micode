@@ -23,6 +23,7 @@ interface PromptCall {
   readonly id: string;
   readonly agent: string;
   readonly text: string;
+  readonly model?: { readonly providerID: string; readonly modelID: string };
 }
 
 interface FakeRecorder {
@@ -42,12 +43,16 @@ const buildSession = (recorder: FakeRecorder) => {
       recorder.createCalls += 1;
       return { data: { id: `sess-${recorder.createCalls}` } };
     },
-    prompt: async (input: { path: { id: string }; body: { agent: string; parts: { text: string }[] } }) => {
+    prompt: async (input: {
+      path: { id: string };
+      body: { agent: string; parts: { text: string }[]; model?: { providerID: string; modelID: string } };
+    }) => {
       recorder.lastAgent = input.body.agent;
       recorder.promptCalls.push({
         id: input.path.id,
         agent: input.body.agent,
         text: input.body.parts[0].text,
+        model: input.body.model,
       });
     },
     messages: async () => ({
@@ -150,6 +155,31 @@ describe("createSpawnAgentTool execute", () => {
       expect(output.indexOf(taskB.description)).toBeLessThan(output.indexOf(taskA.description));
       expect(fake.recorder.createCalls).toBe(2);
     });
+
+    it("lets a task request an explicit spawned-agent model", async () => {
+      toolDef = createSpawnAgentTool(fake.ctx);
+
+      await callExecute(toolDef, { agents: [{ ...taskA, model: "openai/gpt-5.5" }] });
+
+      expect(fake.recorder.promptCalls[0]?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" });
+    });
+
+    it("resolves an explicit spawned-agent model alias when configured", async () => {
+      toolDef = createSpawnAgentTool(fake.ctx, { availableModels: new Set(["openai/gpt-5.5"]) });
+
+      await callExecute(toolDef, { agents: [{ ...taskA, model: "gpt5.5" }] });
+
+      expect(fake.recorder.promptCalls[0]?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" });
+    });
+
+    it("fails before creating a subagent for unavailable model overrides", async () => {
+      toolDef = createSpawnAgentTool(fake.ctx, { availableModels: new Set(["openai/gpt-5.5"]) });
+
+      const output = await callExecute(toolDef, { agents: [{ ...taskA, model: "missing/model" }] });
+
+      expect(output).toContain("Model override is not available: missing/model");
+      expect(fake.recorder.createCalls).toBe(0);
+    });
   });
 
   describe("empty inputs", () => {
@@ -249,6 +279,7 @@ describe("spawn_agent args schema (LLM gate layer)", () => {
     agent: "agent-x",
     prompt: "do work",
     description: "Task X",
+    model: "openai/gpt-5.5",
   };
 
   it("accepts canonical { agents: [task, ...] }", () => {

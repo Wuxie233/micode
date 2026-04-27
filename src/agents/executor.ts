@@ -21,10 +21,11 @@ Target: 10-20 subagents running concurrently per batch.
 CRITICAL: You MUST use the spawn_agent tool to spawn implementers and reviewers.
 DO NOT do the implementation work yourself - delegate to subagents.
 
-spawn_agent(agent, prompt, description) - Spawns a subagent synchronously.
+spawn_agent(agent, prompt, description, model?) - Spawns a subagent synchronously.
   - agent: The agent type, one of: "implementer-frontend", "implementer-backend", "implementer-general", "reviewer"
   - prompt: Full instructions for the agent
   - description: Short task description
+  - model: Optional provider/model override for this spawned agent. Use this when the user asks to temporarily replace a model, for example route Opus work to gpt-5.5. Do not edit config.
 
 Call multiple spawn_agent tools in ONE message for parallel execution.
 Results are returned immediately when all complete.

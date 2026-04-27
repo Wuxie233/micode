@@ -2,7 +2,7 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
 
 import { agents, PRIMARY_AGENT_NAME } from "@/agents";
-import { loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
+import { loadAvailableModels, loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
 import {
   createArtifactAutoIndexHook,
   createAutoCompactHook,
@@ -237,6 +237,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Load model context limits from opencode.json
   const modelContextLimits = loadModelContextLimits();
+  const availableModels = loadAvailableModels();
 
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
@@ -340,7 +341,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   startResumeSweep(preservedRegistry);
 
   // Spawn agent tool (for subagents to spawn other subagents)
-  const spawn_agent = createSpawnAgentTool(ctx, { registry: preservedRegistry });
+  const spawn_agent = createSpawnAgentTool(ctx, { registry: preservedRegistry, availableModels });
   const resume_subagent = createResumeSubagentTool(ctx, { registry: preservedRegistry });
 
   // Batch read tool (for parallel file reads)
@@ -439,7 +440,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       };
 
       // Merge user config overrides into plugin agents
-      const mergedAgents = mergeAgentConfigs(agents, userConfig);
+      const mergedAgents = mergeAgentConfigs(agents, userConfig, availableModels);
 
       // Add our agents - our agents override OpenCode defaults, demote built-in build/plan to subagent
       config.agent = {

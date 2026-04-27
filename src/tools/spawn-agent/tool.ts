@@ -6,6 +6,7 @@ import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./classify";
 import { formatSpawnResults } from "./format";
 import type { PreservedRegistry } from "./registry";
@@ -51,6 +52,21 @@ export type ExecuteAgentSession = (ctx: PluginInput, task: AgentTask) => Promise
 export interface SpawnAgentToolOptions {
   readonly registry: PreservedRegistry;
   readonly executeAgentSession?: ExecuteAgentSession;
+  readonly availableModels?: ReadonlySet<string>;
+}
+
+const EMPTY_MODELS: ReadonlySet<string> = new Set<string>();
+const MODEL_UNAVAILABLE_PREFIX = "Model override is not available";
+
+type ResolvedModel =
+  | { readonly ok: true; readonly model: ModelReference | null }
+  | { readonly ok: false; readonly message: string };
+
+function resolveTaskModel(task: AgentTask, available: ReadonlySet<string>): ResolvedModel {
+  if (!task.model) return { ok: true, model: null };
+  const model = resolveModelReference(task.model, available);
+  if (model) return { ok: true, model };
+  return { ok: false, message: `${MODEL_UNAVAILABLE_PREFIX}: ${task.model}` };
 }
 
 interface ProgressState {
@@ -73,7 +89,11 @@ const SESSION_CREATE_ERROR = "Failed to create session";
 const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.allSettled.
 
-Canonical shape: { agents: [{ agent, prompt, description }, ...] }.
+Canonical shape: { agents: [{ agent, prompt, description, model? }, ...] }.
+Use model when the user asks to temporarily route a subagent to another model.
+This is an explicit LLM-controlled per-call override, not a config rewrite.
+model should be provider/model, or a configured model alias if unambiguous.
+If model cannot be resolved, that spawned task fails before creating a subagent.
 You SHOULD always use the canonical array form. As a fallback, the tool
 also accepts a single task object under \`agents\`
 ({ agents: { agent, prompt, description } }), which will be wrapped into
@@ -88,10 +108,12 @@ spawn_agent({
   ]
 })`;
 
+const TASK_MODEL_DESCRIPTION = "Optional provider/model override for this spawned agent";
 const taskObjectSchema = tool.schema.object({
   agent: tool.schema.string().describe("Agent name to spawn"),
   prompt: tool.schema.string().describe("Full prompt/instructions for the agent"),
   description: tool.schema.string().describe("Short human-readable description"),
+  model: tool.schema.string().optional().describe(TASK_MODEL_DESCRIPTION),
 });
 
 type AgentsSchema = ReturnType<typeof sequenceSchema>;
@@ -152,7 +174,22 @@ async function deleteSession(ctx: PluginInput, sessionId: string | null): Promis
   });
 }
 
-async function executeAgentSession(ctx: PluginInput, task: AgentTask): Promise<AgentSessionResult> {
+function buildPromptBody(
+  task: AgentTask,
+  model: ModelReference | null,
+): { parts: { type: "text"; text: string }[]; agent: string; model?: ModelReference } {
+  const base = { parts: [{ type: "text" as const, text: task.prompt }], agent: task.agent };
+  return model ? { ...base, model } : base;
+}
+
+async function executeAgentSessionWith(
+  ctx: PluginInput,
+  task: AgentTask,
+  available: ReadonlySet<string>,
+): Promise<AgentSessionResult> {
+  const resolved = resolveTaskModel(task, available);
+  if (!resolved.ok) throw new Error(resolved.message);
+
   let sessionId: string | null = null;
   try {
     const sessionResp = (await ctx.client.session.create({
@@ -165,7 +202,7 @@ async function executeAgentSession(ctx: PluginInput, task: AgentTask): Promise<A
 
     await ctx.client.session.prompt({
       path: { id: sessionId },
-      body: { parts: [{ type: "text", text: task.prompt }], agent: task.agent },
+      body: buildPromptBody(task, resolved.model),
       query: { directory: ctx.directory },
     });
 
@@ -256,7 +293,9 @@ async function runAgent(
 ): Promise<SpawnResult> {
   const started = Date.now();
   updateProgress(toolCtx, progress, `Running ${task.agent}...`);
-  const runSession = options.executeAgentSession ?? executeAgentSession;
+  const available = options.availableModels ?? EMPTY_MODELS;
+  const runSession =
+    options.executeAgentSession ?? ((c: PluginInput, t: AgentTask) => executeAgentSessionWith(c, t, available));
   const settled = await retryOnTransient(() => runAttempt(ctx, task, runSession), {
     retries: config.subagent.transientRetries,
     backoffMs: config.subagent.transientBackoffMs,
