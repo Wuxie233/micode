@@ -7,6 +7,7 @@ export const AgentTaskSchema = v.object({
   agent: v.string(),
   prompt: v.string(),
   description: v.string(),
+  model: v.optional(v.string()),
 });
 
 export type AgentTask = v.InferOutput<typeof AgentTaskSchema>;

@@ -14,6 +14,7 @@ function createDefaultRegistry(): PreservedRegistry {
   });
 }
 
-export function createSpawnAgentTool(ctx: PluginInput, options?: SpawnAgentToolOptions): ToolDefinition {
-  return createSpawnAgentToolWithOptions(ctx, options ?? { registry: createDefaultRegistry() });
+export function createSpawnAgentTool(ctx: PluginInput, options?: Partial<SpawnAgentToolOptions>): ToolDefinition {
+  const registry = options?.registry ?? createDefaultRegistry();
+  return createSpawnAgentToolWithOptions(ctx, { ...options, registry });
 }
