@@ -205,6 +205,15 @@ cd ~/.micode && bun install && bun run build
 { "plugin": ["~/.micode"] }
 ```
 
+### Local runtime path note
+
+On this server, `~/.config/opencode/opencode.json` loads the live plugin from `/root/.micode`.
+The `/root/CODE/micode` checkout is a separate working copy used for development.
+Because `package.json` points `main` and `module` at `dist/index.js`, runtime fixes must be copied or pulled into `/root/.micode` and rebuilt with `bun run build` before restarting OpenCode.
+
+Changing files under `/root/CODE/micode/src` alone will not affect live tools such as `create_brainstorm`.
+When debugging a "fix did not load" issue, check both the configured plugin path and the generated `/root/.micode/dist/index.js` bundle first.
+
 ### Syncing with upstream
 
 This fork tracks `vtemian/micode` as the `upstream` remote. To pull upstream changes:
