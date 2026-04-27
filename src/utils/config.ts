@@ -8,6 +8,45 @@ const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 const ANSWER_TIMEOUT_MINUTES = 5;
 const REVIEW_TIMEOUT_MINUTES = 10;
+const SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS = 5000;
+const SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS = 15_000;
+
+const OCTTO_PORT_ENV = "OCTTO_PORT";
+const OCTTO_PUBLIC_BASE_URL_ENV = "OCTTO_PUBLIC_BASE_URL";
+const OCTTO_PORTAL_TOKEN_ENV = "OCTTO_PORTAL_TOKEN";
+const OCTTO_PORTAL_BASE_URL_ENV = "OCTTO_PORTAL_BASE_URL";
+const OCTTO_PORT_DEFAULT = 0;
+const OCTTO_PORT_MIN = 0;
+const OCTTO_PORT_MAX = 65_535;
+const OCTTO_PUBLIC_BASE_URL_DEFAULT = "";
+const TRAILING_SLASH_PATTERN = /\/+$/;
+const DECIMAL_RADIX = 10;
+
+function readOcttoPort(): number {
+  const raw = process.env[OCTTO_PORT_ENV];
+  if (raw === undefined || raw === "") return OCTTO_PORT_DEFAULT;
+  const parsed = Number.parseInt(raw, DECIMAL_RADIX);
+  if (!Number.isFinite(parsed) || parsed < OCTTO_PORT_MIN || parsed > OCTTO_PORT_MAX) {
+    return OCTTO_PORT_DEFAULT;
+  }
+  return parsed;
+}
+
+function readOcttoPublicBaseUrl(): string {
+  const raw = process.env[OCTTO_PUBLIC_BASE_URL_ENV];
+  if (raw === undefined) return OCTTO_PUBLIC_BASE_URL_DEFAULT;
+  return raw.trim().replace(TRAILING_SLASH_PATTERN, "");
+}
+
+function readOcttoPortalToken(): string {
+  return (process.env[OCTTO_PORTAL_TOKEN_ENV] ?? "").trim();
+}
+
+function readOcttoPortalBaseUrl(): string {
+  const raw = process.env[OCTTO_PORTAL_BASE_URL_ENV];
+  if (raw === undefined) return "https://octto.wuxie233.com";
+  return raw.trim().replace(TRAILING_SLASH_PATTERN, "");
+}
 
 /**
  * Application configuration constants.
@@ -132,6 +171,35 @@ export const config = {
     bindAddress: "127.0.0.1",
     /** Allow overriding bind address for remote access */
     allowRemoteBind: false,
+    /** Server port (0 = Bun chooses a free port). Read from OCTTO_PORT env var. */
+    port: readOcttoPort(),
+    /** Public base URL for session links when running behind a reverse proxy. Read from OCTTO_PUBLIC_BASE_URL env var. */
+    publicBaseUrl: readOcttoPublicBaseUrl(),
+    portalToken: readOcttoPortalToken(),
+    portalBaseUrl: readOcttoPortalBaseUrl(),
+    persistedSessionTtlHours: 168,
+    persistedSessionsDir: "thoughts/octto/sessions",
+    conversationsPollIntervalMs: 3000,
+  },
+
+  lifecycle: {
+    autoPush: true,
+    mergeStrategy: "auto" as "auto" | "pr" | "local-merge",
+    failedSessionTtlHours: 24,
+    pushRetryBackoffMs: 5000,
+    prCheckTimeoutMs: 600_000,
+    lifecycleDir: "thoughts/lifecycle",
+  },
+
+  subagent: {
+    transientRetries: 2,
+    transientBackoffMs: [
+      SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS,
+      SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS,
+    ] as readonly number[],
+    maxResumesPerSession: 3,
+    failedSessionTtlHours: 24,
+    resumeSweepIntervalMs: 600_000,
   },
 
   /**

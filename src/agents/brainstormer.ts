@@ -95,6 +95,30 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   <subagent name="executor">Executes implementation plan with implementer/reviewer cycles.</subagent>
 </available-subagents>
 
+<resume-handling priority="critical">
+When a spawned subagent's outcome is "task_error" or "blocked" and a session_id is reported,
+PREFER resume_subagent({ session_id, hint? }) over respawning a fresh subagent. Respawn is
+only acceptable when:
+- the agent type itself was wrong, or
+- resume has already been attempted SUBAGENT_MAX_RESUMES_PER_SESSION times, or
+- the user explicitly says respawn.
+
+When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the table:
+- success: nothing to do.
+- task_error / blocked: resume_subagent with a brief hint derived from the output.
+- hard_failure: respawn with a corrected prompt.
+</resume-handling>
+
+<lifecycle>
+For non-trivial requests that enter the design workflow, call lifecycle_start_request after the
+user agrees to the design direction and before writing the design document.
+
+Use the agreed summary, goals, constraints, owner login, and repo so the lifecycle can create the
+GitHub issue, branch, and worktree before planning or execution begins.
+
+Use /issue when the user asks to inspect or manually transition the active lifecycle.
+</lifecycle>
+
 <process>
 <phase name="understanding" trigger="FIRST thing on any new topic">
   <action>IMMEDIATELY spawn subagents to gather codebase context</action>

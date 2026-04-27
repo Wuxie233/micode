@@ -19,3 +19,5 @@ yarn.lock
 
 # Worktrees
 .worktrees/
+.ace-tool/
+.playwright-mcp/

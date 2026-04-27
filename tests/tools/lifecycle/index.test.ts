@@ -1,0 +1,36 @@
+import { describe, expect, it } from "bun:test";
+
+import type { LifecycleHandle } from "@/lifecycle";
+import { createLifecycleTools } from "@/tools/lifecycle";
+
+const EXPECTED_TOOL_NAMES = [
+  "lifecycle_commit",
+  "lifecycle_finish",
+  "lifecycle_record_artifact",
+  "lifecycle_start_request",
+] as const;
+const UNEXPECTED_HANDLE_CALL = "test should not execute lifecycle handle methods";
+
+const fail = async (): Promise<never> => {
+  throw new Error(UNEXPECTED_HANDLE_CALL);
+};
+
+const createHandle = (): LifecycleHandle => ({
+  start: fail,
+  recordArtifact: fail,
+  commit: fail,
+  finish: fail,
+  load: async () => null,
+  setState: fail,
+});
+
+describe("createLifecycleTools", () => {
+  it("returns lifecycle tool definitions by registry key", () => {
+    const tools = createLifecycleTools(createHandle());
+
+    expect(Object.keys(tools).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
+    for (const name of EXPECTED_TOOL_NAMES) {
+      expect(typeof tools[name].execute).toBe("function");
+    }
+  });
+});

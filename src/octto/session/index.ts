@@ -1,4 +1,6 @@
 // src/octto/session/index.ts
+
+export { isOcttoForbiddenError, OcttoForbiddenError } from "./errors";
 export type { SessionStore, SessionStoreOptions } from "./sessions";
 export { createSessionStore } from "./sessions";
 export type {
