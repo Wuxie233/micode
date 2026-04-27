@@ -88,9 +88,77 @@ describe("normalizeSpawnAgentArgs", () => {
     });
   });
 
+  describe("stringified accepted shapes", () => {
+    const stringifiedWrappedArray = JSON.stringify([sampleTask]);
+    const stringifiedWrappedSingle = JSON.stringify(sampleTask);
+    const stringifiedWrappedTasks = JSON.stringify([sampleTask, secondTask]);
+    const stringifiedWrappedRecord = JSON.stringify({ "0": sampleTask, "1": secondTask });
+    const stringifiedWrappedObject = JSON.stringify({ agents: [sampleTask] });
+
+    it("normalizes stringified wrapped array { agents: '[task]' }", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: stringifiedWrappedArray });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask]);
+      }
+    });
+
+    it("normalizes stringified wrapped single task { agents: '{...task}' }", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: stringifiedWrappedSingle });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask]);
+      }
+    });
+
+    it("preserves order across stringified multi-task array", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: stringifiedWrappedTasks });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask, secondTask]);
+      }
+    });
+
+    it("normalizes stringified wrapped indexed record", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: stringifiedWrappedRecord });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask, secondTask]);
+      }
+    });
+
+    it("normalizes top-level stringified array", () => {
+      const outcome = normalizeSpawnAgentArgs(stringifiedWrappedArray);
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask]);
+      }
+    });
+
+    it("normalizes top-level stringified wrapped object", () => {
+      const outcome = normalizeSpawnAgentArgs(stringifiedWrappedObject);
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([sampleTask]);
+      }
+    });
+  });
+
   describe("empty inputs", () => {
     it("returns NO_AGENTS_MESSAGE for empty wrapped array", () => {
       const outcome = normalizeSpawnAgentArgs({ agents: [] });
+
+      expect(outcome).toEqual({ ok: false, message: NO_AGENTS_MESSAGE });
+    });
+
+    it("rejects stringified empty array { agents: '[]' }", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: "[]" });
 
       expect(outcome).toEqual({ ok: false, message: NO_AGENTS_MESSAGE });
     });
@@ -125,6 +193,14 @@ describe("normalizeSpawnAgentArgs", () => {
     it("rejects task with non-string prompt field", () => {
       const outcome = normalizeSpawnAgentArgs({
         agents: [{ agent: "x", prompt: 7, description: "d" }],
+      });
+
+      expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
+    });
+
+    it("rejects stringified task with wrong field type", () => {
+      const outcome = normalizeSpawnAgentArgs({
+        agents: JSON.stringify([{ agent: 1, prompt: "p", description: "d" }]),
       });
 
       expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
@@ -167,6 +243,18 @@ describe("normalizeSpawnAgentArgs", () => {
 
       expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
     });
+
+    it("rejects malformed JSON { agents: '[' }", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: "[" });
+
+      expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
+    });
+
+    it("rejects stringified non-array non-object { agents: '\"implementer\"' }", () => {
+      const outcome = normalizeSpawnAgentArgs({ agents: JSON.stringify("implementer") });
+
+      expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
+    });
   });
 
   describe("ambiguous payloads", () => {
@@ -204,6 +292,9 @@ describe("normalizeSpawnAgentArgs", () => {
       ["empty wrapped array", { agents: [] }],
       ["bad agents container", { agents: "bad" }],
       ["wrong field type", { agents: [{ agent: 1, prompt: "p", description: "d" }] }],
+      ["stringified bad json", { agents: "[" }],
+      ["stringified plain text", { agents: "implementer" }],
+      ["top-level stringified bad json", "["],
     ];
 
     for (const [label, input] of cases) {
