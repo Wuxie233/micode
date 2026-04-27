@@ -731,10 +731,13 @@ export function getHtmlBundle(): string {
   </div>
 
   <script>
-    const wsUrl = 'ws://' + window.location.host + '/ws';
+    const sessionId = JSON.parse("__OCTTO_SESSION_ID_PLACEHOLDER__");
+    const wsScheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsUrl = wsScheme + window.location.host + '/ws/' + encodeURIComponent(sessionId);
     let ws = null;
     let questions = [];
     let expandedAnswers = new Set();
+    let sendingDraftAnswers = false;
 
     function connect() {
       ws = new WebSocket(wsUrl);
@@ -747,9 +750,11 @@ export function getHtmlBundle(): string {
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'question') {
-          questions.push(msg);
+          upsertQuestion(msg);
           render();
         } else if (msg.type === 'cancel') {
+          const cancelled = questions.find(q => q.id === msg.id);
+          if (cancelled && cancelled.sent) return;
           questions = questions.filter(q => q.id !== msg.id);
           render();
         } else if (msg.type === 'end') {
@@ -763,6 +768,19 @@ export function getHtmlBundle(): string {
       };
     }
 
+    function upsertQuestion(msg) {
+      const existing = questions.find(q => q.id === msg.id);
+      if (!existing) {
+        questions.push({ ...msg, answered: false, answer: undefined, sent: false });
+        return;
+      }
+
+      const answered = existing.answered;
+      const answer = existing.answer;
+      const sent = existing.sent;
+      Object.assign(existing, msg, { answered, answer, sent });
+    }
+
     function render() {
       const root = document.getElementById('root');
 
@@ -773,6 +791,7 @@ export function getHtmlBundle(): string {
 
       const pending = questions.filter(q => !q.answered);
       const answered = questions.filter(q => q.answered);
+      const unsent = answered.filter(q => !q.sent);
 
       let html = '';
 
@@ -785,12 +804,16 @@ export function getHtmlBundle(): string {
       if (pending.length > 0) {
         const q = pending[0];
         html += renderQuestion(q);
-      } else if (answered.length > 0) {
+      } else if (answered.length > 0 && unsent.length === 0) {
         // All answered, waiting for more questions
         html += '<div class="thinking">';
         html += '<div class="thinking-text">Thinking...</div>';
         html += '<div class="spinner"></div>';
         html += '</div>';
+      }
+
+      if (unsent.length > 0) {
+        html += renderReviewAnswers(unsent.length);
       }
 
       // Show answered questions at bottom (collapsed or expanded)
@@ -804,11 +827,12 @@ export function getHtmlBundle(): string {
 
         html += '<div class="card card-answered' + (isExpanded ? ' expanded' : '') + '" data-qid="' + q.id + '">';
         html += '<div class="card-answered-header" onclick="toggleAnswered(\\'' + q.id + '\\')">';
-        html += '<span class="check">[OK]</span>';
+        html += '<span class="check">' + (q.sent ? '[OK]' : '[DRAFT]') + '</span>';
         html += '<div style="flex: 1;">';
         html += '<span>' + escapeHtml(q.config.question) + '</span>';
         if (branchName) html += '<div class="branch-subtitle" style="margin-bottom: 0; margin-top: 0.125rem;">' + escapeHtml(branchName) + '</div>';
         html += '</div>';
+        if (!q.sent) html += '<button onclick="event.stopPropagation(); editAnswer(\\'' + q.id + '\\')" class="btn">Edit</button>';
         html += '<span class="toggle">' + (isExpanded ? '\\u25B2 collapse' : '\\u25BC view') + '</span>';
         html += '</div>';
         if (isExpanded) {
@@ -821,6 +845,17 @@ export function getHtmlBundle(): string {
 
       root.innerHTML = html;
       attachListeners();
+    }
+
+    function renderReviewAnswers(count) {
+      let html = '<div class="card">';
+      html += '<h2>Review Answers</h2>';
+      html += '<p class="context" style="margin-top: 1rem;">Review drafts below before sending them to the agent.</p>';
+      html += '<div class="btn-group">';
+      html += '<button onclick="sendDraftAnswers()" class="btn btn-primary">Send ' + count + ' answer(s)</button>';
+      html += '</div>';
+      html += '</div>';
+      return html;
     }
 
     function renderQuestion(q) {
@@ -1187,10 +1222,33 @@ export function getHtmlBundle(): string {
       const q = questions.find(q => q.id === questionId);
       if (q) {
         q.answered = true;
-        q.answer = answer;  // Store answer for read-only view
-        ws.send(JSON.stringify({ type: 'response', id: questionId, answer }));
+        q.sent = false;
+        q.answer = answer;
         render();
       }
+    }
+
+    function editAnswer(questionId) {
+      const q = questions.find(q => q.id === questionId);
+      if (q) {
+        q.answered = false;
+        q.sent = false;
+        q.answer = undefined;
+        expandedAnswers.delete(questionId);
+        render();
+      }
+    }
+
+    function sendDraftAnswers() {
+      if (sendingDraftAnswers) return;
+      sendingDraftAnswers = true;
+      const drafts = questions.filter(q => q.answered && !q.sent);
+      for (const q of drafts) {
+        ws.send(JSON.stringify({ type: 'response', id: q.id, answer: q.answer }));
+        q.sent = true;
+      }
+      sendingDraftAnswers = false;
+      render();
     }
 
     function showError(questionId, message) {

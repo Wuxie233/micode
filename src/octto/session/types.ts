@@ -191,12 +191,11 @@ export type BaseConfig =
 export interface Session {
   readonly id: string;
   readonly title?: string;
-  readonly port: number;
   readonly url: string;
   readonly createdAt: Date;
   readonly questions: Map<string, Question>;
+  readonly ownerSessionID: string;
   wsConnected: boolean;
-  readonly server?: ReturnType<typeof Bun.serve>;
   wsClient?: ServerWebSocket<unknown>;
 }
 
@@ -209,6 +208,7 @@ export interface StartSessionInput {
   readonly title?: string;
   /** Initial questions to display immediately when browser opens */
   readonly questions?: InitialQuestion[];
+  readonly ownerSessionID: string;
 }
 
 export interface StartSessionOutput {

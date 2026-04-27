@@ -101,7 +101,7 @@ describe("createSpawnAgentTool execute", () => {
     it("runs canonical two-task array in parallel", async () => {
       const output = await callExecute(toolDef, { agents: [taskA, taskB] });
 
-      expect(output.startsWith("# 2 agents completed in")).toBe(true);
+      expect(output.startsWith("| Description | Agent | Outcome | Elapsed | SessionID | Output snippet |")).toBe(true);
       expect(output.indexOf(taskA.description)).toBeLessThan(output.indexOf(taskB.description));
       expect(fake.recorder.createCalls).toBe(2);
     });
@@ -132,7 +132,7 @@ describe("createSpawnAgentTool execute", () => {
         agents: { "0": taskA, "1": taskB },
       });
 
-      expect(output.startsWith("# 2 agents completed in")).toBe(true);
+      expect(output.startsWith("| Description | Agent | Outcome | Elapsed | SessionID | Output snippet |")).toBe(true);
       expect(output.indexOf(taskA.description)).toBeLessThan(output.indexOf(taskB.description));
       expect(fake.recorder.createCalls).toBe(2);
     });

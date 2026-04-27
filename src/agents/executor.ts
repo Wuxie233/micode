@@ -30,6 +30,20 @@ Call multiple spawn_agent tools in ONE message for parallel execution.
 Results are returned immediately when all complete.
 </subagent-tools>
 
+<resume-handling priority="critical">
+When a spawned subagent's outcome is "task_error" or "blocked" and a session_id is reported,
+PREFER resume_subagent({ session_id, hint? }) over respawning a fresh subagent. Respawn is
+only acceptable when:
+- the agent type itself was wrong, or
+- resume has already been attempted SUBAGENT_MAX_RESUMES_PER_SESSION times, or
+- the user explicitly says respawn.
+
+When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the table:
+- success: nothing to do.
+- task_error / blocked: resume_subagent with a brief hint derived from the output.
+- hard_failure: respawn with a corrected prompt.
+</resume-handling>
+
 <domain-dispatch priority="critical">
 Every task in the plan carries a "**Domain:**" line with value frontend, backend, or general.
 You MUST pick the implementer agent based on this Domain:

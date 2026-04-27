@@ -4,6 +4,7 @@ import { tool } from "@opencode-ai/plugin/tool";
 
 import type { BaseConfig, QuestionType, SessionStore } from "@/octto/session";
 import { extractErrorMessage } from "@/utils/errors";
+import { formatForbidden } from "./forbidden";
 import type { OcttoTool, OcttoTools } from "./types";
 
 type ArgsSchema = Parameters<typeof tool>[0]["args"];
@@ -25,7 +26,14 @@ Returns immediately with question_id. Use get_answer to retrieve response.`,
         session_id: tool.schema.string().describe("Session ID from start_session"),
         ...config.args,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
+        if (!sessions.hasSession(args.session_id)) {
+          return `Failed: session ${args.session_id} not found`;
+        }
+        if (!sessions.isOwner(args.session_id, context.sessionID)) {
+          return formatForbidden(args.session_id);
+        }
+
         const validationError = config.validate?.(args as unknown as T);
         if (validationError) return `Failed: ${validationError}`;
 
@@ -88,7 +96,16 @@ The question will appear in the browser for the user to answer.`,
         })
         .describe("Question configuration (varies by type)"),
     },
-    execute: async (args) => executePushQuestion(sessions, args),
+    execute: async (args, context) => {
+      if (!sessions.hasSession(args.session_id)) {
+        return `Failed: session ${args.session_id} not found`;
+      }
+      if (!sessions.isOwner(args.session_id, context.sessionID)) {
+        return formatForbidden(args.session_id);
+      }
+
+      return executePushQuestion(sessions, args);
+    },
   });
 
   return { push_question };
