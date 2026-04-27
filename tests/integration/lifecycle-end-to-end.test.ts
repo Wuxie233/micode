@@ -190,7 +190,7 @@ describe("lifecycle scripted end-to-end", () => {
 
   it("runs the lifecycle tools through local merge and cleanup", async () => {
     const runner = createRunner(repo);
-    const handle = createLifecycleStore({ runner, worktreesRoot, baseDir: lifecycleDir });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: repo, baseDir: lifecycleDir });
     const tools = createLifecycleTools(handle);
 
     const startOutput = await executeTool(tools.lifecycle_start_request, {
