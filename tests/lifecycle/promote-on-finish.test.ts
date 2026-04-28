@@ -79,8 +79,8 @@ const createRunner = (options: RunnerOptions = {}): FakeRunner => {
       if (options.failMerge && isArgs(args, ["merge", "--no-ff"])) return createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE);
       return createRun();
     },
-    gh: async (args) => {
-      calls.push({ bin: "gh", args });
+    gh: async (args, ghOptions) => {
+      calls.push({ bin: "gh", args, cwd: ghOptions?.cwd });
       if (isArgs(args, ["repo", "view"])) return createRun(createRepoView());
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}\n`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: options.issueBody ?? ISSUE_BODY }));

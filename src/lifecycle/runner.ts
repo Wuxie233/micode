@@ -11,7 +11,7 @@ export interface RunResult {
 
 export interface LifecycleRunner {
   readonly git: (args: readonly string[], options?: { cwd?: string }) => Promise<RunResult>;
-  readonly gh: (args: readonly string[]) => Promise<RunResult>;
+  readonly gh: (args: readonly string[], options?: { cwd?: string }) => Promise<RunResult>;
 }
 
 const LOG_MODULE = "lifecycle";
@@ -41,6 +41,6 @@ async function runCommand(bin: string, args: readonly string[], cwd?: string): P
 export function createLifecycleRunner(): LifecycleRunner {
   return {
     git: (args, options) => runCommand(GIT_BIN, args, options?.cwd),
-    gh: (args) => runCommand(GH_BIN, args),
+    gh: (args, options) => runCommand(GH_BIN, args, options?.cwd),
   };
 }

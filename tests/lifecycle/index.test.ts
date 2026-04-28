@@ -64,8 +64,8 @@ const createRunner = (repoView = createRepoView()): FakeRunner => {
       if (isArgs(args, ["rev-parse", "HEAD"])) return createRun(`${SHA}\n`);
       return createRun();
     },
-    gh: async (args) => {
-      calls.push({ bin: "gh", args });
+    gh: async (args, options) => {
+      calls.push({ bin: "gh", args, cwd: options?.cwd });
       if (isArgs(args, ["repo", "view"])) return createRun(repoView);
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}\n`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));
@@ -204,7 +204,7 @@ describe("lifecycle handle", () => {
     await expect(handle.load(404)).resolves.toBeNull();
   });
 
-  it("uses input.cwd (not process.cwd()) when invoking git for ownership pre-flight", async () => {
+  it("uses input.cwd (not process.cwd()) when invoking ownership pre-flight", async () => {
     const customCwd = mkdtempSync(join(tmpdir(), `${PREFIX}cwd-`));
     try {
       const runner = createRunner();
@@ -215,8 +215,13 @@ describe("lifecycle handle", () => {
       const remoteCall = runner.calls.find(
         (call) => call.bin === "git" && call.args[0] === "remote" && call.args[1] === "get-url",
       );
+      const repoCall = runner.calls.find(
+        (call) => call.bin === "gh" && call.args[0] === "repo" && call.args[1] === "view",
+      );
       expect(remoteCall).toBeDefined();
       expect(remoteCall?.cwd).toBe(customCwd);
+      expect(repoCall).toBeDefined();
+      expect(repoCall?.cwd).toBe(customCwd);
     } finally {
       rmSync(customCwd, { recursive: true, force: true });
     }
