@@ -121,8 +121,19 @@ describe("conversation-title hook", () => {
     expect(harness.updates).toHaveLength(0);
   });
 
-  it("renames on the first user message of a session", async () => {
+  it("does NOT rename on chat messages by default (chat fallback disabled)", async () => {
     const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["chat.message"](
+      { sessionID: SESSION_MAIN },
+      { parts: [{ type: "text", text: "  设计 对话名 自动更新  " }] },
+    );
+
+    expect(harness.updates).toHaveLength(0);
+  });
+
+  it("renames on the first user message when chatFallbackEnabled opt-in is set", async () => {
+    const hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
 
     await hook["chat.message"](
       { sessionID: SESSION_MAIN },
@@ -133,16 +144,16 @@ describe("conversation-title hook", () => {
     expect(harness.updates[0]?.title).toBe("设计 对话名 自动更新");
   });
 
-  it("ignores '重启了' chat message", async () => {
-    const hook = createConversationTitleHook(harness.ctx);
+  it("ignores '重启了' chat message even when chatFallbackEnabled is on", async () => {
+    const hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
 
     await hook["chat.message"]({ sessionID: SESSION_MAIN }, { parts: [{ type: "text", text: "重启了" }] });
 
     expect(harness.updates).toHaveLength(0);
   });
 
-  it("ignores '继续' / 'ok' / '这是符合预期吗' chat messages", async () => {
-    const hook = createConversationTitleHook(harness.ctx);
+  it("ignores '继续' / 'ok' / '这是符合预期吗' chat messages even when chatFallbackEnabled is on", async () => {
+    const hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
     const messages = ["继续", "ok", "这是符合预期吗"] as const;
 
     for (const message of messages) {
@@ -168,7 +179,7 @@ describe("conversation-title hook", () => {
     expect(harness.updates[0]?.title).toBe("修复 fork 检测");
   });
 
-  it("keeps a lifecycle topic when a later user message arrives", async () => {
+  it("keeps a lifecycle topic when a later non-low-info chat message arrives (chat fallback off)", async () => {
     const hook = createConversationTitleHook(harness.ctx);
 
     await hook["tool.execute.after"](
@@ -181,8 +192,29 @@ describe("conversation-title hook", () => {
     );
     await hook["chat.message"]({ sessionID: SESSION_MAIN }, { parts: [{ type: "text", text: "加个按钮" }] });
 
-    expect(harness.updates[0]?.title).toBe("修复 fork 检测");
+    expect(harness.updates).toHaveLength(1);
     expect(harness.updates.at(-1)?.title).toBe("修复 fork 检测");
+  });
+
+  it("does not call session.get for chat messages when chat fallback is disabled", async () => {
+    let getCalls = 0;
+    const ctx = {
+      directory: "/tmp/fake-project",
+      client: {
+        session: {
+          get: async () => {
+            getCalls += 1;
+            return { data: { id: SESSION_MAIN, title: null, parentID: null } };
+          },
+          update: async () => ({ data: { id: SESSION_MAIN } }),
+        },
+      },
+    } as unknown as PluginInput;
+
+    const hook = createConversationTitleHook(ctx);
+    await hook["chat.message"]({ sessionID: SESSION_MAIN }, { parts: [{ type: "text", text: "anything" }] });
+
+    expect(getCalls).toBe(0);
   });
 
   it("appends done suffix when lifecycle_finish closes the work", async () => {
