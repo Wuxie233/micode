@@ -184,6 +184,10 @@ describe("config utility", () => {
         pushRetryBackoffMs: 5000,
         prCheckTimeoutMs: 600_000,
         lifecycleDir: "thoughts/lifecycle",
+        journalSuffix: ".journal.jsonl",
+        leaseSuffix: ".lease.json",
+        leaseTtlMs: 600_000,
+        leaseHeartbeatMs: 60_000,
       });
     });
 

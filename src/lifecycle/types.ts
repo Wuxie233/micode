@@ -50,6 +50,9 @@ export interface CommitInput {
   readonly summary: string;
   readonly scope: string;
   readonly push: boolean;
+  readonly batchId?: string;
+  readonly taskId?: string;
+  readonly attempt?: number;
 }
 
 export interface CommitOutcome {
