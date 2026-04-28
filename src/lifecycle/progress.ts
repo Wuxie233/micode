@@ -25,6 +25,7 @@ export interface ProgressInput {
   readonly kind: ProgressKind;
   readonly summary: string;
   readonly details?: string;
+  readonly marker?: string;
 }
 
 export interface ProgressOutcome {
@@ -58,10 +59,17 @@ export interface ProgressLogger {
   readonly context: (input?: { issueNumber?: number }) => Promise<ContextSnapshot>;
 }
 
-const formatBody = (kind: ProgressKind, summary: string, details: string | undefined, when: Date): string => {
+const formatBody = (
+  kind: ProgressKind,
+  summary: string,
+  details: string | undefined,
+  when: Date,
+  marker: string | undefined,
+): string => {
   const isoStamp = when.toISOString();
   const detailsBlock = details ? `\n\n<details>\n${details}\n</details>` : "";
-  return `${PROGRESS_MARKER_PREFIX} kind=${kind} at=${isoStamp} -->\n## ${kind.toUpperCase()} - ${isoStamp}\n\n${summary}${detailsBlock}`;
+  const head = marker && marker.length > 0 ? `${marker}\n` : "";
+  return `${head}${PROGRESS_MARKER_PREFIX} kind=${kind} at=${isoStamp} -->\n## ${kind.toUpperCase()} - ${isoStamp}\n\n${summary}${detailsBlock}`;
 };
 
 const resolveIssueNumber = async (deps: ProgressLoggerDeps, explicit: number | undefined): Promise<number> => {
@@ -126,9 +134,13 @@ const summaryLineFrom = (body: string): string => {
   return candidate?.trim() ?? "";
 };
 
+const progressMarkerLineFrom = (body: string): string | undefined =>
+  body.split("\n").find((line) => line.startsWith(PROGRESS_MARKER_PREFIX));
+
 const extractEntry = (comment: ParsedComment): ProgressEntry | null => {
-  if (!comment.body.startsWith(PROGRESS_MARKER_PREFIX)) return null;
-  const kindMatch = KIND_PATTERN.exec(comment.body);
+  const marker = progressMarkerLineFrom(comment.body);
+  if (!marker) return null;
+  const kindMatch = KIND_PATTERN.exec(marker);
   const candidate = kindMatch?.[1];
   if (!candidate || !isProgressKind(candidate)) return null;
 
@@ -153,7 +165,7 @@ export function createProgressLogger(deps: ProgressLoggerDeps): ProgressLogger {
   return {
     async log(input: ProgressInput): Promise<ProgressOutcome> {
       const issueNumber = await resolveIssueNumber(deps, input.issueNumber);
-      const body = formatBody(input.kind, input.summary, input.details, now());
+      const body = formatBody(input.kind, input.summary, input.details, now(), input.marker);
       const run = await deps.runner.gh(["issue", "comment", String(issueNumber), "--body", body], {
         cwd: deps.cwd,
       });
