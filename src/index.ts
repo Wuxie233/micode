@@ -291,6 +291,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Conversation title hook - keeps the main agent's session title in sync with milestone events
   const conversationTitleHook = createConversationTitleHook(ctx, {
+    chatFallbackEnabled: userConfig?.features?.conversationTitleChatFallback === true,
     isInternalSession: (sessionID) => internalSessions.has(sessionID),
   });
 

@@ -49,7 +49,14 @@
   // "compactionThreshold": 0.7,
   //
   // "features": {
-  //   "mindmodelInjection": true
+  //   "mindmodelInjection": true,
+  //   // Re-enable the legacy chat-message title fallback. Off by default in
+  //   // micode v9: ordinary chat messages no longer rename the conversation;
+  //   // titles come from lifecycle and tool milestones (lifecycle_start_request,
+  //   // lifecycle_commit, lifecycle_finish, plan/design writes). Set to true
+  //   // only if you want the pre-v9 behavior where the first user message
+  //   // sets the title.
+  //   "conversationTitleChatFallback": false
   // },
   //
   // "fragments": {
