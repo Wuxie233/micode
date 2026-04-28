@@ -8,6 +8,7 @@ import type { CommitOutcome } from "./types";
 export interface CommitAndPushInput {
   readonly cwd: string;
   readonly issueNumber: number;
+  readonly branch: string;
   readonly type: CommitMessageInput["type"];
   readonly scope: string;
   readonly summary: string;
@@ -20,14 +21,18 @@ const NOTHING_TO_COMMIT_EXIT_CODE = 1;
 const EMPTY_OUTPUT = "";
 const NOTHING_TO_COMMIT_PATTERN = /nothing to commit/i;
 const STAGE_ARGS = ["add", "--all"] as const;
-const PUSH_ARGS = ["push"] as const;
 const SHA_ARGS = ["rev-parse", "HEAD"] as const;
 const COMMIT_COMMAND = "commit";
 const MESSAGE_FLAG = "-m";
+const PUSH_COMMAND = "push";
+const SET_UPSTREAM_FLAG = "--set-upstream";
+const ORIGIN_REMOTE = "origin";
 const STAGING_FAILED_NOTE = "Staging failed";
 const COMMIT_FAILED_NOTE = "Commit failed";
 const SHA_FAILED_NOTE = "Commit SHA lookup failed";
 const PUSH_FAILED_NOTE = "Push failed after retry";
+
+const buildPushArgs = (branch: string): readonly string[] => [PUSH_COMMAND, SET_UPSTREAM_FLAG, ORIGIN_REMOTE, branch];
 
 const uncommittedOutcome = (): CommitOutcome => ({
   committed: false,
@@ -92,13 +97,19 @@ const readSha = async (runner: LifecycleRunner, cwd: string): Promise<string | n
   return sha;
 };
 
-const pushWithRetry = async (runner: LifecycleRunner, cwd: string, sha: string): Promise<CommitOutcome> => {
-  const pushed = await runGit(runner, PUSH_ARGS, cwd);
+const pushWithRetry = async (
+  runner: LifecycleRunner,
+  cwd: string,
+  branch: string,
+  sha: string,
+): Promise<CommitOutcome> => {
+  const pushArgs = buildPushArgs(branch);
+  const pushed = await runGit(runner, pushArgs, cwd);
   if (succeeded(pushed)) return completedOutcome(sha, true, false);
 
   await Bun.sleep(config.lifecycle.pushRetryBackoffMs);
 
-  const retried = await runGit(runner, PUSH_ARGS, cwd);
+  const retried = await runGit(runner, pushArgs, cwd);
   if (succeeded(retried)) return completedOutcome(sha, true, true);
   return retainedOutcome(sha, true, noteFor(PUSH_FAILED_NOTE, retried));
 };
@@ -121,5 +132,5 @@ export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPus
   const sha = await readSha(runner, input.cwd);
   if (sha === null) return retainedOutcome(null, false, SHA_FAILED_NOTE);
   if (!input.push) return completedOutcome(sha, false, false);
-  return pushWithRetry(runner, input.cwd, sha);
+  return pushWithRetry(runner, input.cwd, input.branch, sha);
 }

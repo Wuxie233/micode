@@ -208,7 +208,7 @@ describe("conversation-title hook", () => {
     expect(harness.updates.at(-1)?.title).toBe("修复 fork 检测 · 已完成");
   });
 
-  it("opts out after the user manually edits the title and freezes further updates", async () => {
+  it("opts out after the confirmed system title is manually edited and freezes further updates", async () => {
     const hook = createConversationTitleHook(harness.ctx);
 
     await hook["tool.execute.after"](
@@ -220,6 +220,17 @@ describe("conversation-title hook", () => {
       { output: "" },
     );
     expect(harness.updates).toHaveLength(1);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_commit",
+        sessionID: SESSION_MAIN,
+        args: { issue_number: 1, scope: "x", summary: "confirm-readback" },
+      },
+      { output: "" },
+    );
+    expect(hook.registry.isOptedOut(SESSION_MAIN)).toBe(false);
+    const updatesAfterConfirmation = harness.updates.length;
 
     harness.sessions.set(SESSION_MAIN, { id: SESSION_MAIN, title: "我自己取的名字", parentID: null });
     await Bun.sleep(2);
@@ -233,7 +244,7 @@ describe("conversation-title hook", () => {
       { output: "" },
     );
 
-    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates).toHaveLength(updatesAfterConfirmation);
     expect(hook.registry.isOptedOut(SESSION_MAIN)).toBe(true);
 
     await hook["tool.execute.after"](
@@ -245,7 +256,7 @@ describe("conversation-title hook", () => {
       { output: "merged and closed" },
     );
 
-    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates).toHaveLength(updatesAfterConfirmation);
   });
 
   it("forgets per-session state on session.deleted event", async () => {
