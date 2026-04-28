@@ -208,27 +208,57 @@ describe("title state registry", () => {
     expect(registry.getTopic(SESSION)).toEqual({ topic: NEXT_LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
   });
 
-  it("opts out of further writes when the user manually edits the title", () => {
+  it("does not opt out when an early host title differs before system title is confirmed", () => {
     const registry = createTitleStateRegistry();
-    const title = writtenTitle(decide(registry));
+    const HOST_AUTO_TITLE = "New Conversation";
 
-    const userEdited = decide(registry, {
+    // First decide: registry writes a system title. lastTitle gets set.
+    const first = decide(registry);
+    const systemTitle = writtenTitle(first);
+
+    // Before micode ever observes its own title back, an OpenCode automatic
+    // initial title shows up as currentTitle. This must NOT be treated as a
+    // user opt-out: the system title has not been confirmed yet.
+    const earlyMismatch = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: USER_TOPIC,
+      source: TITLE_SOURCE.USER_MESSAGE,
+      currentTitle: HOST_AUTO_TITLE,
+      now: NEXT_NOW,
+    });
+
+    expect(earlyMismatch.kind).toBe("write");
+    expect(registry.isOptedOut(SESSION)).toBe(false);
+    // Sanity: the previously written systemTitle exists; we just didn't see it
+    // yet on the read path.
+    expect(systemTitle.length).toBeGreaterThan(0);
+  });
+
+  it("opts out when a mismatch happens after the system title has been confirmed", () => {
+    const registry = createTitleStateRegistry();
+    const first = decide(registry);
+    const systemTitle = writtenTitle(first);
+
+    // A later decision observes the previously-written system title back.
+    // This confirms that micode's writes are being read back. Throttled is OK;
+    // confirmation should still happen.
+    const confirmed = decide(registry, {
+      currentTitle: systemTitle,
+      now: THROTTLED_NOW,
+    });
+    expect(skippedReason(confirmed)).toBe("throttled");
+    expect(registry.isOptedOut(SESSION)).toBe(false);
+
+    // Now a mismatch arrives. Because the system title was confirmed at least
+    // once, this is a real user edit and must opt out.
+    const userEdit = decide(registry, {
       status: TITLE_STATUS.EXECUTING,
       summary: USER_TOPIC,
       source: TITLE_SOURCE.USER_MESSAGE,
       currentTitle: MANUAL_TITLE,
       now: NEXT_NOW,
     });
-    expect(skippedReason(userEdited)).toBe("opted-out");
+    expect(skippedReason(userEdit)).toBe("opted-out");
     expect(registry.isOptedOut(SESSION)).toBe(true);
-
-    const later = decide(registry, {
-      status: TITLE_STATUS.EXECUTING,
-      summary: PLAN_TOPIC,
-      source: TITLE_SOURCE.PLAN_PATH,
-      currentTitle: title,
-      now: THAWED_NOW,
-    });
-    expect(skippedReason(later)).toBe("opted-out");
   });
 });
