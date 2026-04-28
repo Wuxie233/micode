@@ -1,5 +1,6 @@
 // src/utils/conversation-title/state.ts
-import { buildTitle, TITLE_STATUS, type TitleStatus } from "./format";
+import { buildTopicTitle, CONCLUSIVE_STATUSES, type TitleStatus } from "./format";
+import { compareConfidence, type TitleSource } from "./source";
 
 const TITLE_THROTTLE_MS = 1000;
 const DONE_FREEZE_MS = 60_000;
@@ -15,9 +16,15 @@ export interface DecisionInput {
   readonly sessionID: string;
   readonly status: TitleStatus;
   readonly summary: string | null;
+  readonly source: TitleSource;
   readonly currentTitle: string | null;
   readonly now: number;
   readonly maxLength?: number;
+}
+
+export interface SessionTopic {
+  readonly topic: string | null;
+  readonly source: TitleSource | null;
 }
 
 export type TitleDecision =
@@ -29,11 +36,13 @@ interface SessionRecord {
   lastUpdateAt: number;
   doneAt: number | null;
   optedOut: boolean;
-  lastSummary: string | null;
+  topic: string | null;
+  topicSource: TitleSource | null;
 }
 
 export interface TitleStateRegistry {
   decide(input: DecisionInput): TitleDecision;
+  getTopic(sessionID: string): SessionTopic;
   forget(sessionID: string): void;
   isOptedOut(sessionID: string): boolean;
   size(): number;
@@ -63,27 +72,46 @@ const isThrottled = (record: SessionRecord, candidate: string, now: number): boo
   return now - record.lastUpdateAt < TITLE_THROTTLE_MS;
 };
 
-const ensureSummary = (input: DecisionInput, record: SessionRecord): string | null => {
-  return input.summary ?? record.lastSummary;
+const canReplaceTopic = (record: SessionRecord, source: TitleSource, allowEqualConfidence: boolean): boolean => {
+  if (record.topic === null) return true;
+  if (record.topicSource === null) return true;
+  const confidence = compareConfidence(source, record.topicSource);
+  if (confidence > 0) return true;
+  return allowEqualConfidence && confidence === 0;
+};
+
+const applyTopic = (record: SessionRecord, input: DecisionInput, allowEqualConfidence: boolean): boolean => {
+  const incomingTopic = input.summary;
+  if (incomingTopic === null || incomingTopic === "") return false;
+  if (!canReplaceTopic(record, input.source, allowEqualConfidence)) return false;
+  record.topic = incomingTopic;
+  record.topicSource = input.source;
+  return true;
+};
+
+const isDoneExpired = (record: SessionRecord, now: number): boolean => {
+  if (record.doneAt === null) return false;
+  return now - record.doneAt >= DONE_FREEZE_MS;
+};
+
+const updateDoneAt = (record: SessionRecord, status: TitleStatus, now: number, replacedTopic: boolean): void => {
+  if (CONCLUSIVE_STATUSES.includes(status)) {
+    record.doneAt = now;
+    return;
+  }
+  if (replacedTopic && isDoneExpired(record, now)) record.doneAt = null;
 };
 
 const updateRecord = (
   record: SessionRecord,
   title: string,
   status: TitleStatus,
-  summary: string | null,
   now: number,
+  replacedTopic: boolean,
 ): void => {
   record.lastTitle = title;
   record.lastUpdateAt = now;
-  record.lastSummary = summary;
-  if (status === TITLE_STATUS.DONE) {
-    record.doneAt = now;
-    return;
-  }
-  if (record.doneAt !== null && now - record.doneAt >= DONE_FREEZE_MS) {
-    record.doneAt = null;
-  }
+  updateDoneAt(record, status, now, replacedTopic);
 };
 
 const newRecord = (): SessionRecord => ({
@@ -91,43 +119,56 @@ const newRecord = (): SessionRecord => ({
   lastUpdateAt: 0,
   doneAt: null,
   optedOut: false,
-  lastSummary: null,
+  topic: null,
+  topicSource: null,
 });
+
+const readTopic = (record: SessionRecord | undefined): SessionTopic => ({
+  topic: record?.topic ?? null,
+  source: record?.topicSource ?? null,
+});
+
+const getOrCreate = (records: Map<string, SessionRecord>, sessionID: string): SessionRecord => {
+  let record = records.get(sessionID);
+  if (!record) {
+    record = newRecord();
+    records.set(sessionID, record);
+  }
+  return record;
+};
+
+const decideForRecord = (record: SessionRecord, input: DecisionInput): TitleDecision => {
+  if (detectOptOut(record, input.currentTitle)) {
+    record.optedOut = true;
+    return skip("opted-out");
+  }
+
+  if (isDoneFrozen(record, input.now)) {
+    return skip("done-frozen");
+  }
+
+  const doneExpired = isDoneExpired(record, input.now);
+  const replacedTopic = applyTopic(record, input, doneExpired);
+  const title = buildTopicTitle({ topic: record.topic ?? "", status: input.status }, input.maxLength);
+
+  if (isThrottled(record, title, input.now)) {
+    return skip("throttled");
+  }
+
+  updateRecord(record, title, input.status, input.now, replacedTopic);
+  return { kind: DECISION_KIND.WRITE, title };
+};
 
 export function createTitleStateRegistry(): TitleStateRegistry {
   const records = new Map<string, SessionRecord>();
 
-  const getOrCreate = (sessionID: string): SessionRecord => {
-    let record = records.get(sessionID);
-    if (!record) {
-      record = newRecord();
-      records.set(sessionID, record);
-    }
-    return record;
-  };
-
   return {
     decide(input) {
-      const record = getOrCreate(input.sessionID);
+      return decideForRecord(getOrCreate(records, input.sessionID), input);
+    },
 
-      if (detectOptOut(record, input.currentTitle)) {
-        record.optedOut = true;
-        return skip("opted-out");
-      }
-
-      if (isDoneFrozen(record, input.now)) {
-        return skip("done-frozen");
-      }
-
-      const summary = ensureSummary(input, record);
-      const title = buildTitle({ status: input.status, summary: summary ?? "" }, input.maxLength);
-
-      if (isThrottled(record, title, input.now)) {
-        return skip("throttled");
-      }
-
-      updateRecord(record, title, input.status, summary, input.now);
-      return { kind: DECISION_KIND.WRITE, title };
+    getTopic(sessionID) {
+      return readTopic(records.get(sessionID));
     },
 
     forget(sessionID) {
