@@ -11,13 +11,29 @@ import { config } from "../src/utils/config";
 const PREFIX = "micode-index-wiring-";
 const SESSION_ID = "plugin-boot-session";
 const EMPTY_PORTAL_TOKEN = "";
-const EXPECTED_TOOLS = [
+const EXISTING_TOOLS = [
+  "ast_grep_search",
+  "ast_grep_replace",
+  "btca_ask",
+  "look_at",
+  "artifact_search",
+  "milestone_artifact_search",
+  "spawn_agent",
+  "batch_read",
+  "mindmodel_lookup",
   "lifecycle_start_request",
   "lifecycle_record_artifact",
   "lifecycle_commit",
   "lifecycle_finish",
   "resume_subagent",
 ] as const;
+const PROJECT_MEMORY_TOOLS = [
+  "project_memory_lookup",
+  "project_memory_promote",
+  "project_memory_health",
+  "project_memory_forget",
+] as const;
+const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS] as const;
 const TRACKED_KEYS = {
   PERSISTED_SESSIONS_DIR: "persistedSessionsDir",
   LIFECYCLE_DIR: "lifecycleDir",

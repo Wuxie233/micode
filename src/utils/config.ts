@@ -2,6 +2,9 @@
 // Centralized configuration constants
 // Organized by domain for easy discovery and maintenance
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 const BYTES_PER_KB = 1024;
 const LARGE_FILE_KB = 100;
 const MS_PER_SECOND = 1000;
@@ -244,6 +247,17 @@ export const config = {
     cacheTtlMs: 300_000,
     /** Max cached entries per session (LRU eviction) */
     cacheMaxEntries: 50,
+  },
+
+  projectMemory: {
+    storageDir: join(homedir(), ".config", "opencode", "project-memory"),
+    dbFileName: "memory.db",
+    sensitivity: ["public", "internal", "secret"] as readonly string[],
+    statuses: ["active", "superseded", "tentative", "hypothesis", "deprecated"] as readonly string[],
+    defaultLookupLimit: 10,
+    snippetMaxChars: 240,
+    promoteOnLifecycleFinish: true,
+    refuseWritesOnDegradedIdentity: true,
   },
 } as const;
 

@@ -49,6 +49,10 @@ import {
   createBatchReadTool,
   createMindmodelLookupTool,
   createOcttoTools,
+  createProjectMemoryForgetTool,
+  createProjectMemoryHealthTool,
+  createProjectMemoryLookupTool,
+  createProjectMemoryPromoteTool,
   createPTYManager,
   createPtyTools,
   createSessionStore,
@@ -285,6 +289,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Mindmodel lookup tool - agents call this when they need coding patterns
   const mindmodelLookupTool = createMindmodelLookupTool(ctx);
+  const projectMemoryTools = {
+    ...createProjectMemoryLookupTool(ctx),
+    ...createProjectMemoryPromoteTool(ctx),
+    ...createProjectMemoryHealthTool(ctx),
+    ...createProjectMemoryForgetTool(ctx),
+  };
 
   // Constraint reviewer hook - reviews generated code against .mindmodel/ constraints
   const constraintReviewerHook = createConstraintReviewerHook(ctx, async (reviewPrompt) => {
@@ -434,6 +444,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       resume_subagent,
       batch_read,
       ...mindmodelLookupTool,
+      ...projectMemoryTools,
       ...ptyTools,
       ...octtoTools,
       ...lifecycleTools,
