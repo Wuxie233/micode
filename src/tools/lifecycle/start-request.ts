@@ -8,8 +8,6 @@ const DESCRIPTION = `Start an issue-driven lifecycle request.
 
 Calls the lifecycle handle to create the GitHub issue, branch, and worktree, then returns the lifecycle summary.`;
 
-const OWNER_PLACEHOLDER = "unknown-owner";
-const REPO_PLACEHOLDER = "unknown-repo";
 const PREFLIGHT_CATEGORY = "pre_flight_failed";
 const ISSUES_DISABLED_CATEGORY = "issues_disabled_upstream";
 const WORKTREE_CONFLICT_CATEGORY = "worktree_conflict";
@@ -70,8 +68,6 @@ export function createLifecycleStartRequestTool(handle: LifecycleHandle): ToolDe
           summary,
           goals,
           constraints,
-          ownerLogin: OWNER_PLACEHOLDER,
-          repo: REPO_PLACEHOLDER,
         });
         return formatRecord(record);
       } catch (error) {

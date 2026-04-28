@@ -105,8 +105,6 @@ describe("lifecycle handle", () => {
       summary: SUMMARY,
       goals: ["Track issue work"],
       constraints: ["Do not touch contract"],
-      ownerLogin: OWNER,
-      repo: REPO,
     });
     const planned = await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
     const committed = await handle.commit(started.issueNumber, {
@@ -136,7 +134,7 @@ describe("lifecycle handle", () => {
     const runner = createRunner(createRepoView({ hasIssuesEnabled: false }));
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
-    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
     expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
     expect(
@@ -151,7 +149,7 @@ describe("lifecycle handle", () => {
     );
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
-    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
     expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
     expect(
@@ -172,7 +170,7 @@ describe("lifecycle handle", () => {
     );
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
 
-    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
     expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
     expect(record.notes.join("\n")).toContain("pre_flight_failed");
@@ -182,7 +180,7 @@ describe("lifecycle handle", () => {
   it("records artifacts idempotently", async () => {
     const runner = createRunner();
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
-    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
     await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
     const record = await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
@@ -193,7 +191,7 @@ describe("lifecycle handle", () => {
   it("sets lifecycle state through the handle", async () => {
     const runner = createRunner();
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
-    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
     const record = await handle.setState(started.issueNumber, LIFECYCLE_STATES.IN_DESIGN);
 
@@ -212,7 +210,7 @@ describe("lifecycle handle", () => {
       const runner = createRunner();
       const handle = createLifecycleStore({ runner, worktreesRoot, cwd: customCwd, baseDir });
 
-      await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
+      await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
       const remoteCall = runner.calls.find(
         (call) => call.bin === "git" && call.args[0] === "remote" && call.args[1] === "get-url",
@@ -234,8 +232,6 @@ describe("lifecycle handle", () => {
         summary: SUMMARY,
         goals: [],
         constraints: [],
-        ownerLogin: OWNER,
-        repo: REPO,
       });
 
       const reloaded = await handle.load(started.issueNumber);
@@ -243,5 +239,46 @@ describe("lifecycle handle", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  it("places worktree under worktreesRoot, not inside cwd", async () => {
+    const cwd = mkdtempSync(join(worktreesRoot, "repo-"));
+    try {
+      const runner = createRunner();
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+
+      const started = await handle.start({
+        summary: SUMMARY,
+        goals: [],
+        constraints: [],
+      });
+
+      expect(started.worktree.startsWith(join(worktreesRoot, "issue-"))).toBe(true);
+      expect(started.worktree.startsWith(cwd)).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("returns empty issueUrl when pre-flight reports UNKNOWN ownership", async () => {
+    const runner: FakeRunner = {
+      calls: [],
+      edits: [],
+      git: async () => createRun(EMPTY_OUTPUT),
+      gh: async (args) => {
+        if (isArgs(args, ["repo", "view"])) return createRun("not-json", FAILURE_EXIT_CODE);
+        return createRun(EMPTY_OUTPUT);
+      },
+    };
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+
+    const record = await handle.start({
+      summary: SUMMARY,
+      goals: [],
+      constraints: [],
+    });
+
+    expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
+    expect(record.issueUrl).toBe("");
   });
 });

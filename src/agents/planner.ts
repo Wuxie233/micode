@@ -343,7 +343,23 @@ This is a judgment call. If the contract has only 1-2 shared types, inline them 
 </contract-generation>
 
 <output-format path="thoughts/shared/plans/YYYY-MM-DD-{topic}.md">
+<frontmatter-rules>
+<rule>The plan MUST begin with a YAML frontmatter block delimited by --- on its own line above and below.</rule>
+<rule>date: YYYY-MM-DD format, REQUIRED.</rule>
+<rule>topic: short string, REQUIRED.</rule>
+<rule>issue: integer issue number, REQUIRED when an active v9 lifecycle exists (brainstormer called lifecycle_start_request); OMITTED otherwise.</rule>
+<rule>scope: conventional commit scope (lifecycle, octto, mindmodel, etc.), REQUIRED whenever issue is present so the executor can pass it to lifecycle_commit; OMITTED when issue is omitted.</rule>
+<rule>contract: relative path to the contract file, or the literal string "none". REQUIRED.</rule>
+</frontmatter-rules>
 <template>
+---
+date: YYYY-MM-DD
+topic: "[Design Topic]"
+issue: N
+scope: <conventional-scope>
+contract: <path|none>
+---
+
 # [Feature Name] Implementation Plan
 
 **Goal:** [One sentence describing what this builds]

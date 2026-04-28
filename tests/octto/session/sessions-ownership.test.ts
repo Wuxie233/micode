@@ -6,8 +6,10 @@ import { createSessionStore } from "@/octto/session/sessions";
 import { config } from "@/utils/config";
 
 const QUESTIONS = [{ type: "ask_text" as const, config: { question: "hi" } }];
+const EPHEMERAL_PORT = 0;
 const PUBLIC_BASE_URL_ENV = "OCTTO_PUBLIC_BASE_URL";
 const PUBLIC_BASE_URL = "https://octto.wuxie233.com";
+const ORIGINAL_OCTTO_PORT = config.octto.port;
 
 async function loadPublicBaseUrl(cacheKey: string): Promise<string> {
   const mod = await import(`../../../src/utils/config.ts?cache=${cacheKey}`);
@@ -22,16 +24,26 @@ function setPublicBaseUrl(publicBaseUrl: string): void {
   });
 }
 
+function setOcttoPort(port: number): void {
+  Object.defineProperty(config.octto, "port", {
+    configurable: true,
+    value: port,
+    writable: true,
+  });
+}
+
 describe("session store ownership and shared server", () => {
   let store: ReturnType<typeof createSessionStore>;
 
   beforeEach(() => {
+    setOcttoPort(EPHEMERAL_PORT);
     store = createSessionStore({ skipBrowser: true });
   });
 
   afterEach(async () => {
     await store.cleanup();
     await stopSharedServer();
+    setOcttoPort(ORIGINAL_OCTTO_PORT);
   });
 
   it("records ownerSessionID at startSession and exposes it via getSession", async () => {

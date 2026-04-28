@@ -257,4 +257,57 @@ describe("lifecycle scripted end-to-end", () => {
     expect(runner.calls.some((call) => call.bin === "git" && isPush(call.args))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
   });
+
+  it("renders all four artifact pointers into the issue body across the full chain", async () => {
+    const runner = createRunner(repo);
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: repo, baseDir: lifecycleDir });
+    const tools = createLifecycleTools(handle);
+
+    await executeTool(tools.lifecycle_start_request, {
+      summary: SUMMARY,
+      goals: ["Track issue work"],
+      constraints: ["Do not touch contract"],
+    });
+    const started = await loadRecord(handle, ISSUE_NUMBER);
+    expect(started.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+
+    await executeTool(tools.lifecycle_record_artifact, {
+      issue_number: ISSUE_NUMBER,
+      kind: ARTIFACT_KINDS.DESIGN,
+      pointer: DESIGN_POINTER,
+    });
+    await executeTool(tools.lifecycle_record_artifact, {
+      issue_number: ISSUE_NUMBER,
+      kind: ARTIFACT_KINDS.PLAN,
+      pointer: PLAN_POINTER,
+    });
+
+    await writeBatch(started.worktree, FIRST_SUMMARY);
+    await executeTool(tools.lifecycle_commit, {
+      issue_number: ISSUE_NUMBER,
+      scope: FIRST_SCOPE,
+      summary: FIRST_SUMMARY,
+      push: false,
+    });
+
+    await executeTool(tools.lifecycle_finish, {
+      issue_number: ISSUE_NUMBER,
+      merge_strategy: "local-merge",
+      wait_for_checks: false,
+    });
+
+    const finalBody = runner.edits.at(-1) ?? "";
+    expect(finalBody).toContain(DESIGN_POINTER);
+    expect(finalBody).toContain(PLAN_POINTER);
+    expect(finalBody).toContain(started.worktree);
+    expect(finalBody).toMatch(/\b[0-9a-f]{7,}\b/);
+    expect(finalBody).toContain("state: cleaned");
+
+    const reloaded = await loadRecord(handle, ISSUE_NUMBER);
+    expect(reloaded.state).toBe(LIFECYCLE_STATES.CLEANED);
+    expect(reloaded.artifacts[ARTIFACT_KINDS.DESIGN]).toEqual([DESIGN_POINTER]);
+    expect(reloaded.artifacts[ARTIFACT_KINDS.PLAN]).toEqual([PLAN_POINTER]);
+    expect(reloaded.artifacts[ARTIFACT_KINDS.WORKTREE]).toEqual([started.worktree]);
+    expect(reloaded.artifacts[ARTIFACT_KINDS.COMMIT].length).toBeGreaterThan(0);
+  });
 });
