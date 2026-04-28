@@ -1,7 +1,11 @@
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import * as v from "valibot";
 
+import { getDefaultStore, type ProjectMemoryStore, type PromoteOutcome, promoteMarkdown } from "@/project-memory";
 import { config } from "@/utils/config";
+import { extractErrorMessage } from "@/utils/errors";
+import { resolveProjectId } from "@/utils/project-id";
 import { commitAndPush } from "./commits";
 import { renderIssueBody } from "./issue-body";
 import { finishLifecycle } from "./merge";
@@ -62,6 +66,8 @@ interface LifecycleContext {
   readonly cwd: string;
 }
 
+type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
+
 const OK_EXIT_CODE = 0;
 const ABORTED_ISSUE_NUMBER = 1;
 const DECIMAL_RADIX = 10;
@@ -86,6 +92,14 @@ const WORKTREE_CONFLICT = "worktree_conflict";
 const PRE_FLIGHT_FAILED = "pre_flight_failed";
 const ISSUES_DISABLED_UPSTREAM = "issues_disabled_upstream";
 const GITHUB_REPO_BASE_URL = "https://github.com";
+const MEMORY_PROMOTION_FAILED = "memory_promotion_failed";
+const MEMORY_PROMOTED = "memory_promoted";
+const MEMORY_REJECTED = "memory_rejected";
+const MEMORY_NO_SOURCE = "no_markdown_source";
+const MEMORY_NO_CANDIDATES = "no_candidates";
+const ISSUE_POINTER_PREFIX = "issue/";
+const ISSUE_ENTITY_PREFIX = "issue-";
+const PROJECT_MEMORY_SOURCE_KIND = "lifecycle";
 
 const GH_ISSUE = "issue";
 const GH_REPO = "repo";
@@ -377,6 +391,71 @@ const applyFinishOutcome = (record: LifecycleRecord, outcome: FinishOutcome): Li
   return touch(advanceTo(advanceTo(next, LIFECYCLE_STATES.CLOSED), LIFECYCLE_STATES.CLEANED));
 };
 
+const resolvePointerPath = (cwd: string, pointer: string): string => {
+  if (isAbsolute(pointer)) return pointer;
+  return join(cwd, pointer);
+};
+
+const readLatestLedger = async (record: LifecycleRecord, cwd: string): Promise<string | null> => {
+  const pointer = record.artifacts[ARTIFACT_KINDS.LEDGER].at(-1);
+  if (!pointer) return null;
+
+  try {
+    const markdown = await readFile(resolvePointerPath(cwd, pointer), "utf8");
+    if (markdown.trim().length > 0) return markdown;
+    return null;
+  } catch {
+    // Ledger pointers can refer to artifacts removed with a worktree; issue body remains the fallback.
+    return null;
+  }
+};
+
+const readPromotionMarkdown = async (record: LifecycleRecord, context: LifecycleContext): Promise<string | null> => {
+  const ledger = await readLatestLedger(record, context.cwd);
+  if (ledger) return ledger;
+
+  const body = await readIssueBody(context.runner, record.issueNumber);
+  if (body && body.trim().length > 0) return body;
+  return null;
+};
+
+const getRejectionReason = (outcome: PromoteOutcome): string => {
+  if (outcome.refusedReason) return outcome.refusedReason;
+  return outcome.rejected[0]?.reason ?? MEMORY_NO_CANDIDATES;
+};
+
+const formatPromotionNote = (outcome: PromoteOutcome): string => {
+  if (outcome.accepted.length > 0) return `${MEMORY_PROMOTED}: ${outcome.accepted.length} entries`;
+  return `${MEMORY_REJECTED}: ${getRejectionReason(outcome)}`;
+};
+
+const promoteFinishedRecord = async (
+  record: LifecycleRecord,
+  outcome: FinishOutcome,
+  context: LifecycleContext,
+  getStore: ProjectMemoryProvider = getDefaultStore,
+): Promise<LifecycleRecord> => {
+  if (!outcome.merged || !config.projectMemory.promoteOnLifecycleFinish) return record;
+
+  try {
+    const markdown = await readPromotionMarkdown(record, context);
+    if (!markdown) return appendNote(record, `${MEMORY_REJECTED}: ${MEMORY_NO_SOURCE}`);
+    const store = await getStore();
+    const identity = await resolveProjectId(context.cwd);
+    const promoted = await promoteMarkdown({
+      store,
+      identity,
+      markdown,
+      defaultEntityName: `${ISSUE_ENTITY_PREFIX}${record.issueNumber}`,
+      sourceKind: PROJECT_MEMORY_SOURCE_KIND,
+      pointer: `${ISSUE_POINTER_PREFIX}${record.issueNumber}`,
+    });
+    return appendNote(record, formatPromotionNote(promoted));
+  } catch (error) {
+    return appendNote(record, `${MEMORY_PROMOTION_FAILED}: ${extractErrorMessage(error)}`);
+  }
+};
+
 const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
   return async (request) => {
     const preflight = await classifyRepo(context.runner, context.cwd);
@@ -433,7 +512,8 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
       waitForChecks: finishInput.waitForChecks,
     });
     const outcome = await closeMergedIssue(context.runner, issueNumber, finished);
-    await saveAndSync(context, applyFinishOutcome(merging, outcome));
+    const promoted = await promoteFinishedRecord(merging, outcome, context);
+    await saveAndSync(context, applyFinishOutcome(promoted, outcome));
     return outcome;
   };
 };

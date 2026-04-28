@@ -1,6 +1,8 @@
 // tests/utils/config.test.ts
 import { describe, expect, it } from "bun:test";
 
+import { config } from "@/utils/config";
+
 describe("config utility", () => {
   describe("config.compaction", () => {
     it("should have threshold", async () => {
@@ -195,6 +197,24 @@ describe("config utility", () => {
         failedSessionTtlHours: 24,
         resumeSweepIntervalMs: 600_000,
       });
+    });
+  });
+
+  describe("projectMemory config", () => {
+    it("exposes a stable storage directory under the user opencode config root", () => {
+      expect(config.projectMemory.storageDir).toMatch(/\.config\/opencode\/project-memory$/);
+    });
+
+    it("declares the sensitivity vocabulary", () => {
+      expect(config.projectMemory.sensitivity).toEqual(["public", "internal", "secret"]);
+    });
+
+    it("declares the entry status vocabulary", () => {
+      expect(config.projectMemory.statuses).toEqual(["active", "superseded", "tentative", "hypothesis", "deprecated"]);
+    });
+
+    it("defaults the lookup result limit to 10", () => {
+      expect(config.projectMemory.defaultLookupLimit).toBe(10);
     });
   });
 });
