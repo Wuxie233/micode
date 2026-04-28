@@ -4,8 +4,15 @@ node_modules/
 # Build output
 dist/
 
-# Thoughts directory (local artifacts)
-thoughts/
+# Thoughts directory: tiered policy
+# Tier 1 (gitignored): per-conversation personal session state
+thoughts/ledgers/
+thoughts/brainstorms/
+thoughts/octto/
+thoughts/lifecycle/
+# Tier 2 (shareable): designs and plans flow through git so they are
+# discoverable across developers and machines. Anything else under
+# thoughts/shared/ also tracked unless explicitly ignored.
 
 # Lock files (use bun.lock instead)
 package-lock.json
