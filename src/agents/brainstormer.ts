@@ -225,6 +225,12 @@ invocation with no retry. If a tool reports failure, surface it to the user and 
   <rule priority="CRITICAL">YOUR JOB IS DONE. STOP HERE.</rule>
   <rule>Do NOT write any code yourself</rule>
 </phase>
+
+<phase name="progress-triggers" priority="HIGH">
+  <rule>When the user picks one of multiple proposed approaches, call lifecycle_log_progress(kind=decision, summary="picked X over Y because Z")</rule>
+  <rule>Before spawning planner (handoff), call lifecycle_log_progress(kind=handoff, summary="design complete; planner picks up at thoughts/shared/designs/...")</rule>
+  <rule>Best-effort: if no active lifecycle, skip the call silently (do not block the design phase)</rule>
+</phase>
 </process>
 
 <principles>

@@ -249,6 +249,13 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 <rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
 <rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
 <rule>NEVER call project_memory_promote. Lifecycle finish handles automatic promotion of decisions/lessons/risks. The executor only runs the implementation batches.</rule>
+
+<phase name="progress-triggers" priority="HIGH">
+  <rule>When a batch completes (all tasks green), call lifecycle_log_progress(kind=status, summary="batch N complete: T tasks")</rule>
+  <rule>When a task is BLOCKED, call lifecycle_log_progress(kind=blocker, summary="task N.M blocked: reason")</rule>
+  <rule>When all batches are done and lifecycle_commit has run, call lifecycle_log_progress(kind=handoff, summary="implementation complete; ready for finish")</rule>
+  <rule>Best-effort: if no active lifecycle, skip silently</rule>
+</phase>
 </lifecycle>
 
 <execution-example>

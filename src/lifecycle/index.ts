@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { getDefaultStore, type ProjectMemoryStore, type PromoteOutcome, promoteMarkdown } from "@/project-memory";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { log } from "@/utils/logger";
 import { resolveProjectId } from "@/utils/project-id";
 import { commitAndPush } from "./commits";
 import { renderIssueBody } from "./issue-body";
@@ -47,11 +48,20 @@ export interface LifecycleHandle {
   readonly setState: (issueNumber: number, state: LifecycleState) => Promise<LifecycleRecord>;
 }
 
+export interface ProgressEmitter {
+  readonly log: (input: {
+    readonly issueNumber: number;
+    readonly kind: "status";
+    readonly summary: string;
+  }) => Promise<unknown>;
+}
+
 export interface LifecycleStoreInput {
   readonly runner: LifecycleRunner;
   readonly worktreesRoot: string;
   readonly cwd: string;
   readonly baseDir?: string;
+  readonly progress?: ProgressEmitter;
 }
 
 interface IssueIdentity {
@@ -64,6 +74,7 @@ interface LifecycleContext {
   readonly store: LifecycleStore;
   readonly worktreesRoot: string;
   readonly cwd: string;
+  readonly progress?: ProgressEmitter;
 }
 
 type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
@@ -331,6 +342,15 @@ const closeMergedIssue = async (
   return { ...outcome, closedAt };
 };
 
+const safeEmit = async (context: LifecycleContext, issueNumber: number, summary: string): Promise<void> => {
+  if (!context.progress) return;
+  try {
+    await context.progress.log({ issueNumber, kind: "status", summary });
+  } catch (error) {
+    log.warn("lifecycle.progress", `auto-emit failed: ${extractErrorMessage(error)}`);
+  }
+};
+
 const saveAndSync = async (context: LifecycleContext, record: LifecycleRecord): Promise<LifecycleRecord> => {
   await context.store.save(record);
   await syncIssueBody(context.runner, record, context.cwd);
@@ -483,14 +503,18 @@ const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
     const ready = touch(
       addArtifact(transitionTo(opened, LIFECYCLE_STATES.BRANCH_READY), ARTIFACT_KINDS.WORKTREE, opened.worktree),
     );
-    return saveAndSync(context, ready);
+    const saved = await saveAndSync(context, ready);
+    await safeEmit(context, saved.issueNumber, `Lifecycle started: branch=${saved.branch}, worktree=${saved.worktree}`);
+    return saved;
   };
 };
 
 const createArtifactRecorder = (context: LifecycleContext): LifecycleHandle["recordArtifact"] => {
   return async (issueNumber, kind, pointer) => {
     const record = await requireRecord(context.store, issueNumber);
-    return saveAndSync(context, touch(addArtifact(record, kind, pointer)));
+    const updated = await saveAndSync(context, touch(addArtifact(record, kind, pointer)));
+    await safeEmit(context, issueNumber, `Recorded ${kind}: ${pointer}`);
+    return updated;
   };
 };
 
@@ -506,6 +530,8 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
       push: commitInput.push,
     });
     await saveAndSync(context, applyCommitOutcome(record, outcome));
+    const pushed = outcome.pushed ? "true" : "false";
+    await safeEmit(context, issueNumber, `Committed ${outcome.sha ?? "(no-op)"}, pushed=${pushed}`);
     return outcome;
   };
 };
@@ -524,6 +550,7 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
     const outcome = await closeMergedIssue(context.runner, issueNumber, finished, context.cwd);
     const promoted = await promoteFinishedRecord(merging, outcome, context);
     await saveAndSync(context, applyFinishOutcome(promoted, outcome));
+    await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
     return outcome;
   };
 };
@@ -537,7 +564,13 @@ const createStateSetter = (context: LifecycleContext): LifecycleHandle["setState
 
 export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandle {
   const store = createJsonLifecycleStore({ baseDir: input.baseDir ?? join(input.cwd, config.lifecycle.lifecycleDir) });
-  const context = { runner: input.runner, store, worktreesRoot: input.worktreesRoot, cwd: input.cwd };
+  const context: LifecycleContext = {
+    runner: input.runner,
+    store,
+    worktreesRoot: input.worktreesRoot,
+    cwd: input.cwd,
+    progress: input.progress,
+  };
 
   return {
     start: createStart(context),

@@ -189,6 +189,12 @@ When design is silent on implementation details, make confident decisions:
   <action>Try lifecycle_current. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the plan. If kind=none, leave the plan uncommitted (a plan without an active lifecycle is likely a design-only flow; the user will commit when ready). If kind=ambiguous, surface the candidates to the user and stop.</action>
   <action>Do NOT run git commands directly except as the explicit fallback above</action>
 </phase>
+
+<phase name="progress-triggers" priority="HIGH">
+  <rule>When a key dependency or constraint is discovered mid-planning, call lifecycle_log_progress(kind=discovery, summary="...")</rule>
+  <rule>When the plan is complete, call lifecycle_log_progress(kind=status, summary="plan complete: N batches, M tasks") followed by lifecycle_log_progress(kind=handoff, summary="ready for executor at thoughts/shared/plans/...")</rule>
+  <rule>Best-effort: if no active lifecycle, skip silently</rule>
+</phase>
 </process>
 
 <micro-task-design>
