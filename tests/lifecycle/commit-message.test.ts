@@ -57,4 +57,30 @@ describe("buildLifecycleCommitMessage", () => {
       }),
     ).toThrow("Invalid issue number: 0");
   });
+
+  it("appends a marker trailer when provided", () => {
+    const marker = "<!-- micode:lc issue=10 batch=1 attempt=1 seq=3 -->";
+
+    const message = buildLifecycleCommitMessage({
+      type: "feat",
+      scope: "lifecycle",
+      summary: "add y",
+      issueNumber: 10,
+      marker,
+    });
+
+    expect(message).toBe(`feat(lifecycle): add y (#10)\n\n${marker}`);
+  });
+
+  it("ignores empty marker", () => {
+    const message = buildLifecycleCommitMessage({
+      type: "feat",
+      scope: "lifecycle",
+      summary: "add y",
+      issueNumber: 10,
+      marker: "",
+    });
+
+    expect(message).toBe("feat(lifecycle): add y (#10)");
+  });
 });

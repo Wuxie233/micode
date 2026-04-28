@@ -9,8 +9,15 @@ import { log } from "@/utils/logger";
 import { resolveProjectId } from "@/utils/project-id";
 import { commitAndPush } from "./commits";
 import { renderIssueBody } from "./issue-body";
+import { createJournalStore, type JournalStore } from "./journal/store";
+import { JOURNAL_EVENT_KINDS, type JournalEvent, type JournalEventInput } from "./journal/types";
+import { createLeaseStore, type LeaseStore } from "./lease/store";
+import { buildExecutionMarker, parseExecutionMarker } from "./markers";
 import { finishLifecycle } from "./merge";
 import { classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
+import { probeRuntimeIdentity } from "./recovery/identity";
+import { inspectRecovery } from "./recovery/inspect";
+import type { RecoveryDecision } from "./recovery/types";
 import type { LifecycleRunner, RunResult } from "./runner";
 import { createLifecycleStore as createJsonLifecycleStore, type LifecycleStore } from "./store";
 import { recordArtifact as addArtifact, appendNote, transitionTo } from "./transitions";
@@ -46,6 +53,8 @@ export interface LifecycleHandle {
   readonly finish: (issueNumber: number, input: FinishInput) => Promise<FinishOutcome>;
   readonly load: (issueNumber: number) => Promise<LifecycleRecord | null>;
   readonly setState: (issueNumber: number, state: LifecycleState) => Promise<LifecycleRecord>;
+  readonly recordExecutorEvent: (input: ExecutorEventInput) => Promise<void>;
+  readonly decideRecovery: (issueNumber: number, currentOwner: string) => Promise<RecoveryDecision>;
 }
 
 export interface ProgressEmitter {
@@ -53,7 +62,18 @@ export interface ProgressEmitter {
     readonly issueNumber: number;
     readonly kind: "status";
     readonly summary: string;
+    readonly marker?: string;
   }) => Promise<unknown>;
+}
+
+export interface ExecutorEventInput {
+  readonly issueNumber: number;
+  readonly kind: JournalEventInput["kind"];
+  readonly batchId?: string | null;
+  readonly taskId?: string | null;
+  readonly attempt?: number;
+  readonly summary: string;
+  readonly reviewOutcome?: JournalEventInput["reviewOutcome"];
 }
 
 export interface LifecycleStoreInput {
@@ -62,6 +82,8 @@ export interface LifecycleStoreInput {
   readonly cwd: string;
   readonly baseDir?: string;
   readonly progress?: ProgressEmitter;
+  readonly journal?: JournalStore;
+  readonly lease?: LeaseStore;
 }
 
 interface IssueIdentity {
@@ -75,6 +97,8 @@ interface LifecycleContext {
   readonly worktreesRoot: string;
   readonly cwd: string;
   readonly progress?: ProgressEmitter;
+  readonly journal: JournalStore;
+  readonly lease: LeaseStore;
 }
 
 type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
@@ -128,6 +152,10 @@ const GH_ENABLE_ISSUES_FLAG = "--enable-issues";
 const GIT_WORKTREE = "worktree";
 const GIT_ADD = "add";
 const GIT_BRANCH_FLAG = "-b";
+const GIT_LOG = "log";
+const GIT_LOG_LIMIT_ARG = "-1";
+const GIT_LOG_FORMAT_BODY_ARG = "--format=%B";
+const RECOVERY_COMMIT_MARKER_SUMMARY = "commit marker observed during recovery";
 
 const STATE_PATH: readonly LifecycleState[] = [
   LIFECYCLE_STATES.PROPOSED,
@@ -342,10 +370,15 @@ const closeMergedIssue = async (
   return { ...outcome, closedAt };
 };
 
-const safeEmit = async (context: LifecycleContext, issueNumber: number, summary: string): Promise<void> => {
+const safeEmit = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  summary: string,
+  marker?: string,
+): Promise<void> => {
   if (!context.progress) return;
   try {
-    await context.progress.log({ issueNumber, kind: "status", summary });
+    await context.progress.log({ issueNumber, kind: "status", summary, marker });
   } catch (error) {
     log.warn("lifecycle.progress", `auto-emit failed: ${extractErrorMessage(error)}`);
   }
@@ -518,9 +551,44 @@ const createArtifactRecorder = (context: LifecycleContext): LifecycleHandle["rec
   };
 };
 
+const createCommitMarker = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  commitInput: CommitInput,
+): Promise<string | undefined> => {
+  if (!commitInput.batchId) return undefined;
+  const seq = (await context.journal.lastSeq(issueNumber)) + 1;
+  return buildExecutionMarker({
+    issueNumber,
+    batchId: commitInput.batchId,
+    taskId: commitInput.taskId ?? null,
+    attempt: commitInput.attempt ?? 1,
+    seq,
+  });
+};
+
+const recordCommitObserved = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  commitInput: CommitInput,
+  outcome: CommitOutcome,
+  marker: string | undefined,
+): Promise<void> => {
+  if (!outcome.committed || !marker) return;
+  await context.journal.append(issueNumber, {
+    kind: JOURNAL_EVENT_KINDS.COMMIT_OBSERVED,
+    batchId: commitInput.batchId ?? null,
+    taskId: commitInput.taskId ?? null,
+    attempt: commitInput.attempt ?? 1,
+    summary: outcome.sha ? `commit ${outcome.sha}` : "commit (no sha)",
+    commitMarker: marker,
+  });
+};
+
 const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] => {
   return async (issueNumber, commitInput) => {
     const record = await requireRecord(context.store, issueNumber);
+    const marker = await createCommitMarker(context, issueNumber, commitInput);
     const outcome = await commitAndPush(context.runner, {
       cwd: record.worktree,
       issueNumber,
@@ -529,10 +597,12 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
       scope: commitInput.scope,
       summary: commitInput.summary,
       push: commitInput.push,
+      marker,
     });
     await saveAndSync(context, applyCommitOutcome(record, outcome));
+    await recordCommitObserved(context, issueNumber, commitInput, outcome, marker);
     const pushed = outcome.pushed ? "true" : "false";
-    await safeEmit(context, issueNumber, `Committed ${outcome.sha ?? "(no-op)"}, pushed=${pushed}`);
+    await safeEmit(context, issueNumber, `Committed ${outcome.sha ?? "(no-op)"}, pushed=${pushed}`, marker);
     return outcome;
   };
 };
@@ -563,14 +633,105 @@ const createStateSetter = (context: LifecycleContext): LifecycleHandle["setState
   };
 };
 
+const createExecutorEventRecorder = (context: LifecycleContext): LifecycleHandle["recordExecutorEvent"] => {
+  return async (input) => {
+    await context.journal.append(input.issueNumber, {
+      kind: input.kind,
+      batchId: input.batchId ?? null,
+      taskId: input.taskId ?? null,
+      attempt: input.attempt ?? 0,
+      summary: input.summary,
+      reviewOutcome: input.reviewOutcome ?? null,
+    });
+  };
+};
+
+const readExpectedOrigin = async (_context: LifecycleContext, _record: LifecycleRecord): Promise<string | null> => null;
+
+const readRecentCommitText = async (context: LifecycleContext, record: LifecycleRecord): Promise<string | null> => {
+  const run = await context.runner.git([GIT_LOG, GIT_LOG_LIMIT_ARG, GIT_LOG_FORMAT_BODY_ARG], { cwd: record.worktree });
+  if (!completed(run)) return null;
+
+  const text = run.stdout.trim();
+  if (text.length === 0) return null;
+  return text;
+};
+
+const hasBatchEvent = (events: readonly JournalEvent[], batchId: string, kind: JournalEvent["kind"]): boolean => {
+  return events.some((event) => event.batchId === batchId && event.kind === kind);
+};
+
+const batchNeedsCommitMarker = (events: readonly JournalEvent[], batchId: string): boolean => {
+  if (!hasBatchEvent(events, batchId, JOURNAL_EVENT_KINDS.BATCH_DISPATCHED)) return false;
+  if (hasBatchEvent(events, batchId, JOURNAL_EVENT_KINDS.BATCH_COMPLETED)) return false;
+  return !hasBatchEvent(events, batchId, JOURNAL_EVENT_KINDS.COMMIT_OBSERVED);
+};
+
+const lastJournalSeq = (events: readonly JournalEvent[]): number => events.at(-1)?.seq ?? 0;
+
+const recoverCommitEvents = async (
+  context: LifecycleContext,
+  record: LifecycleRecord,
+  events: readonly JournalEvent[],
+  now: number,
+): Promise<readonly JournalEvent[]> => {
+  const text = await readRecentCommitText(context, record);
+  const marker = text ? parseExecutionMarker(text) : null;
+  if (marker === null) return [];
+  if (marker.issueNumber !== record.issueNumber || marker.batchId === null) return [];
+  if (marker.seq <= lastJournalSeq(events)) return [];
+  if (!batchNeedsCommitMarker(events, marker.batchId)) return [];
+
+  return [
+    {
+      kind: JOURNAL_EVENT_KINDS.COMMIT_OBSERVED,
+      issueNumber: record.issueNumber,
+      seq: marker.seq,
+      at: now,
+      batchId: marker.batchId,
+      taskId: marker.taskId,
+      attempt: marker.attempt,
+      summary: RECOVERY_COMMIT_MARKER_SUMMARY,
+      commitMarker: buildExecutionMarker(marker),
+      reviewOutcome: null,
+    },
+  ];
+};
+
+const createRecoveryDecider = (context: LifecycleContext): LifecycleHandle["decideRecovery"] => {
+  return async (issueNumber, currentOwner) => {
+    const record = await requireRecord(context.store, issueNumber);
+    const events = await context.journal.list(issueNumber);
+    const lease = await context.lease.load(issueNumber);
+    const identity = await probeRuntimeIdentity(context.runner, context.cwd);
+    const expectedOrigin = await readExpectedOrigin(context, record);
+    const now = Date.now();
+    const recovered = await recoverCommitEvents(context, record, events, now);
+    return inspectRecovery({
+      record,
+      events: [...events, ...recovered],
+      currentLease: lease,
+      identity,
+      expectedOrigin,
+      now,
+      currentOwner,
+    });
+  };
+};
+
 export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandle {
-  const store = createJsonLifecycleStore({ baseDir: input.baseDir ?? join(input.cwd, config.lifecycle.lifecycleDir) });
+  const baseDir = input.baseDir ?? join(input.cwd, config.lifecycle.lifecycleDir);
+  const store = createJsonLifecycleStore({ baseDir });
+  const journal = input.journal ?? createJournalStore({ baseDir });
+  const lease = input.lease ?? createLeaseStore({ baseDir });
   const context: LifecycleContext = {
     runner: input.runner,
     store,
     worktreesRoot: input.worktreesRoot,
     cwd: input.cwd,
     progress: input.progress,
+    journal,
+    lease,
   };
 
   return {
@@ -580,5 +741,7 @@ export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandl
     finish: createFinisher(context),
     load: store.load,
     setState: createStateSetter(context),
+    recordExecutorEvent: createExecutorEventRecorder(context),
+    decideRecovery: createRecoveryDecider(context),
   };
 }

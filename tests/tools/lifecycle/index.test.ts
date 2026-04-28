@@ -12,6 +12,7 @@ const EXPECTED_TOOL_NAMES = [
   "lifecycle_finish",
   "lifecycle_log_progress",
   "lifecycle_record_artifact",
+  "lifecycle_recovery_decision",
   "lifecycle_resume",
   "lifecycle_start_request",
 ] as const;

@@ -151,4 +151,67 @@ describe("createProgressLogger.context", () => {
     const snap = await progress.context();
     expect(snap.recentProgress).toEqual([]);
   });
+
+  it("recognizes progress comments after execution markers", async () => {
+    const body = [
+      "<!-- micode:lc issue=10 batch=1 attempt=1 seq=2 -->",
+      "<!-- micode:lifecycle:progress kind=status at=2026-04-29T00:00:00.000Z -->",
+      "## STATUS - 2026-04-29T00:00:00.000Z",
+      "",
+      "resumed batch",
+    ].join("\n");
+    const view = JSON.stringify({
+      body: "issue body",
+      comments: [
+        {
+          body,
+          createdAt: "2026-04-29",
+          url: "https://github.com/o/r/issues/10#issuecomment-2",
+        },
+      ],
+    });
+    const runner = createRecordingRunner(() => ok(view), []);
+    const progress = createProgressLogger({
+      runner,
+      resolver: resolverResolved(10),
+      cwd: CWD,
+    });
+
+    const snap = await progress.context();
+
+    expect(snap.body).toBe("issue body");
+    expect(snap.recentProgress).toEqual([
+      {
+        kind: PROGRESS_KINDS.STATUS,
+        summary: "resumed batch",
+        createdAt: "2026-04-29",
+        url: "https://github.com/o/r/issues/10#issuecomment-2",
+      },
+    ]);
+  });
+});
+
+describe("progress logger marker", () => {
+  it("prepends a marker to the comment body when provided", async () => {
+    const calls: RecordedCall[] = [];
+    const marker = "<!-- micode:lc issue=10 batch=1 attempt=1 seq=2 -->";
+    const runner = createRecordingRunner(() => ok("https://github.com/o/r/issues/10#issuecomment-1"), calls);
+    const progress = createProgressLogger({
+      runner,
+      resolver: resolverResolved(10),
+      cwd: CWD,
+      now: () => new Date(0),
+    });
+
+    await progress.log({
+      issueNumber: 10,
+      kind: PROGRESS_KINDS.STATUS,
+      summary: "batch 1 complete",
+      marker,
+    });
+
+    const body = calls[0]?.args[4] ?? "";
+    expect(body.startsWith(`${marker}\n`)).toBe(true);
+    expect(body).toContain("<!-- micode:lifecycle:progress");
+  });
 });
