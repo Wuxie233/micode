@@ -1,13 +1,16 @@
 import { describe, expect, it } from "bun:test";
 
 import type { LifecycleHandle } from "@/lifecycle";
+import type { ContextSnapshot, ProgressLogger } from "@/lifecycle/progress";
 import type { Resolver } from "@/lifecycle/resolver";
 import { createLifecycleTools } from "@/tools/lifecycle";
 
 const EXPECTED_TOOL_NAMES = [
   "lifecycle_commit",
+  "lifecycle_context",
   "lifecycle_current",
   "lifecycle_finish",
+  "lifecycle_log_progress",
   "lifecycle_record_artifact",
   "lifecycle_resume",
   "lifecycle_start_request",
@@ -32,9 +35,20 @@ const createResolverFake = (): Resolver => ({
   resume: fail,
 });
 
+const emptySnapshot: ContextSnapshot = {
+  issueNumber: 0,
+  body: "",
+  recentProgress: [],
+};
+
+const createProgressFake = (): ProgressLogger => ({
+  log: fail,
+  context: async () => emptySnapshot,
+});
+
 describe("createLifecycleTools", () => {
   it("returns lifecycle tool definitions by registry key", () => {
-    const tools = createLifecycleTools(createHandle(), createResolverFake());
+    const tools = createLifecycleTools(createHandle(), createResolverFake(), createProgressFake());
 
     expect(Object.keys(tools).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
     for (const name of EXPECTED_TOOL_NAMES) {

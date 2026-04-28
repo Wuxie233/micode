@@ -24,6 +24,7 @@ import {
   warnUnknownAgents,
 } from "@/hooks";
 import { createLifecycleStore } from "@/lifecycle";
+import { createProgressLogger } from "@/lifecycle/progress";
 import { createResolver } from "@/lifecycle/resolver";
 import { createLifecycleRunner } from "@/lifecycle/runner";
 import { createLifecycleStore as createLifecycleJsonStore } from "@/lifecycle/store";
@@ -373,17 +374,23 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Batch read tool (for parallel file reads)
   const batch_read = createBatchReadTool(ctx);
 
-  const lifecycleHandle = createLifecycleStore({
-    runner: createLifecycleRunner(),
-    worktreesRoot: dirname(ctx.directory),
-    cwd: ctx.directory,
-  });
   const lifecycleResolver = createResolver({
     runner: createLifecycleRunner(),
     store: createLifecycleJsonStore({ baseDir: join(ctx.directory, config.lifecycle.lifecycleDir) }),
     cwd: ctx.directory,
   });
-  const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver);
+  const lifecycleProgress = createProgressLogger({
+    runner: createLifecycleRunner(),
+    resolver: lifecycleResolver,
+    cwd: ctx.directory,
+  });
+  const lifecycleHandle = createLifecycleStore({
+    runner: createLifecycleRunner(),
+    worktreesRoot: dirname(ctx.directory),
+    cwd: ctx.directory,
+    progress: lifecycleProgress,
+  });
+  const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver, lifecycleProgress);
 
   // Octto (browser-based brainstorming) tools
   const persistedSessionStore = createPersistedSessionStore({});
