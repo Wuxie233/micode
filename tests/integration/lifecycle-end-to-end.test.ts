@@ -106,8 +106,8 @@ const createRunner = (repo: string): FakeRunner => {
       if (isPush(args)) return createRun();
       return runGit(args, options?.cwd ?? repo);
     },
-    gh: async (args) => {
-      calls.push({ bin: "gh", args });
+    gh: async (args, options) => {
+      calls.push({ bin: "gh", args, cwd: options?.cwd });
       if (isArgs(args, ["repo", "view"])) return createRun(createRepoView());
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}${LINE_BREAK}`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));
@@ -254,6 +254,7 @@ describe("lifecycle scripted end-to-end", () => {
     expect(history.exitCode).toBe(OK_EXIT_CODE);
     expect(getLifecycleSubjects(history.stdout)).toEqual([SECOND_MESSAGE, FIRST_MESSAGE]);
     expect(runner.calls.filter((call) => call.bin === "gh").length).toBeGreaterThan(NO_CALLS);
+    expect(runner.calls.every((call) => call.bin !== "gh" || call.cwd === repo)).toBe(true);
     expect(runner.calls.some((call) => call.bin === "git" && isPush(call.args))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
   });

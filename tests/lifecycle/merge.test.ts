@@ -47,8 +47,8 @@ const createRunner = (outputs: RunnerOutputs): FakeRunner => {
       gitIndex += 1;
       return run;
     },
-    gh: async (args) => {
-      calls.push({ bin: "gh", args });
+    gh: async (args, options) => {
+      calls.push({ bin: "gh", args, cwd: options?.cwd });
       const run = outputs.gh?.[ghIndex] ?? createRun();
       ghIndex += 1;
       return run;
@@ -79,9 +79,9 @@ describe("finishLifecycle", () => {
       note: null,
     });
     expect(runner.calls).toEqual([
-      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH] },
-      { bin: "gh", args: CHECK_ARGS },
-      { bin: "gh", args: ["pr", "merge", BRANCH, "--squash"] },
+      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH], cwd: CWD },
+      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
+      { bin: "gh", args: ["pr", "merge", BRANCH, "--squash"], cwd: CWD },
       { bin: "git", args: ["worktree", "remove", WORKTREE] },
     ]);
   });
@@ -106,7 +106,7 @@ describe("finishLifecycle", () => {
       note: null,
     });
     expect(runner.calls).toEqual([
-      { bin: "gh", args: CHECK_ARGS },
+      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
       { bin: "git", args: ["checkout", MAIN_BRANCH], cwd: CWD },
       { bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: CWD },
       { bin: "git", args: ["push", "origin", MAIN_BRANCH], cwd: CWD },
@@ -134,8 +134,8 @@ describe("finishLifecycle", () => {
     expect(outcome.worktreeRemoved).toBe(false);
     expect(outcome.note).toStartWith("pr_checks_failed:");
     expect(runner.calls).toEqual([
-      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH] },
-      { bin: "gh", args: CHECK_ARGS },
+      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH], cwd: CWD },
+      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
     ]);
   });
 

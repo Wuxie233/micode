@@ -91,8 +91,8 @@ const createRunner = (): FakeRunner => {
       if (isArgs(args, [GIT_REV_PARSE, GIT_HEAD])) return createRun(`${SHA}\n`);
       return createRun();
     },
-    gh: async (args) => {
-      calls.push({ bin: "gh", args });
+    gh: async (args, options) => {
+      calls.push({ bin: "gh", args, cwd: options?.cwd });
       if (isArgs(args, [GH_REPO, GH_VIEW])) return createRun(createRepoView());
       if (isArgs(args, [GH_ISSUE, GH_CREATE])) return createRun(`${ISSUE_URL}\n`);
       if (isArgs(args, [GH_ISSUE, GH_VIEW])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));

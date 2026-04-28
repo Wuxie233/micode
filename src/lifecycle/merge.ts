@@ -172,7 +172,7 @@ const sleepFor = async (ms: number): Promise<void> => {
 const getCheckAttempts = (): number => Math.max(1, Math.ceil(config.lifecycle.prCheckTimeoutMs / PR_CHECK_POLL_MS) + 1);
 
 const hasRemoteCi = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<boolean> => {
-  const inspected = await runner.gh(createCheckArgs(input.branch));
+  const inspected = await runner.gh(createCheckArgs(input.branch), { cwd: input.cwd });
   if (!completed(inspected)) return false;
 
   const checks = parseChecks(inspected.stdout);
@@ -191,7 +191,7 @@ const waitForPrChecks = async (runner: LifecycleRunner, input: FinishLifecycleIn
   const attempts = getCheckAttempts();
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const outcome = evaluateChecks(await runner.gh(createCheckArgs(input.branch)));
+    const outcome = evaluateChecks(await runner.gh(createCheckArgs(input.branch), { cwd: input.cwd }));
     if (outcome.status === CHECK_OUTCOME.SUCCESS) return null;
     if (outcome.status === CHECK_OUTCOME.FAILED) return outcome.note;
     if (attempt < attempts - 1) await sleep(PR_CHECK_POLL_MS);
@@ -216,22 +216,17 @@ const cleanupLocal = async (runner: LifecycleRunner, input: FinishLifecycleInput
 };
 
 const finishViaPr = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
-  const opened = await runner.gh([
-    GH_PR,
-    GH_CREATE,
-    GH_FILL_FLAG,
-    GH_BASE_FLAG,
-    getBaseBranch(input),
-    GH_HEAD_FLAG,
-    input.branch,
-  ]);
+  const opened = await runner.gh(
+    [GH_PR, GH_CREATE, GH_FILL_FLAG, GH_BASE_FLAG, getBaseBranch(input), GH_HEAD_FLAG, input.branch],
+    { cwd: input.cwd },
+  );
   const prUrl = extractPrUrl(opened.stdout);
   if (!completed(opened)) return createOutcome(false, prUrl, false, formatCommandFailure("gh_pr_create", opened));
 
   const checksNote = input.waitForChecks ? await waitForPrChecks(runner, input) : null;
   if (checksNote) return createOutcome(false, prUrl, false, checksNote);
 
-  const merged = await runner.gh([GH_PR, GH_MERGE, input.branch, GH_SQUASH_FLAG]);
+  const merged = await runner.gh([GH_PR, GH_MERGE, input.branch, GH_SQUASH_FLAG], { cwd: input.cwd });
   if (!completed(merged)) return createOutcome(false, prUrl, false, formatCommandFailure("gh_pr_merge", merged));
 
   const cleanup = await cleanupPr(runner, input);

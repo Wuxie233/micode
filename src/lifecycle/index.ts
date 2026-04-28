@@ -69,7 +69,8 @@ interface LifecycleContext {
 type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
 
 const OK_EXIT_CODE = 0;
-const ABORTED_ISSUE_NUMBER = 1;
+const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
+const ABORTED_SENTINEL_NOTE = "aborted-sentinel:max";
 const DECIMAL_RADIX = 10;
 const MAX_SLUG_LENGTH = 48;
 const EMPTY_TEXT = "";
@@ -242,10 +243,14 @@ const isUserOwned = (preflight: PreFlightResult): boolean => {
   return preflight.kind === REPO_KIND.FORK || preflight.kind === REPO_KIND.OWN;
 };
 
-const ensureIssuesEnabled = async (runner: LifecycleRunner, preflight: PreFlightResult): Promise<string | null> => {
+const ensureIssuesEnabled = async (
+  runner: LifecycleRunner,
+  preflight: PreFlightResult,
+  cwd: string,
+): Promise<string | null> => {
   if (preflight.issuesEnabled || !isUserOwned(preflight)) return null;
 
-  const enabled = await runner.gh([GH_REPO, GH_EDIT, preflight.nameWithOwner, GH_ENABLE_ISSUES_FLAG]);
+  const enabled = await runner.gh([GH_REPO, GH_EDIT, preflight.nameWithOwner, GH_ENABLE_ISSUES_FLAG], { cwd });
   if (completed(enabled)) return null;
   return formatFailure(PRE_FLIGHT_FAILED, enabled);
 };
@@ -286,8 +291,8 @@ const requireRecord = async (store: LifecycleStore, issueNumber: number): Promis
   throw new Error(`Lifecycle record not found: ${issueNumber}`);
 };
 
-const readIssueBody = async (runner: LifecycleRunner, issueNumber: number): Promise<string | null> => {
-  const viewed = await runner.gh([GH_ISSUE, GH_VIEW, String(issueNumber), GH_JSON_FLAG, GH_BODY_FIELD]);
+const readIssueBody = async (runner: LifecycleRunner, issueNumber: number, cwd: string): Promise<string | null> => {
+  const viewed = await runner.gh([GH_ISSUE, GH_VIEW, String(issueNumber), GH_JSON_FLAG, GH_BODY_FIELD], { cwd });
   if (!completed(viewed)) return null;
 
   try {
@@ -301,14 +306,14 @@ const readIssueBody = async (runner: LifecycleRunner, issueNumber: number): Prom
   }
 };
 
-const syncIssueBody = async (runner: LifecycleRunner, record: LifecycleRecord): Promise<void> => {
-  const existing = await readIssueBody(runner, record.issueNumber);
+const syncIssueBody = async (runner: LifecycleRunner, record: LifecycleRecord, cwd: string): Promise<void> => {
+  const existing = await readIssueBody(runner, record.issueNumber, cwd);
   const body = renderIssueBody(record, existing);
-  await runner.gh([GH_ISSUE, GH_EDIT, String(record.issueNumber), GH_BODY_FLAG, body]);
+  await runner.gh([GH_ISSUE, GH_EDIT, String(record.issueNumber), GH_BODY_FLAG, body], { cwd });
 };
 
-const closeIssue = async (runner: LifecycleRunner, issueNumber: number): Promise<number | null> => {
-  const closed = await runner.gh([GH_ISSUE, GH_CLOSE, String(issueNumber)]);
+const closeIssue = async (runner: LifecycleRunner, issueNumber: number, cwd: string): Promise<number | null> => {
+  const closed = await runner.gh([GH_ISSUE, GH_CLOSE, String(issueNumber)], { cwd });
   if (completed(closed)) return Date.now();
   return null;
 };
@@ -317,29 +322,26 @@ const closeMergedIssue = async (
   runner: LifecycleRunner,
   issueNumber: number,
   outcome: FinishOutcome,
+  cwd: string,
 ): Promise<FinishOutcome> => {
   if (!outcome.merged) return outcome;
 
-  const closedAt = await closeIssue(runner, issueNumber);
+  const closedAt = await closeIssue(runner, issueNumber, cwd);
   if (!closedAt) return outcome;
   return { ...outcome, closedAt };
 };
 
 const saveAndSync = async (context: LifecycleContext, record: LifecycleRecord): Promise<LifecycleRecord> => {
   await context.store.save(record);
-  await syncIssueBody(context.runner, record);
+  await syncIssueBody(context.runner, record, context.cwd);
   return record;
 };
 
-const createIssue = async (runner: LifecycleRunner, input: StartRequestInput): Promise<IssueIdentity> => {
-  const created = await runner.gh([
-    GH_ISSUE,
-    GH_CREATE,
-    GH_TITLE_FLAG,
-    input.summary,
-    GH_BODY_FLAG,
-    renderStartBody(input),
-  ]);
+const createIssue = async (runner: LifecycleRunner, input: StartRequestInput, cwd: string): Promise<IssueIdentity> => {
+  const created = await runner.gh(
+    [GH_ISSUE, GH_CREATE, GH_TITLE_FLAG, input.summary, GH_BODY_FLAG, renderStartBody(input)],
+    { cwd },
+  );
   if (!completed(created)) throw new Error(formatFailure(ISSUE_CREATE_FAILED, created));
 
   const identity = parseIssueIdentity(created.stdout);
@@ -367,7 +369,10 @@ const abortStart = async (
     issueNumber: ABORTED_ISSUE_NUMBER,
     issueUrl: issueUrlFor(preflight, ABORTED_ISSUE_NUMBER),
   };
-  const record = createRecord(input, context.worktreesRoot, identity, LIFECYCLE_STATES.ABORTED, [note]);
+  const record = createRecord(input, context.worktreesRoot, identity, LIFECYCLE_STATES.ABORTED, [
+    note,
+    ABORTED_SENTINEL_NOTE,
+  ]);
   await context.store.save(record);
   return record;
 };
@@ -419,7 +424,7 @@ const readPromotionMarkdown = async (record: LifecycleRecord, context: Lifecycle
   const ledger = await readLatestLedger(record, context.cwd);
   if (ledger) return ledger;
 
-  const body = await readIssueBody(context.runner, record.issueNumber);
+  const body = await readIssueBody(context.runner, record.issueNumber, context.cwd);
   if (body && body.trim().length > 0) return body;
   return null;
 };
@@ -467,10 +472,10 @@ const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
     const note = getPreFlightNote(preflight);
     if (note) return abortStart(context, request, preflight, note);
 
-    const enableNote = await ensureIssuesEnabled(context.runner, preflight);
+    const enableNote = await ensureIssuesEnabled(context.runner, preflight, context.cwd);
     if (enableNote) return abortStart(context, request, preflight, enableNote);
 
-    const identity = await createIssue(context.runner, request);
+    const identity = await createIssue(context.runner, request, context.cwd);
     const opened = createRecord(request, context.worktreesRoot, identity, LIFECYCLE_STATES.ISSUE_OPEN);
     const worktreeNote = await createWorktree(context.runner, opened, context.cwd);
     if (worktreeNote) return abortRecord(context, opened, worktreeNote);
@@ -516,7 +521,7 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
       mergeStrategy: finishInput.mergeStrategy,
       waitForChecks: finishInput.waitForChecks,
     });
-    const outcome = await closeMergedIssue(context.runner, issueNumber, finished);
+    const outcome = await closeMergedIssue(context.runner, issueNumber, finished, context.cwd);
     const promoted = await promoteFinishedRecord(merging, outcome, context);
     await saveAndSync(context, applyFinishOutcome(promoted, outcome));
     return outcome;

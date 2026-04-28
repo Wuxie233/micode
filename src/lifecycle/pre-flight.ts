@@ -33,6 +33,17 @@ interface RepoParent {
   readonly url?: string;
 }
 
+interface RepoViewInput {
+  readonly nameWithOwner: string;
+  readonly isFork: boolean;
+  readonly parent: unknown;
+  readonly owner: {
+    readonly login: string;
+  };
+  readonly viewerPermission: string;
+  readonly hasIssuesEnabled: boolean;
+}
+
 interface RepoView {
   readonly nameWithOwner: string;
   readonly isFork: boolean;
@@ -44,19 +55,30 @@ interface RepoView {
   readonly hasIssuesEnabled: boolean;
 }
 
-const RepoParentSchema = v.object({
+const LegacyRepoParentSchema = v.object({
   nameWithOwner: v.string(),
   url: v.optional(v.string()),
 });
 
-const RepoViewSchema: v.GenericSchema<unknown, RepoView> = v.object({
+const GhRepoParentSchema = v.object({
+  name: v.string(),
+  owner: v.object({ login: v.string() }),
+  url: v.optional(v.string()),
+});
+
+const RepoParentSchema = v.union([LegacyRepoParentSchema, GhRepoParentSchema]);
+
+const RepoViewSchema: v.GenericSchema<unknown, RepoViewInput> = v.object({
   nameWithOwner: v.string(),
   isFork: v.boolean(),
-  parent: v.nullable(RepoParentSchema),
+  parent: v.nullable(v.unknown()),
   owner: v.object({ login: v.string() }),
   viewerPermission: v.string(),
   hasIssuesEnabled: v.boolean(),
 });
+
+type LegacyRepoParent = v.InferOutput<typeof LegacyRepoParentSchema>;
+type ParsedRepoParent = v.InferOutput<typeof RepoParentSchema>;
 
 const createUnknown = (origin = EMPTY_OUTPUT): PreFlightResult => ({
   kind: REPO_KIND.UNKNOWN,
@@ -69,11 +91,37 @@ const createUnknown = (origin = EMPTY_OUTPUT): PreFlightResult => ({
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
 
+const createParent = (nameWithOwner: string, url?: string): RepoParent => {
+  if (url === undefined) return { nameWithOwner };
+  return { nameWithOwner, url };
+};
+
+const isLegacyParent = (parent: ParsedRepoParent): parent is LegacyRepoParent => "nameWithOwner" in parent;
+
+const normalizeParent = (parent: unknown): RepoParent | null => {
+  if (parent === null) return null;
+
+  const parsed = v.safeParse(RepoParentSchema, parent);
+  if (!parsed.success) return null;
+  if (isLegacyParent(parsed.output)) return createParent(parsed.output.nameWithOwner, parsed.output.url);
+
+  return createParent(`${parsed.output.owner.login}/${parsed.output.name}`, parsed.output.url);
+};
+
+const normalizeView = (view: RepoViewInput): RepoView => ({
+  nameWithOwner: view.nameWithOwner,
+  isFork: view.isFork,
+  parent: normalizeParent(view.parent),
+  owner: view.owner,
+  viewerPermission: view.viewerPermission,
+  hasIssuesEnabled: view.hasIssuesEnabled,
+});
+
 const parseRepoView = (stdout: string): RepoView | null => {
   try {
     const raw: unknown = JSON.parse(stdout);
     const parsed = v.safeParse(RepoViewSchema, raw);
-    if (parsed.success) return parsed.output;
+    if (parsed.success) return normalizeView(parsed.output);
     return null;
   } catch {
     // Invalid JSON means pre-flight cannot trust ownership metadata.
@@ -113,7 +161,7 @@ export async function classifyRepo(runner: LifecycleRunner, cwd: string): Promis
   if (!completed(remote)) return createUnknown();
 
   const origin = remote.stdout.trim();
-  const inspected = await runner.gh(GH_REPO_ARGS);
+  const inspected = await runner.gh(GH_REPO_ARGS, { cwd });
   if (!completed(inspected)) return createUnknown(origin);
 
   const view = parseRepoView(inspected.stdout);
