@@ -7,7 +7,9 @@ import {
   summaryFromUserMessage,
   TITLE_STATUS,
   type TitleStateRegistry,
+  type TitleStatus,
 } from "@/utils/conversation-title";
+import { isLowInformationMessage, TITLE_SOURCE, type TitleSource } from "@/utils/conversation-title/source";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
@@ -49,8 +51,6 @@ interface SessionInfo {
   readonly parentID: string | null;
 }
 
-const parentIdCache = new Map<string, string | null>();
-
 const fetchSessionInfo = async (ctx: PluginInput, sessionID: string): Promise<SessionInfo | null> => {
   try {
     const response = await ctx.client.session.get({
@@ -61,7 +61,6 @@ const fetchSessionInfo = async (ctx: PluginInput, sessionID: string): Promise<Se
     if (!data) return null;
     const parentID =
       typeof (data as { parentID?: unknown }).parentID === "string" ? (data as { parentID: string }).parentID : null;
-    parentIdCache.set(sessionID, parentID);
     return {
       title: typeof data.title === "string" ? data.title : null,
       parentID,
@@ -90,8 +89,9 @@ const writeTitle = async (ctx: PluginInput, sessionID: string, title: string): P
 };
 
 interface DispatchOptions {
-  readonly status: import("@/utils/conversation-title").TitleStatus;
+  readonly status: TitleStatus;
   readonly summary: string | null;
+  readonly source: TitleSource;
   readonly currentTitle: string | null;
 }
 
@@ -124,6 +124,7 @@ const dispatch = async (deps: ContextDeps, sessionID: string, options: DispatchO
     sessionID,
     status: options.status,
     summary: options.summary,
+    source: options.source,
     currentTitle: options.currentTitle,
     now: Date.now(),
     maxLength: deps.config.maxLength,
@@ -146,6 +147,7 @@ const handleToolAfter = async (deps: ContextDeps, input: ToolAfterInput, output:
   await dispatch(deps, input.sessionID, {
     status: signal.status,
     summary: signal.summary,
+    source: signal.source,
     currentTitle: info?.title ?? null,
   });
 };
@@ -163,10 +165,12 @@ const handleChatMessage = async (
 
   const summary = summaryFromUserMessage(extractMessageText(output));
   if (!summary) return;
+  if (isLowInformationMessage(summary)) return;
 
   await dispatch(deps, input.sessionID, {
     status: TITLE_STATUS.INITIALIZING,
     summary,
+    source: TITLE_SOURCE.USER_MESSAGE,
     currentTitle: info?.title ?? null,
   });
 };
@@ -177,7 +181,6 @@ const handleEvent = (registry: TitleStateRegistry, event: { type: string; proper
   const sessionID = props?.info?.id;
   if (!sessionID) return;
   registry.forget(sessionID);
-  parentIdCache.delete(sessionID);
 };
 
 export function createConversationTitleHook(
