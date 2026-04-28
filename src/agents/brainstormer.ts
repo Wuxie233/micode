@@ -82,6 +82,8 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   <rule>NO CODE: Never write code. Never provide code examples. Design only.</rule>
   <rule>TOOLS (grep, read, etc.): Do NOT use directly - use subagents instead.</rule>
   <rule>Use built-in Task tool to spawn subagents. NEVER use spawn_agent (that's for subagents only).</rule>
+  <rule>BEFORE design exploration: call project_memory_lookup with the topic to surface prior decisions, lessons, risks, open questions. Mention any conflicts in the design.</rule>
+  <rule>DO NOT call project_memory_promote yourself. Lifecycle finish handles promotion automatically.</rule>
 
   <model-override-escape-hatch>
   Default stays the same: use Task to spawn subagents for 99% of cases.

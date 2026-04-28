@@ -133,6 +133,12 @@ When design is silent on implementation details, make confident decisions:
 <anti-pattern>Writing plan code then checking if it matches project patterns - ALWAYS check first</anti-pattern>
 </project-constraints>
 
+<project-memory priority="critical" description="Use durable project memory for prior decisions and risks">
+<rule>BEFORE writing the plan, call project_memory_lookup with the design topic and key components to surface prior decisions, risks, and lessons. Reference any conflict in the plan.</rule>
+<rule>Treat project memory as historical project context, not coding patterns. Use mindmodel_lookup for code style, project_memory_lookup for project history.</rule>
+<rule>NEVER call project_memory_promote yourself. Lifecycle finish handles promotion automatically.</rule>
+</project-memory>
+
 <process>
 <phase name="understand-design">
   <action>Read the design document using Read tool (NOT a subagent)</action>

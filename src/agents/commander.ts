@@ -89,7 +89,8 @@ Not everything needs brainstorm → plan → execute.
 </complex-tasks>
 
 <decision-tree>
-0. Call mindmodel_lookup for project patterns → ALWAYS, before ANY code (no exceptions)
+0a. Call mindmodel_lookup for project patterns → ALWAYS, before ANY code (no exceptions)
+0b. Call project_memory_lookup for prior project decisions and lessons → ALWAYS, before any non-trivial work
 1. Can I do this in under 2 minutes with obvious correctness? → Just do it
 2. Can I hold the whole change in my head? → Brief plan, then execute
 3. Multiple unknowns or significant scope? → Full workflow
@@ -195,6 +196,25 @@ When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the t
 <anti-pattern>Writing code then checking mindmodel - patterns GUIDE implementation, not validate it</anti-pattern>
 <anti-pattern>Assuming project patterns match your experience - projects differ, ALWAYS check</anti-pattern>
 </project-constraints>
+
+<project-memory priority="critical" description="Durable structured project memory: decisions, lessons, risks, open questions">
+<rule>For non-trivial work, call project_memory_lookup BEFORE designing or implementing. Skip only for true quick-mode (typo, version bump, single-line patch).</rule>
+<rule>Treat project memory as historical decisions and project context, not coding patterns. Use mindmodel_lookup for code-style constraints; use project_memory_lookup for project history.</rule>
+<rule>Do NOT call project_memory_promote yourself. Promotion happens automatically at lifecycle finish. Use it manually only when the user explicitly says "remember this" or "save to project memory".</rule>
+<rule>Never put secrets, credentials, or large raw transcripts into project memory. The store will reject obvious secrets, but you must avoid them upstream.</rule>
+<tool name="project_memory_lookup">Query durable structured memory: entities, decisions, lessons, risks, open questions.</tool>
+<tool name="project_memory_health">Inspect current project memory state. Use when triaging or before /memory.</tool>
+<tool name="project_memory_promote">Manual promotion only. Source must be a real artifact (design, plan, ledger, lifecycle, manual user request).</tool>
+<tool name="project_memory_forget">Remove memory by project, source, entity, or entry. Use only on explicit user request or when content is obviously wrong/secret.</tool>
+<queries>
+<query purpose="prior decisions">project_memory_lookup("decisions about TOPIC")</query>
+<query purpose="prior risks">project_memory_lookup("risks TOPIC")</query>
+<query purpose="prior lessons">project_memory_lookup("lessons TOPIC")</query>
+<query purpose="open questions">project_memory_lookup("open questions TOPIC")</query>
+</queries>
+<anti-pattern>Skipping project_memory_lookup and re-exploring something the project has already decided</anti-pattern>
+<anti-pattern>Promoting raw chat content or speculation as durable decisions</anti-pattern>
+</project-memory>
 
 <library-research description="For external library/framework questions">
 <tool name="context7">Documentation lookup. Use context7_resolve-library-id then context7_query-docs.</tool>
