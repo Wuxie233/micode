@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
@@ -24,7 +24,9 @@ import {
   warnUnknownAgents,
 } from "@/hooks";
 import { createLifecycleStore } from "@/lifecycle";
+import { createResolver } from "@/lifecycle/resolver";
 import { createLifecycleRunner } from "@/lifecycle/runner";
+import { createLifecycleStore as createLifecycleJsonStore } from "@/lifecycle/store";
 import {
   type AutoResumeDispatcher,
   type ClientPromptRequest,
@@ -376,7 +378,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     worktreesRoot: dirname(ctx.directory),
     cwd: ctx.directory,
   });
-  const lifecycleTools = createLifecycleTools(lifecycleHandle);
+  const lifecycleResolver = createResolver({
+    runner: createLifecycleRunner(),
+    store: createLifecycleJsonStore({ baseDir: join(ctx.directory, config.lifecycle.lifecycleDir) }),
+    cwd: ctx.directory,
+  });
+  const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver);
 
   // Octto (browser-based brainstorming) tools
   const persistedSessionStore = createPersistedSessionStore({});

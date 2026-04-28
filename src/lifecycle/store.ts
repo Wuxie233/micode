@@ -3,7 +3,7 @@ import { join } from "node:path";
 import * as v from "valibot";
 
 import { LifecycleRecordSchema } from "@/lifecycle/schemas";
-import type { LifecycleRecord } from "@/lifecycle/types";
+import { type LifecycleRecord, TERMINAL_STATES } from "@/lifecycle/types";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
@@ -18,7 +18,10 @@ export interface LifecycleStore {
   readonly load: (issueNumber: number) => Promise<LifecycleRecord | null>;
   readonly delete: (issueNumber: number) => Promise<void>;
   readonly list: () => Promise<readonly number[]>;
+  readonly listOpen: () => Promise<readonly number[]>;
 }
+
+const isTerminalState = (state: string): boolean => (TERMINAL_STATES as readonly string[]).includes(state);
 
 const JSON_SUFFIX = ".json";
 const JSON_INDENT = 2;
@@ -105,12 +108,38 @@ export function createLifecycleStore(options: LifecycleStoreOptions = {}): Lifec
     },
 
     async list(): Promise<readonly number[]> {
-      if (!existsSync(baseDir)) return [];
+      return listIssues(baseDir);
+    },
 
-      return readdirSync(baseDir)
-        .map(toIssueNumber)
-        .filter(isIssueNumber)
-        .sort((left, right) => left - right);
+    async listOpen(): Promise<readonly number[]> {
+      return filterOpen(baseDir, schema);
     },
   };
 }
+
+const listIssues = (baseDir: string): readonly number[] => {
+  if (!existsSync(baseDir)) return [];
+
+  return readdirSync(baseDir)
+    .map(toIssueNumber)
+    .filter(isIssueNumber)
+    .sort((left, right) => left - right);
+};
+
+const filterOpen = async (
+  baseDir: string,
+  schema: v.GenericSchema<unknown, LifecycleRecord>,
+): Promise<readonly number[]> => {
+  const all = listIssues(baseDir);
+  const open: number[] = [];
+  for (const issueNumber of all) {
+    const location = join(baseDir, `${issueNumber}${JSON_SUFFIX}`);
+    if (!existsSync(location)) continue;
+    const content = await Bun.file(location).text();
+    const record = parseRecord(content, location, schema);
+    if (record === null) continue;
+    if (isTerminalState(record.state)) continue;
+    open.push(issueNumber);
+  }
+  return open;
+};

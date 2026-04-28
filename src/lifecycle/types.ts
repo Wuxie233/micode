@@ -14,6 +14,10 @@ export const LIFECYCLE_STATES = {
 
 export type LifecycleState = (typeof LIFECYCLE_STATES)[keyof typeof LIFECYCLE_STATES];
 
+export const TERMINAL_STATES = [LIFECYCLE_STATES.CLOSED, LIFECYCLE_STATES.CLEANED, LIFECYCLE_STATES.ABORTED] as const;
+
+export type TerminalState = (typeof TERMINAL_STATES)[number];
+
 export const ARTIFACT_KINDS = {
   DESIGN: "design",
   PLAN: "plan",
