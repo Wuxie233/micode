@@ -17,6 +17,7 @@ const LOG_SCOPE = "conversation-title";
 
 export interface ConversationTitleConfig {
   readonly enabled: boolean;
+  readonly chatFallbackEnabled: boolean;
   readonly maxLength: number;
   readonly isInternalSession?: (sessionID: string) => boolean;
 }
@@ -25,6 +26,7 @@ const DEFAULT_MAX_LENGTH = 50;
 
 const defaultConfig = (): ConversationTitleConfig => ({
   enabled: true,
+  chatFallbackEnabled: false,
   maxLength: DEFAULT_MAX_LENGTH,
 });
 
@@ -158,6 +160,7 @@ const handleChatMessage = async (
   output: ChatMessageOutput,
 ): Promise<void> => {
   if (!deps.config.enabled) return;
+  if (!deps.config.chatFallbackEnabled) return;
   if (deps.registry.isOptedOut(input.sessionID)) return;
 
   const info = await fetchSessionInfo(deps.ctx, input.sessionID);

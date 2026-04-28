@@ -711,6 +711,40 @@ describe("JSONC parsing support", () => {
       expect(config?.features?.mindmodelInjection).toBe(true);
       expect(config?.compactionThreshold).toBe(0.4);
     });
+
+    it("parses features.conversationTitleChatFallback opt-in flag", async () => {
+      const configPath = join(testConfigDir, "micode.jsonc");
+      writeFileSync(
+        configPath,
+        `{
+  "features": {
+    "conversationTitleChatFallback": true
+  }
+}`,
+      );
+
+      const config = await loadMicodeConfig(testConfigDir);
+
+      expect(config).not.toBeNull();
+      expect(config?.features?.conversationTitleChatFallback).toBe(true);
+    });
+
+    it("treats missing conversationTitleChatFallback as undefined (not enabled)", async () => {
+      const configPath = join(testConfigDir, "micode.jsonc");
+      writeFileSync(
+        configPath,
+        `{
+  "features": {
+    "mindmodelInjection": true
+  }
+}`,
+      );
+
+      const config = await loadMicodeConfig(testConfigDir);
+
+      expect(config).not.toBeNull();
+      expect(config?.features?.conversationTitleChatFallback).toBeUndefined();
+    });
   });
 
   describe("loadModelContextLimits with JSONC", () => {

@@ -103,8 +103,10 @@ describe("conversation-title scenario", () => {
   });
 
   it("keeps the lifecycle topic stable until the work is completed", async () => {
+    // Chat fallback is off by default. The first user message no longer renames.
     await sendMessage(hook, FIRST_USER_TITLE);
-    expect(currentTitle(harness)).toBe(FIRST_USER_TITLE);
+    expect(currentTitle(harness)).toBeNull();
+    expect(harness.updates).toHaveLength(0);
 
     await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
       summary: LIFECYCLE_TITLE,
@@ -133,6 +135,20 @@ describe("conversation-title scenario", () => {
     await runTool(hook, TOOL_NAMES.LIFECYCLE_FINISH, { issue_number: ISSUE_NUMBER }, FINISH_OUTPUT);
     expect(currentTitle(harness)).toBe(FINISHED_TITLE);
     expect(harness.updates.at(-1)).toEqual({ id: SESSION_MAIN, title: FINISHED_TITLE });
+  });
+
+  it("keeps the legacy chat-driven first title when chatFallbackEnabled is opted in", async () => {
+    hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
+
+    await sendMessage(hook, FIRST_USER_TITLE);
+    expect(currentTitle(harness)).toBe(FIRST_USER_TITLE);
+
+    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
+      summary: LIFECYCLE_TITLE,
+      goals: [],
+      constraints: [],
+    });
+    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
   });
 
   it("keeps done title frozen, then lets a new lifecycle_start_request replace it after expiry", async () => {
