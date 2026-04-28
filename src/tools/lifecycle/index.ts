@@ -9,6 +9,7 @@ import { createLifecycleCurrentTool } from "./current";
 import { createLifecycleFinishTool } from "./finish";
 import { createLifecycleLogProgressTool } from "./log-progress";
 import { createLifecycleRecordArtifactTool } from "./record-artifact";
+import { createLifecycleRecoveryDecisionTool } from "./recovery-decision";
 import { createLifecycleResumeTool } from "./resume";
 import { createLifecycleStartRequestTool } from "./start-request";
 
@@ -21,6 +22,7 @@ export interface LifecycleTools {
   readonly lifecycle_resume: ToolDefinition;
   readonly lifecycle_log_progress: ToolDefinition;
   readonly lifecycle_context: ToolDefinition;
+  readonly lifecycle_recovery_decision: ToolDefinition;
 }
 
 export function createLifecycleTools(
@@ -37,5 +39,6 @@ export function createLifecycleTools(
     lifecycle_resume: createLifecycleResumeTool(resolver),
     lifecycle_log_progress: createLifecycleLogProgressTool(progress),
     lifecycle_context: createLifecycleContextTool(progress),
+    lifecycle_recovery_decision: createLifecycleRecoveryDecisionTool(handle),
   };
 }

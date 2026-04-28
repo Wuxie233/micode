@@ -13,6 +13,7 @@ export interface CommitAndPushInput {
   readonly scope: string;
   readonly summary: string;
   readonly push: boolean;
+  readonly marker?: string;
 }
 
 const SUCCESS_EXIT_CODE = 0;
@@ -117,7 +118,7 @@ const pushWithRetry = async (
 export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPushInput): Promise<CommitOutcome> {
   let message: string;
   try {
-    message = buildLifecycleCommitMessage(input);
+    message = buildLifecycleCommitMessage({ ...input, marker: input.marker });
   } catch (error) {
     return failureOutcome(extractErrorMessage(error));
   }

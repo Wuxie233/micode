@@ -94,7 +94,16 @@ describe("lifecycle handle", () => {
 
     expect(LIFECYCLE_STATES.ABORTED).toBe("aborted");
     expect(ARTIFACT_KINDS.WORKTREE).toBe("worktree");
-    expect(Object.keys(handle).sort()).toEqual(["commit", "finish", "load", "recordArtifact", "setState", "start"]);
+    expect(Object.keys(handle).sort()).toEqual([
+      "commit",
+      "decideRecovery",
+      "finish",
+      "load",
+      "recordArtifact",
+      "recordExecutorEvent",
+      "setState",
+      "start",
+    ]);
   });
 
   it("runs a full lifecycle with a fake runner", async () => {

@@ -24,6 +24,8 @@ import {
   warnUnknownAgents,
 } from "@/hooks";
 import { createLifecycleStore } from "@/lifecycle";
+import { createJournalStore } from "@/lifecycle/journal/store";
+import { createLeaseStore } from "@/lifecycle/lease/store";
 import { createProgressLogger } from "@/lifecycle/progress";
 import { createResolver } from "@/lifecycle/resolver";
 import { createLifecycleRunner } from "@/lifecycle/runner";
@@ -375,9 +377,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Batch read tool (for parallel file reads)
   const batch_read = createBatchReadTool(ctx);
 
+  const lifecycleBaseDir = join(ctx.directory, config.lifecycle.lifecycleDir);
+  const lifecycleJournal = createJournalStore({ baseDir: lifecycleBaseDir });
+  const lifecycleLease = createLeaseStore({ baseDir: lifecycleBaseDir });
   const lifecycleResolver = createResolver({
     runner: createLifecycleRunner(),
-    store: createLifecycleJsonStore({ baseDir: join(ctx.directory, config.lifecycle.lifecycleDir) }),
+    store: createLifecycleJsonStore({ baseDir: lifecycleBaseDir }),
     cwd: ctx.directory,
   });
   const lifecycleProgress = createProgressLogger({
@@ -390,6 +395,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     worktreesRoot: dirname(ctx.directory),
     cwd: ctx.directory,
     progress: lifecycleProgress,
+    journal: lifecycleJournal,
+    lease: lifecycleLease,
   });
   const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver, lifecycleProgress);
 

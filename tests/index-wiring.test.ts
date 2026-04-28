@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
 
+import { createJournalStore } from "@/lifecycle/journal/store";
+import { createLeaseStore } from "@/lifecycle/lease/store";
 import { OpenCodeConfigPlugin } from "../src/index";
 import { stopSharedServer } from "../src/octto/session/server";
 import { config } from "../src/utils/config";
@@ -157,5 +159,15 @@ describe("OpenCodeConfigPlugin issue workflow wiring", () => {
       logSpy.mockRestore();
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe("plugin entrypoint exports lifecycle journal/lease wiring", () => {
+  it("createJournalStore is callable with no options", () => {
+    expect(typeof createJournalStore({}).append).toBe("function");
+  });
+
+  it("createLeaseStore is callable with no options", () => {
+    expect(typeof createLeaseStore({}).acquire).toBe("function");
   });
 });
