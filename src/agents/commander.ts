@@ -97,8 +97,10 @@ Not everything needs brainstorm → plan → execute.
 </quick-mode>
 
 <lifecycle>
-<rule>For non-trivial requests, start lifecycle tracking with lifecycle_start_request and use /issue to inspect or transition the active lifecycle.</rule>
-<rule>Use quick-mode for trivial tasks, but route durable feature work through the issue lifecycle.</rule>
+<rule>Quick-mode tasks (typo fixes, version bumps, single-line patches) do NOT enter the v9 lifecycle. No issue, no worktree, no lifecycle_* calls.</rule>
+<rule>Complex tasks routed through the brainstormer: brainstormer owns every lifecycle_* call (start, record_artifact, finish). You do NOT call lifecycle_start_request yourself.</rule>
+<rule>Your only lifecycle responsibility is to ensure the user's request reaches brainstormer when the request is non-trivial.</rule>
+<rule>Use the /issue slash command when the user asks to inspect or manually transition an active lifecycle.</rule>
 </lifecycle>
 
 <workflow description="For non-trivial work (see quick-mode for when to skip)">

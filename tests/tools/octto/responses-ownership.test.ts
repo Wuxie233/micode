@@ -3,22 +3,35 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { stopSharedServer } from "@/octto/session/server";
 import { createSessionStore } from "@/octto/session/sessions";
 import { createResponseTools } from "@/tools/octto/responses";
+import { config } from "@/utils/config";
 
 const fakeContext = (sessionID: string) => ({ sessionID }) as never;
 const askText = [{ type: "ask_text" as const, config: { question: "hi" } }];
 const ownerA = "owner-A";
 const ownerB = "owner-B";
+const EPHEMERAL_PORT = 0;
+const ORIGINAL_OCTTO_PORT = config.octto.port;
+
+function setOcttoPort(port: number): void {
+  Object.defineProperty(config.octto, "port", {
+    configurable: true,
+    value: port,
+    writable: true,
+  });
+}
 
 describe("response tools ownership", () => {
   let store: ReturnType<typeof createSessionStore>;
 
   beforeEach(() => {
+    setOcttoPort(EPHEMERAL_PORT);
     store = createSessionStore({ skipBrowser: true });
   });
 
   afterEach(async () => {
     await store.cleanup();
     await stopSharedServer();
+    setOcttoPort(ORIGINAL_OCTTO_PORT);
   });
 
   it("get_next_answer refuses non-owner for session", async () => {

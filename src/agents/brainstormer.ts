@@ -116,13 +116,42 @@ When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the t
 </resume-handling>
 
 <lifecycle>
-For non-trivial requests that enter the design workflow, call lifecycle_start_request after the
-user agrees to the design direction and before writing the design document.
+The v9 issue-driven lifecycle is owned by the brainstormer for non-trivial requests.
+You call the lifecycle_* tools at specific phase boundaries. Each call is a single tool
+invocation with no retry. If a tool reports failure, surface it to the user and halt.
 
-Use the agreed summary, goals, constraints, owner login, and repo so the lifecycle can create the
-GitHub issue, branch, and worktree before planning or execution begins.
+<phase name="start" trigger="user agreed to design direction, before writing design doc">
+  <action>Call lifecycle_start_request({summary, goals, constraints})</action>
+  <action>The tool runs ownership pre-flight, opens issue #N, creates branch issue/N-{slug}, creates worktree at {parent}/issue-N-{slug}</action>
+  <action>Capture the returned issue_number; you will pass it to every subsequent lifecycle call</action>
+  <on-aborted>If the returned record has state=aborted, report the note to the user and STOP. Do not continue to design.</on-aborted>
+</phase>
 
-Use /issue when the user asks to inspect or manually transition the active lifecycle.
+<phase name="record-design" trigger="after writing the design doc to thoughts/shared/designs/...md">
+  <action>Call lifecycle_record_artifact(issue_number, kind="design", pointer="thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md")</action>
+  <skip-if>No lifecycle_start_request was made (quick-mode or trivial path)</skip-if>
+</phase>
+
+<phase name="record-plan" trigger="after planner subagent returns a plan path">
+  <action>Call lifecycle_record_artifact(issue_number, kind="plan", pointer="thoughts/shared/plans/YYYY-MM-DD-{topic}.md")</action>
+  <skip-if>No active lifecycle</skip-if>
+</phase>
+
+<phase name="finish" trigger="after executor subagent returns">
+  <action>Inspect the executor's final report</action>
+  <if condition="all batches green AND no BLOCKED tasks">
+    Call lifecycle_finish(issue_number, merge_strategy="auto")
+    The tool merges the branch, pushes main, closes the issue, removes the worktree.
+    Report the final outcome to the user.
+  </if>
+  <if condition="executor reports BLOCKED tasks">
+    Do NOT call lifecycle_finish. Lifecycle state stays at IN_PROGRESS.
+    Report the blocked tasks to the user and STOP. The user decides next step.
+  </if>
+</phase>
+
+<rule>Single attempt per call. Do not retry on failure; surface the tool's note and halt.</rule>
+<rule>The /issue slash command is for the user to inspect or manually transition state, not for you.</rule>
 </lifecycle>
 
 <process>

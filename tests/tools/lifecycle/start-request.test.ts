@@ -11,8 +11,6 @@ const BRANCH = "issue/12-add-lifecycle-start";
 const WORKTREE = "/tmp/micode-issue-12";
 const UPDATED_AT = 1_777_222_400_000;
 const SUMMARY = "Add lifecycle start";
-const OWNER_PLACEHOLDER = "unknown-owner";
-const REPO_PLACEHOLDER = "unknown-repo";
 const PREFLIGHT_NOTE = "pre_flight_failed: origin points to upstream";
 
 interface FakeHandle {
@@ -105,8 +103,6 @@ describe("lifecycle_start_request tool", () => {
         summary: SUMMARY,
         goals: ["Open an issue", "Create a worktree"],
         constraints: ["Do not touch contract"],
-        ownerLogin: OWNER_PLACEHOLDER,
-        repo: REPO_PLACEHOLDER,
       },
     ]);
     expect(output).toContain("| Issue # | Branch | Worktree | State |");
@@ -121,5 +117,13 @@ describe("lifecycle_start_request tool", () => {
     expect(output.startsWith("## Lifecycle pre-flight failed")).toBe(true);
     expect(output).toContain(PREFLIGHT_NOTE);
     expect(output).toContain("| Issue # | Branch | Worktree | State |");
+  });
+
+  it("forwards exactly summary, goals, and constraints with no extra fields", async () => {
+    const fake = createHandle(createRecord());
+
+    await executeStart(fake.handle);
+
+    expect(Object.keys(fake.calls[0]).sort()).toEqual(["constraints", "goals", "summary"]);
   });
 });

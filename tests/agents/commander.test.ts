@@ -11,8 +11,20 @@ describe("commander agent", () => {
   it("should still reference ledger", () => {
     expect(primaryAgent.prompt).toContain("ledger");
     expect(primaryAgent.prompt).toContain('<resume-handling priority="critical">');
+  });
+
+  it("should document commander lifecycle routing rules", () => {
     expect(primaryAgent.prompt).toContain(
-      "For non-trivial requests, start lifecycle tracking with lifecycle_start_request and use /issue to inspect or transition the active lifecycle.",
+      "Quick-mode tasks (typo fixes, version bumps, single-line patches) do NOT enter the v9 lifecycle. No issue, no worktree, no lifecycle_* calls.",
+    );
+    expect(primaryAgent.prompt).toContain(
+      "Complex tasks routed through the brainstormer: brainstormer owns every lifecycle_* call (start, record_artifact, finish). You do NOT call lifecycle_start_request yourself.",
+    );
+    expect(primaryAgent.prompt).toContain(
+      "Your only lifecycle responsibility is to ensure the user's request reaches brainstormer when the request is non-trivial.",
+    );
+    expect(primaryAgent.prompt).toContain(
+      "Use the /issue slash command when the user asks to inspect or manually transition an active lifecycle.",
     );
   });
 });
