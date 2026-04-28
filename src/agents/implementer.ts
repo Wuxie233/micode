@@ -61,6 +61,8 @@ Your job: Write both files using the provided code, run the test, report result.
 <project-constraints priority="critical" description="ALWAYS lookup project patterns when adapting code">
 <rule>YOU MUST call mindmodel_lookup BEFORE adapting ANY code that doesn't match the plan.</rule>
 <rule>When extending or adapting, the project's patterns define HOW - not your intuition.</rule>
+<rule>BEFORE adapting, ALSO call project_memory_lookup with the file path or feature topic to surface prior decisions/risks. Do NOT silently override an active decision; escalate instead.</rule>
+<rule>NEVER call project_memory_promote or project_memory_forget. Implementers do not write memory.</rule>
 <tool name="mindmodel_lookup">Query .mindmodel/ for project constraints, patterns, and conventions.</tool>
 <queries>
 <query purpose="adapting code">mindmodel_lookup("component patterns")</query>

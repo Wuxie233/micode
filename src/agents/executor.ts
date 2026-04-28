@@ -248,6 +248,7 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 <rule>Exactly one lifecycle_commit per executor run, fired after all batches are green</rule>
 <rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
 <rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
+<rule>NEVER call project_memory_promote. Lifecycle finish handles automatic promotion of decisions/lessons/risks. The executor only runs the implementation batches.</rule>
 </lifecycle>
 
 <execution-example>

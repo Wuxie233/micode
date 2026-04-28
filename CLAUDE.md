@@ -107,6 +107,17 @@
 - CI runs full `bun run check` on every PR
 - Run `bun run check` after substantive changes. If build/runtime-sensitive code changed, also run `bun run build`
 
+## Project Memory
+
+micode is the host project for the Project Memory Core feature. We follow the same workflow we ship:
+
+- Use `project_memory_lookup` before any non-trivial design or plan in this repo.
+- Use `/memory` for quick health snapshots; with arguments it runs lookup.
+- Do not call `project_memory_promote` manually unless the user explicitly says "save to project memory" or you are curating a historical artifact. Lifecycle finish promotes automatically.
+- Never put secrets, tokens, or large raw transcripts into project memory. The store rejects obvious secrets and we must not push them upstream either.
+- Treat project memory as durable historical context. Code style / architectural patterns still go through `.mindmodel/`.
+- When self-hosting changes that affect runtime, sync the change into `/root/.micode`, run `bun run build`, then ask the user before restarting OpenCode.
+
 ## Local OpenCode Runtime
 
 - On this server, `~/.config/opencode/opencode.json` loads the live micode plugin from `/root/.micode`.

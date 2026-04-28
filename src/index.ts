@@ -126,6 +126,12 @@ const PLUGIN_COMMANDS = {
     agent: "artifact-searcher",
     template: "Search for: $ARGUMENTS",
   },
+  memory: {
+    description: "Inspect or query durable project memory (entities, decisions, lessons, risks)",
+    agent: PRIMARY_AGENT_NAME,
+    template:
+      "Use the project_memory_* tools to handle this request. Default behaviour: if no arguments are given, run project_memory_health and report a concise summary; if arguments are given, run project_memory_lookup with the arguments as the query. $ARGUMENTS",
+  },
 };
 
 const PERSIST_START_LABEL = "persist.start";
