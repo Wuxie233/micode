@@ -36,6 +36,7 @@ interface SessionRecord {
   lastUpdateAt: number;
   doneAt: number | null;
   optedOut: boolean;
+  systemTitleConfirmed: boolean;
   topic: string | null;
   topicSource: TitleSource | null;
 }
@@ -56,9 +57,17 @@ const isUserAuthoredTitle = (current: string | null, lastWritten: string | null)
   return current !== lastWritten;
 };
 
+const observeCurrentTitle = (record: SessionRecord, current: string | null): void => {
+  if (record.systemTitleConfirmed) return;
+  if (record.lastTitle === null) return;
+  if (current === null || current === "") return;
+  if (current === record.lastTitle) record.systemTitleConfirmed = true;
+};
+
 const detectOptOut = (record: SessionRecord, current: string | null): boolean => {
   if (record.optedOut) return true;
   if (record.lastTitle === null) return false;
+  if (!record.systemTitleConfirmed) return false;
   return isUserAuthoredTitle(current, record.lastTitle);
 };
 
@@ -119,6 +128,7 @@ const newRecord = (): SessionRecord => ({
   lastUpdateAt: 0,
   doneAt: null,
   optedOut: false,
+  systemTitleConfirmed: false,
   topic: null,
   topicSource: null,
 });
@@ -138,6 +148,8 @@ const getOrCreate = (records: Map<string, SessionRecord>, sessionID: string): Se
 };
 
 const decideForRecord = (record: SessionRecord, input: DecisionInput): TitleDecision => {
+  observeCurrentTitle(record, input.currentTitle);
+
   if (detectOptOut(record, input.currentTitle)) {
     record.optedOut = true;
     return skip("opted-out");

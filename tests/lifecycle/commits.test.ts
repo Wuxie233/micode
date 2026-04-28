@@ -6,6 +6,7 @@ import { config } from "@/utils/config";
 
 const CWD = "/workspace/micode";
 const ISSUE_NUMBER = 42;
+const BRANCH = "issue/42-add-commit-flow";
 const SHA = "abc123def456";
 const EMPTY_OUTPUT = "";
 const OK_EXIT_CODE = 0;
@@ -16,7 +17,7 @@ const MESSAGE = "feat(lifecycle): add commit flow (#42)";
 const STAGE_ARGS = ["add", "--all"] as const;
 const COMMIT_ARGS = ["commit", "-m", MESSAGE] as const;
 const SHA_ARGS = ["rev-parse", "HEAD"] as const;
-const PUSH_ARGS = ["push"] as const;
+const PUSH_ARGS = ["push", "--set-upstream", "origin", BRANCH] as const;
 
 interface RunnerCall {
   readonly args: readonly string[];
@@ -30,6 +31,7 @@ interface FakeRunner extends LifecycleRunner {
 const INPUT: CommitAndPushInput = {
   cwd: CWD,
   issueNumber: ISSUE_NUMBER,
+  branch: BRANCH,
   type: "feat",
   scope: "lifecycle",
   summary: "add commit flow",
@@ -143,5 +145,20 @@ describe("commitAndPush", () => {
       { args: PUSH_ARGS, cwd: CWD },
     ]);
     expect(sleep).toHaveBeenCalledWith(config.lifecycle.pushRetryBackoffMs);
+  });
+
+  it("pushes with explicit origin and --set-upstream on first push", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`), createRun()]);
+
+    const outcome = await commitAndPush(runner, INPUT);
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.pushed).toBe(true);
+    const pushCalls = runner.calls.filter((c) => c.args[0] === "push");
+    expect(pushCalls).toHaveLength(1);
+    expect(pushCalls[0]).toEqual({
+      args: ["push", "--set-upstream", "origin", BRANCH],
+      cwd: CWD,
+    });
   });
 });

@@ -524,6 +524,7 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
     const outcome = await commitAndPush(context.runner, {
       cwd: record.worktree,
       issueNumber,
+      branch: record.branch,
       type: DEFAULT_COMMIT_TYPE,
       scope: commitInput.scope,
       summary: commitInput.summary,
