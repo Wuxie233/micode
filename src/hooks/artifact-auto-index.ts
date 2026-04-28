@@ -8,6 +8,7 @@ import { log } from "@/utils/logger";
 
 const LEDGER_PATH_PATTERN = /thoughts\/ledgers\/CONTINUITY_(.+)\.md$/;
 const PLAN_PATH_PATTERN = /thoughts\/shared\/plans\/(.+)\.md$/;
+const DESIGN_PATH_PATTERN = /thoughts\/shared\/designs\/(.+)\.md$/;
 
 export function parseLedger(
   content: string,
@@ -92,6 +93,36 @@ function parsePlan(
   };
 }
 
+function parseDesign(
+  content: string,
+  filePath: string,
+  fileName: string,
+): {
+  id: string;
+  title: string;
+  filePath: string;
+  overview: string;
+  approach: string;
+} {
+  const titleMatch = content.match(/^# (.+)$/m);
+  const title = titleMatch?.[1] || fileName;
+
+  // Designs use either "## Overview" or "## Problem Statement" as the overview header.
+  const overviewMatch = content.match(/## (?:Overview|Problem Statement)\n\n([\s\S]*?)(?=\n## |$)/);
+  const overview = overviewMatch?.[1]?.trim() || "";
+
+  const approachMatch = content.match(/## Approach\n\n([\s\S]*?)(?=\n## |$)/);
+  const approach = approachMatch?.[1]?.trim() || "";
+
+  return {
+    id: `design-${fileName}`,
+    title,
+    filePath,
+    overview,
+    approach,
+  };
+}
+
 interface ArtifactAutoIndexHooks {
   "tool.execute.after": (
     input: { tool: string; args?: Record<string, unknown> },
@@ -128,6 +159,16 @@ export function createArtifactAutoIndexHook(_ctx: PluginInput): ArtifactAutoInde
           const content = readFileSync(filePath, "utf-8");
           const index = await getArtifactIndex();
           const record = parsePlan(content, filePath, planMatch[1]);
+          await index.indexPlan(record);
+          return;
+        }
+
+        // Check if it's a design (indexed under the plan store; designs share the title/overview/approach shape)
+        const designMatch = filePath.match(DESIGN_PATH_PATTERN);
+        if (designMatch) {
+          const content = readFileSync(filePath, "utf-8");
+          const index = await getArtifactIndex();
+          const record = parseDesign(content, filePath, designMatch[1]);
           await index.indexPlan(record);
           return;
         }

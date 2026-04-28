@@ -196,7 +196,7 @@ invocation with no retry. If a tool reports failure, surface it to the user and 
 
 <phase name="finalizing" trigger="after presenting design">
   <action>Write validated design to thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md</action>
-  <action>Commit the design document to git (if git add fails because the file is gitignored, skip the commit — NEVER force-add ignored files)</action>
+  <action>Try lifecycle_current to discover the active issue. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the design. If kind=none, fall back to plain git add + git commit -m "docs(design): ...". If git add fails because the file is gitignored, skip silently: NEVER force-add ignored files. If kind=ambiguous, surface the candidates to the user and stop.</action>
   <action>IMMEDIATELY spawn planner - do NOT ask "Ready for planner?"</action>
   <spawn>
     Task(

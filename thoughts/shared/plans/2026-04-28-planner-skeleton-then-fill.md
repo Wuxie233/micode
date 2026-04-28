@@ -1,3 +1,169 @@
+---
+date: 2026-04-28
+topic: "planner skeleton-then-fill write protocol"
+contract: none
+---
+
+# Planner Skeleton-Then-Fill Write Protocol Implementation Plan
+
+**Goal:** Add a skeleton-then-fill write protocol to the planner agent's system prompt so large plan files survive mid-stream tool-call failures via incremental Edit calls.
+
+**Architecture:** Prompt-only change inside `src/agents/planner.ts`. Modify the existing `<output-format>` template to embed `<!-- BATCH-N-TASKS -->` placeholder markers in the skeleton, add two new prompt sections (`<write-protocol>` and `<resume-rule>`) that mandate one `Write` for the skeleton followed by one `Edit` per batch, extend `<principles>` with the protocol invariants, and extend `<never-do>` with the anti-patterns. No new files, no new tools, no logic change. Downstream consumers (executor, reviewer, lifecycle) see a byte-equivalent final artifact.
+
+**Design:** [thoughts/shared/designs/2026-04-28-planner-skeleton-then-fill-design.md](../designs/2026-04-28-planner-skeleton-then-fill-design.md)
+
+**Contract:** none (single-domain plan, prompt-only change to one file)
+
+**Planner notes (gap-filling decisions):**
+
+- Design says "extend never-do" but does not enumerate every wording. I'm using the four anti-patterns listed in the design's "Anti-pattern guard rails" section verbatim as `<forbidden>` entries.
+- Design does not specify the exact prompt-section names. I'm using `<write-protocol>` for the skeleton-then-fill rules and `<resume-rule>` for the resume behavior, placed immediately after `<output-format>` and before `<execution-example>`, so the contract template stays grouped and the protocol that operates on it is read next.
+- Design says the oversize-task escape hatch is "rare". I'm documenting it as a single `<oversize-task>` subsection inside `<write-protocol>`, not a top-level section, to avoid bloating the prompt for a corner case.
+- The single existing `tests/agents/planner.test.ts` does string-presence assertions on the source. I'll extend that file with new assertions covering the new prompt sections and markers, rather than creating a new test file, because the test concern is identical.
+
+---
+
+## Dependency Graph
+
+```
+Batch 1 (sequential - 1 implementer): 1.1 [planner prompt edit + test extension]
+```
+
+Only one task. Single file edit, single test file extension. No batching needed.
+
+---
+
+## Batch 1: Planner Prompt Edit (1 implementer)
+
+### Task 1.1: Add skeleton-then-fill protocol to planner agent prompt
+
+**File:** `src/agents/planner.ts`
+**Test:** `tests/agents/planner.test.ts` (extend existing file)
+**Depends:** none
+**Domain:** general
+
+**Edit summary:**
+
+1. Modify the `<output-format>` `<template>` block (currently lines 360-444) so that after each batch heading, instead of inlining `### Task N.M:` examples, the skeleton uses an HTML-comment placeholder. The Task example is moved into a new `<task-node-format>` sibling block so the planner still has a per-task shape reference.
+2. Add a new `<write-protocol>` section immediately after `</output-format>` (current line 445) and before `<execution-example>` (current line 447). This section declares the two-phase Write+Edit flow, the marker syntax, the sequential-Edit rule, the completion check, and the oversize-task escape hatch.
+3. Add a new `<resume-rule>` section immediately after `</write-protocol>`. This section declares the read-before-write check and the three resume cases (full skeleton + remaining markers, mismatched skeleton, no file).
+4. Extend `<principles>` (currently lines 477-488) with two new principles: `skeleton-first` and `one-edit-per-batch`.
+5. Extend `<never-do>` (currently lines 504-515) with four new `<forbidden>` entries from the design's anti-pattern guard rails.
+
+**Template-literal escaping rules (critical for `bun run check`):**
+
+- The prompt is a JS template literal delimited by backticks. Every literal backtick inside the prompt MUST be escaped as `` \` ``.
+- Every literal `${...}` inside the prompt MUST be escaped as `\${...}` to prevent JS interpolation.
+- HTML-comment markers `<!-- BATCH-N-TASKS -->` contain no backticks or `${...}`, so they need no escaping.
+- The fenced code blocks inside the template (current lines 383-388, 402-408, 428-434) already use `` \` `` triple-escaping; preserve that pattern when adding the placeholder lines.
+- Do NOT introduce any unescaped backtick or `${` inside the new prompt content.
+
+```typescript
+// COMPLETE test code - copy-paste ready
+// Replaces the contents of tests/agents/planner.test.ts
+import { describe, expect, it } from "bun:test";
+
+describe("planner agent", () => {
+  it("should use spawn_agent tool for subagent research", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("spawn_agent tool");
+    expect(source).toContain('agent="codebase-locator"');
+  });
+
+  it("should have parallel research documentation", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("parallel");
+  });
+
+  it("should enforce synchronous spawn_agent usage", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("synchronously");
+  });
+
+  it("should mention running library research in parallel with agents", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("context7");
+    expect(source).toContain("btca_ask");
+  });
+
+  it("should declare the skeleton-then-fill write protocol", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("<write-protocol>");
+    expect(source).toContain("</write-protocol>");
+  });
+
+  it("should embed BATCH placeholder markers in the skeleton template", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("<!-- BATCH-N-TASKS -->");
+  });
+
+  it("should mandate one Edit call per batch", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("One Edit per batch");
+  });
+
+  it("should declare a resume rule for partially-filled plan files", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("<resume-rule>");
+    expect(source).toContain("</resume-rule>");
+  });
+
+  it("should forbid re-editing already-filled batches", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("Never re-Edit a batch that has already been filled");
+  });
+
+  it("should forbid using Write to overwrite a partially-filled file", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("Never use Write to overwrite a partially-filled file");
+  });
+
+  it("should declare the skeleton-first principle", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("skeleton-first");
+    expect(source).toContain("one-edit-per-batch");
+  });
+
+  it("should document the oversize-task escape hatch", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("BATCH-N-TASK-Y");
+  });
+
+  it("should still parse as a valid module and export plannerAgent", async () => {
+    const mod = await import("../../src/agents/planner");
+    expect(mod.plannerAgent).toBeDefined();
+    expect(mod.plannerAgent.mode).toBe("subagent");
+    expect(typeof mod.plannerAgent.prompt).toBe("string");
+    expect(mod.plannerAgent.prompt.length).toBeGreaterThan(0);
+  });
+});
+```
+
+```typescript
 // COMPLETE implementation - copy-paste ready
 // This is the FULL replacement for src/agents/planner.ts.
 // All edits below land in one file. The diff vs current file:
@@ -186,8 +352,7 @@ When design is silent on implementation details, make confident decisions:
 
 <phase name="output">
   <action>Write plan to thoughts/shared/plans/YYYY-MM-DD-{topic}.md using the skeleton-then-fill protocol (see <write-protocol>)</action>
-  <action>Try lifecycle_current. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the plan. If kind=none, leave the plan uncommitted (a plan without an active lifecycle is likely a design-only flow; the user will commit when ready). If kind=ambiguous, surface the candidates to the user and stop.</action>
-  <action>Do NOT run git commands directly except as the explicit fallback above</action>
+  <action>Do NOT commit - user will commit when ready</action>
 </phase>
 </process>
 
@@ -611,7 +776,7 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
 </state-tracking>
 
 <never-do>
-  <forbidden>NEVER run git commands directly except the documented lifecycle_commit / git fallback in the output phase</forbidden>
+  <forbidden>NEVER run git commands (git status, git add, etc.) - you're just writing a plan</forbidden>
   <forbidden>NEVER run ls or explore the filesystem - read the design doc and write the plan</forbidden>
   <forbidden>NEVER create a task that modifies multiple files - ONE file per task</forbidden>
   <forbidden>NEVER put dependent tasks in the same batch - they must be in different batches</forbidden>
@@ -627,3 +792,42 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <forbidden>Never put placeholder markers (<!-- BATCH-*-TASKS -->) inside Task code blocks, fenced regions, or anywhere they would create false replacement targets</forbidden>
 </never-do>`,
 };
+```
+
+**Verify:**
+
+```bash
+bun test tests/agents/planner.test.ts
+bun run check
+```
+
+The first command runs the extended planner-prompt-shape tests. The second runs the full quality gate (Biome + ESLint + tsc + bun test) and is the authoritative pass criterion: it catches any template-literal escaping mistake (unescaped backtick, unescaped `${`, broken interpolation) as a TypeScript or Biome error before any other test runs.
+
+**Commit:** `feat(planner): add skeleton-then-fill write protocol`
+
+---
+
+## Implementer notes
+
+**Why one task and not several:**
+
+This is a system-prompt edit to a single file. The design constrains us to "prompt-only inside `src/agents/planner.ts`. No new files, no logic changes, no new tools." Splitting a single-file prompt edit into multiple micro-tasks would force the implementer to issue overlapping Edits to the same file in the same batch, violating the one-file-one-task and same-batch-independence principles. So this plan is one task by construction.
+
+**Why extend the existing test file rather than create a new one:**
+
+`tests/agents/planner.test.ts` already exists and uses the exact pattern this change needs (read source as string, assert presence of prompt fragments). Creating a new sibling file like `tests/agents/planner-protocol.test.ts` would scatter related assertions across files for no benefit. The existing file is the natural home.
+
+**Template-literal pitfalls the implementer must respect:**
+
+The current planner.ts uses backtick-delimited template literals across the entire prompt. The literal contains many fenced markdown code blocks that already escape backticks as `` \` ``. The new content this plan adds:
+
+- Markdown comments `<!-- BATCH-N-TASKS -->` contain no backticks or `${` and need no escaping.
+- The `<skeleton-template>` block in the new prompt uses fenced code blocks for the dep graph; preserve the `` \`\`\` `` triple-escape pattern from the original.
+- The `<task-node-format>` block uses inline backticks for paths (`` \`exact/path/to/file.ts\` ``) and fenced blocks for the test/impl examples; copy the pattern verbatim from the original `<template>`.
+- No `${...}` should appear unescaped anywhere in the new prompt content. The placeholders use angle-bracket syntax like `{topic}` (already unproblematic), or are HTML comments (unproblematic).
+
+If `bun run check` reports a "Unexpected token" or "expected expression" error inside `src/agents/planner.ts`, the cause is almost certainly an unescaped backtick or `${` somewhere in the new content. Re-scan and fix.
+
+**What downstream agents see:**
+
+After this change, the FINAL plan file content is structurally identical to what today's planner produces (same frontmatter, same dep graph code block, same Task node fields, same contract emission rule). Executor, reviewer, lifecycle, and artifact-search consumers see byte-equivalent input. Their behavior does not change.
