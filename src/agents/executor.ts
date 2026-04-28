@@ -227,6 +227,29 @@ ALWAYS do: implementer1,2,3 (parallel) → reviewer1,2,3 (parallel) → next bat
 <rule>Continue to next batch even if some tasks are blocked</rule>
 </rules>
 
+<lifecycle>
+The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as follows.
+
+<phase name="parse-plan-frontmatter" trigger="reading the plan file">
+  <action>Read the YAML frontmatter block at the top of the plan (between the first two --- lines)</action>
+  <action>Extract issue (number) and scope (string) if present</action>
+  <action>If issue is absent, the plan is in quick-mode; skip the lifecycle_commit phase entirely</action>
+  <action>If issue is present but scope is absent, treat that as a malformed plan and report BLOCKED with note "scope required when issue is set"</action>
+</phase>
+
+<phase name="commit" trigger="after final batch reports all tasks DONE and zero BLOCKED tasks remain">
+  <action>Call lifecycle_commit(issue_number, scope, summary) ONCE for the whole plan</action>
+  <action>summary is a 50-character concise version of the plan's title (the # heading on the plan)</action>
+  <action>Push is implicit; the tool auto-pushes per config.lifecycle.autoPush</action>
+  <action>If the tool returns pushed=false, surface the SHA and the note in your final report. Do NOT retry; that is the user's call.</action>
+  <skip-if>Any task is BLOCKED, or issue was absent from frontmatter</skip-if>
+</phase>
+
+<rule>Exactly one lifecycle_commit per executor run, fired after all batches are green</rule>
+<rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
+<rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
+</lifecycle>
+
 <execution-example>
 # Batch 1: Foundation (8 micro-tasks, all parallel)
 # Plan header declared: **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md

@@ -155,8 +155,9 @@ const touch = (record: LifecycleRecord): LifecycleRecord => ({
   updatedAt: Date.now(),
 });
 
-const issueUrlFor = (input: StartRequestInput, issueNumber: number): string => {
-  return `${GITHUB_REPO_BASE_URL}/${input.ownerLogin}/${input.repo}/issues/${issueNumber}`;
+const issueUrlFor = (preflight: PreFlightResult, issueNumber: number): string => {
+  if (preflight.nameWithOwner.length === 0) return EMPTY_TEXT;
+  return `${GITHUB_REPO_BASE_URL}/${preflight.nameWithOwner}/issues/${issueNumber}`;
 };
 
 const slugify = (summary: string): string => {
@@ -359,9 +360,13 @@ const createWorktree = async (
 const abortStart = async (
   context: LifecycleContext,
   input: StartRequestInput,
+  preflight: PreFlightResult,
   note: string,
 ): Promise<LifecycleRecord> => {
-  const identity = { issueNumber: ABORTED_ISSUE_NUMBER, issueUrl: issueUrlFor(input, ABORTED_ISSUE_NUMBER) };
+  const identity = {
+    issueNumber: ABORTED_ISSUE_NUMBER,
+    issueUrl: issueUrlFor(preflight, ABORTED_ISSUE_NUMBER),
+  };
   const record = createRecord(input, context.worktreesRoot, identity, LIFECYCLE_STATES.ABORTED, [note]);
   await context.store.save(record);
   return record;
@@ -460,10 +465,10 @@ const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
   return async (request) => {
     const preflight = await classifyRepo(context.runner, context.cwd);
     const note = getPreFlightNote(preflight);
-    if (note) return abortStart(context, request, note);
+    if (note) return abortStart(context, request, preflight, note);
 
     const enableNote = await ensureIssuesEnabled(context.runner, preflight);
-    if (enableNote) return abortStart(context, request, enableNote);
+    if (enableNote) return abortStart(context, request, preflight, enableNote);
 
     const identity = await createIssue(context.runner, request);
     const opened = createRecord(request, context.worktreesRoot, identity, LIFECYCLE_STATES.ISSUE_OPEN);

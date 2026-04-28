@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
 
@@ -365,7 +367,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   const lifecycleHandle = createLifecycleStore({
     runner: createLifecycleRunner(),
-    worktreesRoot: ctx.directory,
+    worktreesRoot: dirname(ctx.directory),
     cwd: ctx.directory,
   });
   const lifecycleTools = createLifecycleTools(lifecycleHandle);

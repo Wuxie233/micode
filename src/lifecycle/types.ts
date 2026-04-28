@@ -29,8 +29,6 @@ export interface StartRequestInput {
   readonly summary: string;
   readonly goals: readonly string[];
   readonly constraints: readonly string[];
-  readonly ownerLogin: string;
-  readonly repo: string;
 }
 
 export interface LifecycleRecord {

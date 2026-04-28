@@ -23,13 +23,13 @@ export const LifecycleRecordSchema = v.object({
   updatedAt: v.number(),
 });
 
-const formatPath = (issue: v.InferIssue<typeof LifecycleRecordSchema>): string => {
+const formatPath = (issue: v.BaseIssue<unknown>): string => {
   const path = issue.path?.map((item) => String(item.key)).join(PATH_SEPARATOR);
   if (!path) return ROOT_PATH;
   return path;
 };
 
-const formatIssue = (issue: v.InferIssue<typeof LifecycleRecordSchema>): string => {
+const formatIssue = (issue: v.BaseIssue<unknown>): string => {
   return `${formatPath(issue)}: ${issue.message}`;
 };
 
@@ -38,5 +38,21 @@ export function parseLifecycleRecord(
 ): { ok: true; record: LifecycleRecord } | { ok: false; issues: string[] } {
   const parsed = v.safeParse(LifecycleRecordSchema, raw);
   if (parsed.success) return { ok: true, record: parsed.output };
+  return { ok: false, issues: parsed.issues.map(formatIssue) };
+}
+
+export const StartRequestInputSchema = v.strictObject({
+  summary: v.string(),
+  goals: v.array(v.string()),
+  constraints: v.array(v.string()),
+});
+
+export type StartRequestInputParsed = v.InferOutput<typeof StartRequestInputSchema>;
+
+export function parseStartRequestInput(
+  raw: unknown,
+): { ok: true; input: StartRequestInputParsed } | { ok: false; issues: string[] } {
+  const parsed = v.safeParse(StartRequestInputSchema, raw, { abortEarly: false });
+  if (parsed.success) return { ok: true, input: parsed.output };
   return { ok: false, issues: parsed.issues.map(formatIssue) };
 }

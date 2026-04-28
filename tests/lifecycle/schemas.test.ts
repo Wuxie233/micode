@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import * as v from "valibot";
 
-import { LifecycleRecordSchema, parseLifecycleRecord } from "../../src/lifecycle/schemas";
-import type { LifecycleRecord } from "../../src/lifecycle/types";
-import { ARTIFACT_KINDS, LIFECYCLE_STATES } from "../../src/lifecycle/types";
+import { LifecycleRecordSchema, parseLifecycleRecord, parseStartRequestInput } from "@/lifecycle/schemas";
+import type { LifecycleRecord } from "@/lifecycle/types";
+import { ARTIFACT_KINDS, LIFECYCLE_STATES } from "@/lifecycle/types";
 
 const SAMPLE_ISSUE = 1;
 const SAMPLE_TIME = 1_777_222_400_000;
@@ -65,5 +65,22 @@ describe("lifecycle schemas", () => {
     const record = { ...createRecord(), artifacts: {} };
 
     expect(parseLifecycleRecord(record)).toEqual({ ok: true, record });
+  });
+});
+
+describe("parseStartRequestInput", () => {
+  it("accepts the canonical shape", () => {
+    const result = parseStartRequestInput({ summary: "x", goals: ["a"], constraints: ["b"] });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects extra fields", () => {
+    const result = parseStartRequestInput({ summary: "x", goals: [], constraints: [], ownerLogin: "vtemian" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects missing required fields", () => {
+    const result = parseStartRequestInput({ summary: "x" });
+    expect(result.ok).toBe(false);
   });
 });
