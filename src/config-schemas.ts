@@ -18,6 +18,7 @@ const AgentOverrideSchema = v.object({
 
 const MicodeFeaturesSchema = v.object({
   mindmodelInjection: v.optional(v.boolean()),
+  conversationTitleChatFallback: v.optional(v.boolean()),
 });
 
 /**
