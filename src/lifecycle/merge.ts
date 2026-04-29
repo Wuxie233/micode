@@ -40,7 +40,7 @@ const CHECK_STATE = {
 } as const;
 
 const OK_EXIT_CODE = 0;
-const MAIN_BRANCH = "main";
+const BASE_BRANCH_REQUIRED = "base branch not resolved";
 const PR_CHECKS_FAILED = "pr_checks_failed";
 const CHECK_TIMEOUT_DETAIL = "timeout";
 const OUTPUT_SEPARATOR = " ";
@@ -90,7 +90,12 @@ interface CleanupOutcome {
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
 
-const getBaseBranch = (input: FinishLifecycleInput): string => input.baseBranch ?? MAIN_BRANCH;
+const getBaseBranch = (input: FinishLifecycleInput): string => {
+  if (input.baseBranch === undefined || input.baseBranch.length === 0) {
+    throw new Error(`${BASE_BRANCH_REQUIRED} for issue branch ${input.branch}`);
+  }
+  return input.baseBranch;
+};
 
 const createOutcome = (
   merged: boolean,

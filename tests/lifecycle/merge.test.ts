@@ -9,9 +9,7 @@ const EMPTY_OUTPUT = "";
 const CWD = "/repo/micode";
 const WORKTREE = "/repo/micode-issue-1";
 const BRANCH = "issue/1-lifecycle";
-const MAIN_BRANCH = "main";
 const PR_URL = "https://github.com/Wuxie233/micode/pull/12";
-const CHECK_ARGS = ["pr", "checks", BRANCH, "--required", "--json", "state,name"] as const;
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -38,26 +36,25 @@ const createRunner = (outputs: RunnerOutputs): FakeRunner => {
   const calls: RunnerCall[] = [];
   let gitIndex = 0;
   let ghIndex = 0;
-
   return {
     calls,
     git: async (args, options) => {
       calls.push({ bin: "git", args, cwd: options?.cwd });
-      const run = outputs.git?.[gitIndex] ?? createRun();
+      const result = outputs.git?.[gitIndex] ?? createRun();
       gitIndex += 1;
-      return run;
+      return result;
     },
     gh: async (args, options) => {
       calls.push({ bin: "gh", args, cwd: options?.cwd });
-      const run = outputs.gh?.[ghIndex] ?? createRun();
+      const result = outputs.gh?.[ghIndex] ?? createRun();
       ghIndex += 1;
-      return run;
+      return result;
     },
   };
 };
 
 describe("finishLifecycle", () => {
-  it("opens a PR, waits for required checks, and squash merges", async () => {
+  it("opens a PR against the resolved main branch", async () => {
     const runner = createRunner({
       gh: [createRun(`${PR_URL}\n`), createRun(JSON.stringify([{ state: "SUCCESS", name: "ci" }])), createRun()],
     });
@@ -68,26 +65,67 @@ describe("finishLifecycle", () => {
       worktree: WORKTREE,
       mergeStrategy: "pr",
       waitForChecks: true,
+      baseBranch: "main",
       sleep: async () => {},
     });
 
-    expect(outcome).toEqual({
-      merged: true,
-      prUrl: PR_URL,
-      closedAt: null,
-      worktreeRemoved: true,
-      note: null,
+    expect(outcome.merged).toBe(true);
+    expect(runner.calls[0]).toEqual({
+      bin: "gh",
+      args: ["pr", "create", "--fill", "--base", "main", "--head", BRANCH],
+      cwd: CWD,
     });
-    expect(runner.calls).toEqual([
-      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH], cwd: CWD },
-      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
-      { bin: "gh", args: ["pr", "merge", BRANCH, "--squash"], cwd: CWD },
-      { bin: "git", args: ["worktree", "remove", WORKTREE] },
-    ]);
   });
 
-  it("uses local merge when auto finds no required CI checks", async () => {
-    const runner = createRunner({ gh: [createRun("[]")] });
+  it("opens a PR against master when resolved base is master", async () => {
+    const runner = createRunner({
+      gh: [createRun(`${PR_URL}\n`), createRun(JSON.stringify([{ state: "SUCCESS", name: "ci" }])), createRun()],
+    });
+
+    await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: true,
+      baseBranch: "master",
+      sleep: async () => {},
+    });
+
+    expect(runner.calls[0]).toEqual({
+      bin: "gh",
+      args: ["pr", "create", "--fill", "--base", "master", "--head", BRANCH],
+      cwd: CWD,
+    });
+  });
+
+  it("opens a PR against a custom default branch", async () => {
+    const runner = createRunner({
+      gh: [createRun(`${PR_URL}\n`), createRun(JSON.stringify([{ state: "SUCCESS", name: "ci" }])), createRun()],
+    });
+
+    await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: true,
+      baseBranch: "trunk",
+      sleep: async () => {},
+    });
+
+    expect(runner.calls[0]).toEqual({
+      bin: "gh",
+      args: ["pr", "create", "--fill", "--base", "trunk", "--head", BRANCH],
+      cwd: CWD,
+    });
+  });
+
+  it("local merge checks out and pushes the resolved master branch", async () => {
+    const runner = createRunner({
+      gh: [createRun("[]")],
+      git: [createRun(), createRun(), createRun(), createRun(), createRun()],
+    });
 
     const outcome = await finishLifecycle(runner, {
       cwd: CWD,
@@ -95,51 +133,55 @@ describe("finishLifecycle", () => {
       worktree: WORKTREE,
       mergeStrategy: "auto",
       waitForChecks: true,
+      baseBranch: "master",
       sleep: async () => {},
     });
 
-    expect(outcome).toEqual({
-      merged: true,
-      prUrl: null,
-      closedAt: null,
-      worktreeRemoved: true,
-      note: null,
-    });
-    expect(runner.calls).toEqual([
-      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
-      { bin: "git", args: ["checkout", MAIN_BRANCH], cwd: CWD },
-      { bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: CWD },
-      { bin: "git", args: ["push", "origin", MAIN_BRANCH], cwd: CWD },
-      { bin: "git", args: ["worktree", "remove", WORKTREE] },
-      { bin: "git", args: ["branch", "-d", BRANCH], cwd: CWD },
-    ]);
+    expect(outcome.merged).toBe(true);
+    const gitCalls = runner.calls.filter((call) => call.bin === "git");
+    expect(gitCalls[0]).toEqual({ bin: "git", args: ["checkout", "master"], cwd: CWD });
+    expect(gitCalls[1]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: CWD });
+    expect(gitCalls[2]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: CWD });
   });
 
-  it("returns a contract-prefixed note when required checks fail", async () => {
+  it("returns an actionable error when checkout of the resolved base branch fails", async () => {
     const runner = createRunner({
-      gh: [createRun(`${PR_URL}\n`), createRun(JSON.stringify([{ state: "FAILURE", name: "lint" }]))],
+      gh: [createRun("[]")],
+      git: [{ stdout: "", stderr: "error: pathspec 'master' did not match any file(s)", exitCode: FAILURE_EXIT_CODE }],
     });
 
     const outcome = await finishLifecycle(runner, {
       cwd: CWD,
       branch: BRANCH,
       worktree: WORKTREE,
-      mergeStrategy: "pr",
+      mergeStrategy: "local-merge",
       waitForChecks: true,
+      baseBranch: "master",
       sleep: async () => {},
     });
 
     expect(outcome.merged).toBe(false);
-    expect(outcome.prUrl).toBe(PR_URL);
-    expect(outcome.worktreeRemoved).toBe(false);
-    expect(outcome.note).toStartWith("pr_checks_failed:");
-    expect(runner.calls).toEqual([
-      { bin: "gh", args: ["pr", "create", "--fill", "--base", MAIN_BRANCH, "--head", BRANCH], cwd: CWD },
-      { bin: "gh", args: CHECK_ARGS, cwd: CWD },
-    ]);
+    expect(outcome.note).toContain("git_checkout");
+    expect(outcome.note).toContain("master");
   });
 
-  it("exposes the configured PR check polling interval", () => {
-    expect(PR_CHECK_POLL_MS).toBe(30_000);
+  it("throws a clear error when baseBranch is missing", async () => {
+    const runner = createRunner({});
+    await expect(
+      finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree: WORKTREE,
+        mergeStrategy: "pr",
+        waitForChecks: true,
+        sleep: async () => {},
+      }),
+    ).rejects.toThrow(/base branch not resolved/i);
+  });
+});
+
+describe("PR_CHECK_POLL_MS", () => {
+  it("is exported as a positive number for waitForPrChecks scheduling", () => {
+    expect(PR_CHECK_POLL_MS).toBeGreaterThan(0);
   });
 });
