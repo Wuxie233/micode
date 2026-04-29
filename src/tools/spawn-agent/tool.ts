@@ -6,11 +6,12 @@ import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
-import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
+import { createInternalSession, deleteInternalSession, updateInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./classify";
 import { formatSpawnResults } from "./format";
+import { buildSpawnCompletionTitle, buildSpawnRunningTitle } from "./naming";
 import type { PreservedRegistry } from "./registry";
 import { retryOnTransient } from "./retry";
 import { SPAWN_OUTCOMES, type SpawnResult } from "./types";
@@ -237,7 +238,10 @@ async function executeAgentSessionWith(
 
   let sessionId: string | null = null;
   try {
-    const session = await createInternalSession({ ctx, title: `spawn-agent.${task.agent}` });
+    const session = await createInternalSession({
+      ctx,
+      title: buildSpawnRunningTitle({ agent: task.agent, description: task.description }),
+    });
     sessionId = session.sessionId;
 
     await ctx.client.session.prompt({
@@ -348,6 +352,11 @@ async function runAgent(
     await deleteInternalSession({ ctx, sessionId: settled.value.sessionId, agent: task.agent });
     return result;
   }
+  await updateInternalSession({
+    ctx,
+    sessionId: settled.value.sessionId,
+    title: buildSpawnCompletionTitle({ agent: task.agent, description: task.description, outcome: result.outcome }),
+  });
   return preserveIfNeeded(options.registry, result);
 }
 
