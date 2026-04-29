@@ -21,11 +21,18 @@ interface CreateRequest {
   readonly query: { readonly directory: string };
 }
 
+interface UpdateRequest {
+  readonly path: { readonly id: string };
+  readonly body: { readonly title?: string };
+  readonly query: { readonly directory: string };
+}
+
 const createRegistry = () => createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
 
 function createCtx(output: string, deleteSession: ReturnType<typeof mock>): PluginInput {
   const create = mock(async () => ({ data: { id: SESSION_ID } }));
   const prompt = mock(async () => ({}));
+  const update = mock(async () => ({}));
   const messages = mock(async () => ({
     data: [
       {
@@ -36,13 +43,13 @@ function createCtx(output: string, deleteSession: ReturnType<typeof mock>): Plug
   }));
 
   return {
-    client: { session: { create, prompt, messages, delete: deleteSession } },
+    client: { session: { create, prompt, messages, update, delete: deleteSession } },
     directory: DIRECTORY,
   } as never;
 }
 
 describe("spawn-agent tool internal sessions", () => {
-  it("creates production sessions with spawn-agent titles and retries delete on success", async () => {
+  it("creates production sessions with running titles and retries delete on success", async () => {
     let deleteAttempts = 0;
     const deleteSession = mock(async () => {
       deleteAttempts += 1;
@@ -57,8 +64,9 @@ describe("spawn-agent tool internal sessions", () => {
 
     const createCall = ctx.client.session.create.mock.calls[0]?.[0] as CreateRequest | undefined;
     expect(output).toContain(SUCCESS_OUTPUT);
-    expect(createCall?.body.title).toBe("spawn-agent.codebase-analyzer");
+    expect(createCall?.body.title).toBe("执行中: Inspect code");
     expect(deleteSession).toHaveBeenCalledTimes(2);
+    expect(ctx.client.session.update.mock.calls).toHaveLength(0);
     expect(registry.size()).toBe(0);
   });
 
@@ -72,6 +80,9 @@ describe("spawn-agent tool internal sessions", () => {
 
     expect(output).toContain(SESSION_ID);
     expect(deleteSession).not.toHaveBeenCalled();
+    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
+    expect(updateCall?.path.id).toBe(SESSION_ID);
+    expect(updateCall?.body.title).toBe("失败: Inspect code");
     expect(registry.get(SESSION_ID)).toMatchObject({
       sessionId: SESSION_ID,
       agent: AGENT,
@@ -79,5 +90,19 @@ describe("spawn-agent tool internal sessions", () => {
       outcome: SPAWN_OUTCOMES.TASK_ERROR,
       resumeCount: 0,
     });
+  });
+
+  it("uses the Chinese reviewer fallback for empty descriptions", async () => {
+    const deleteSession = mock(async () => ({}));
+    const ctx = createCtx(SUCCESS_OUTPUT, deleteSession);
+    const registry = createRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry });
+
+    await tool.execute({ agents: [{ agent: "reviewer", prompt: PROMPT, description: "" }] }, {
+      metadata: () => {},
+    } as never);
+
+    const createCall = ctx.client.session.create.mock.calls[0]?.[0] as CreateRequest | undefined;
+    expect(createCall?.body.title).toBe("执行中: 代码审查");
   });
 });
