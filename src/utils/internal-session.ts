@@ -182,3 +182,62 @@ export async function deleteInternalSession(input: DeleteInternalSessionInput): 
     warnDeleteFailure(logger, sessionId, input.agent, error);
   }
 }
+
+interface SessionUpdateRequest {
+  readonly path: { readonly id: string };
+  readonly body: { readonly title: string };
+  readonly query: { readonly directory: string };
+}
+
+interface SessionUpdateClient {
+  readonly update: (request: SessionUpdateRequest) => Promise<unknown>;
+}
+
+export interface UpdateInternalSessionInput {
+  readonly ctx: PluginInput;
+  readonly sessionId: string | null;
+  readonly title: string;
+  readonly logger?: Logger;
+}
+
+const SESSION_UPDATE_UNAVAILABLE = "ctx.client.session.update is unavailable";
+
+function hasSessionUpdate(session: unknown): session is SessionUpdateClient {
+  return isRecord(session) && typeof session.update === "function";
+}
+
+function formatUpdateWarning(sessionId: string, reason: unknown): string {
+  return `Failed to update internal session ${sessionId} title: ${extractErrorMessage(reason)}`;
+}
+
+function warnUpdateFailure(logger: Logger, sessionId: string, reason: unknown): void {
+  try {
+    logger.warn(LOG_MODULE, formatUpdateWarning(sessionId, reason));
+  } catch {
+    // Logging must not make updateInternalSession throw.
+  }
+}
+
+export async function updateInternalSession(input: UpdateInternalSessionInput): Promise<void> {
+  if (input.sessionId === null) return;
+
+  const trimmed = input.title.trim();
+  if (trimmed.length === 0) return;
+
+  const logger = input.logger ?? defaultLogger;
+  const session: unknown = input.ctx.client.session;
+  if (!hasSessionUpdate(session)) {
+    warnUpdateFailure(logger, input.sessionId, SESSION_UPDATE_UNAVAILABLE);
+    return;
+  }
+
+  try {
+    await session.update({
+      path: { id: input.sessionId },
+      body: { title: trimmed },
+      query: { directory: input.ctx.directory },
+    });
+  } catch (error) {
+    warnUpdateFailure(logger, input.sessionId, error);
+  }
+}
