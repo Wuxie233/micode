@@ -8,6 +8,7 @@ import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 import { resolveProjectId } from "@/utils/project-id";
 import { commitAndPush } from "./commits";
+import { resolveDefaultBranch } from "./default-branch";
 import { renderIssueBody } from "./issue-body";
 import { createJournalStore, type JournalStore } from "./journal/store";
 import { JOURNAL_EVENT_KINDS, type JournalEvent, type JournalEventInput } from "./journal/types";
@@ -136,6 +137,7 @@ const MEMORY_NO_CANDIDATES = "no_candidates";
 const ISSUE_POINTER_PREFIX = "issue/";
 const ISSUE_ENTITY_PREFIX = "issue-";
 const PROJECT_MEMORY_SOURCE_KIND = "lifecycle";
+const RESOLVED_BASE_PREFIX = "resolved-base";
 
 const GH_ISSUE = "issue";
 const GH_REPO = "repo";
@@ -368,6 +370,14 @@ const closeMergedIssue = async (
   const closedAt = await closeIssue(runner, issueNumber, cwd);
   if (!closedAt) return outcome;
   return { ...outcome, closedAt };
+};
+
+const annotateWithResolvedBranch = (
+  outcome: FinishOutcome,
+  resolved: { readonly branch: string; readonly source: string },
+): FinishOutcome => {
+  if (outcome.merged || outcome.note === null) return outcome;
+  return { ...outcome, note: `${RESOLVED_BASE_PREFIX}=${resolved.branch}(${resolved.source}); ${outcome.note}` };
 };
 
 const safeEmit = async (
@@ -611,14 +621,17 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
   return async (issueNumber, finishInput) => {
     const record = await requireRecord(context.store, issueNumber);
     const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
+    const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
     const finished = await finishLifecycle(context.runner, {
       cwd: context.cwd,
       branch: merging.branch,
       worktree: merging.worktree,
       mergeStrategy: finishInput.mergeStrategy,
       waitForChecks: finishInput.waitForChecks,
+      baseBranch: resolvedBranch.branch,
     });
-    const outcome = await closeMergedIssue(context.runner, issueNumber, finished, context.cwd);
+    const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
+    const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
     const promoted = await promoteFinishedRecord(merging, outcome, context);
     await saveAndSync(context, applyFinishOutcome(promoted, outcome));
     await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
