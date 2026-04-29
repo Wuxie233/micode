@@ -40,6 +40,7 @@ const NO_CALLS = 0;
 const COMMIT_COUNT = 2;
 const LINE_BREAK = "\n";
 const HISTORY_FORMAT = "--format=%s";
+const GH_DEFAULT_BRANCH_ARGS = ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"] as const;
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -108,6 +109,7 @@ const createRunner = (repo: string): FakeRunner => {
     },
     gh: async (args, options) => {
       calls.push({ bin: "gh", args, cwd: options?.cwd });
+      if (isArgs(args, GH_DEFAULT_BRANCH_ARGS)) return createRun(`${MAIN_BRANCH}${LINE_BREAK}`);
       if (isArgs(args, ["repo", "view"])) return createRun(createRepoView());
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}${LINE_BREAK}`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
 import { createSpawnAgentTool } from "../../../src/tools/spawn-agent";
@@ -39,7 +39,7 @@ type ExecuteSignature = (raw: unknown, ctx: unknown) => Promise<string>;
 const createCtx = (): PluginInput =>
   ({
     directory: "/tmp/spawn-agent-integration-test",
-    client: { session: {} },
+    client: { session: { delete: mock(async () => ({})) } },
   }) as unknown as PluginInput;
 
 const callExecute = async (toolDef: ReturnType<typeof createSpawnAgentTool>, args: unknown): Promise<string> => {
