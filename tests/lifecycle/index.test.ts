@@ -18,6 +18,10 @@ const SUMMARY = "Lifecycle workflow";
 const EMPTY_OUTPUT = "";
 const OK_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
+const MAIN_HEAD = "origin/main\n";
+const MASTER_HEAD = "origin/master\n";
+const DEVELOP_HEAD = "origin/develop\n";
+const PR_CREATE_FAILED = "cannot create pr";
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -30,9 +34,14 @@ interface FakeRunner extends LifecycleRunner {
   readonly edits: readonly string[];
 }
 
-const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE): RunResult => ({
+interface RunnerOptions {
+  readonly originHead?: string;
+  readonly prCreate?: RunResult;
+}
+
+const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE, stderr = EMPTY_OUTPUT): RunResult => ({
   stdout,
-  stderr: EMPTY_OUTPUT,
+  stderr,
   exitCode,
 });
 
@@ -51,9 +60,10 @@ const isArgs = (args: readonly string[], expected: readonly string[]): boolean =
   return expected.every((value, index) => args[index] === value);
 };
 
-const createRunner = (repoView = createRepoView()): FakeRunner => {
+const createRunner = (repoView = createRepoView(), options: RunnerOptions = {}): FakeRunner => {
   const calls: RunnerCall[] = [];
   const edits: string[] = [];
+  const originHead = options.originHead ?? MAIN_HEAD;
 
   return {
     calls,
@@ -61,15 +71,17 @@ const createRunner = (repoView = createRepoView()): FakeRunner => {
     git: async (args, options) => {
       calls.push({ bin: "git", args, cwd: options?.cwd });
       if (isArgs(args, ["remote", "get-url", "origin"])) return createRun(`${ORIGIN}\n`);
+      if (isArgs(args, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])) return createRun(originHead);
       if (isArgs(args, ["rev-parse", "HEAD"])) return createRun(`${SHA}\n`);
       return createRun();
     },
-    gh: async (args, options) => {
-      calls.push({ bin: "gh", args, cwd: options?.cwd });
+    gh: async (args, runOptions) => {
+      calls.push({ bin: "gh", args, cwd: runOptions?.cwd });
       if (isArgs(args, ["repo", "view"])) return createRun(repoView);
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}\n`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));
       if (isArgs(args, ["issue", "edit"])) edits.push(args.at(-1) ?? EMPTY_OUTPUT);
+      if (isArgs(args, ["pr", "create"]) && options.prCreate) return options.prCreate;
       return createRun();
     },
   };
@@ -137,6 +149,33 @@ describe("lifecycle handle", () => {
     expect(record?.artifacts[ARTIFACT_KINDS.COMMIT]).toEqual([SHA]);
     expect(runner.calls.some((call) => isArgs(call.args, ["issue", "close", "1"]))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
+  });
+
+  it("opens lifecycle finish PRs against the resolved master branch", async () => {
+    const runner = createRunner(createRepoView(), { originHead: MASTER_HEAD });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    const opened = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["pr", "create"]));
+    expect(opened?.args).toContain("--base");
+    expect(opened?.args).toContain("master");
+  });
+
+  it("annotates failed lifecycle finish notes with the resolved develop branch", async () => {
+    const runner = createRunner(createRepoView(), {
+      originHead: DEVELOP_HEAD,
+      prCreate: createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE, PR_CREATE_FAILED),
+    });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("resolved-base=develop(origin-head)");
+    expect(outcome.note).toContain("gh_pr_create: cannot create pr");
   });
 
   it("enables issues on owned forks before opening issue", async () => {

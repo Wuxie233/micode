@@ -73,6 +73,7 @@ import { createResumeSubagentTool } from "@/tools/resume-subagent";
 import { createPreservedRegistry, type PreservedRegistry } from "@/tools/spawn-agent/registry";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 
 // Think mode: detect keywords and enable extended thinking
@@ -145,6 +146,10 @@ const PERSIST_ANSWERED_LABEL = "persist.answered";
 const PERSIST_END_LABEL = "persist.end";
 const AUTO_RESUME_LABEL = "autoresume";
 const PERSISTENCE_LOG_SCOPE = "octto.persistence";
+const INTERNAL_SESSION_CREATE_NO_ID = "internal session create returned no id";
+const REVIEW_SKIPPED_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Review skipped"}';
+const REVIEW_EMPTY_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Empty response"}';
+const REVIEW_FAILED_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Review failed"}';
 
 interface OcttoListenerInput {
   readonly persistenceListener: PersistenceListener;
@@ -167,6 +172,10 @@ function extractTextFromParts(parts: Array<{ type: string; text?: string }>): st
     .filter((p) => p.type === "text" && "text" in p)
     .map((p) => (p as { text: string }).text)
     .join("");
+}
+
+function isMissingInternalSessionId(error: unknown): boolean {
+  return extractErrorMessage(error) === INTERNAL_SESSION_CREATE_NO_ID;
 }
 
 function dispatchAutoResume(input: OcttoListenerInput, session: Session, questionId: string): void {
@@ -314,15 +323,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const constraintReviewerHook = createConstraintReviewerHook(ctx, async (reviewPrompt) => {
     let sessionId: string | undefined;
     try {
-      const sessionResult = await ctx.client.session.create({
-        body: { title: "constraint-reviewer" },
-      });
-
-      if (!sessionResult.data?.id) {
-        log.warn("mindmodel", "Failed to create reviewer session");
-        return '{"status": "PASS", "violations": [], "summary": "Review skipped"}';
-      }
-      sessionId = sessionResult.data.id;
+      const created = await createInternalSession({ ctx, title: "constraint-reviewer" });
+      sessionId = created.sessionId;
 
       // Mark as internal to prevent hook recursion
       internalSessions.add(sessionId);
@@ -337,19 +339,21 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       });
 
       if (!promptResult.data?.parts) {
-        return '{"status": "PASS", "violations": [], "summary": "Empty response"}';
+        return REVIEW_EMPTY_RESPONSE;
       }
 
       return extractTextFromParts(promptResult.data.parts);
     } catch (error) {
+      if (isMissingInternalSessionId(error)) {
+        log.warn("mindmodel", "Failed to create reviewer session");
+        return REVIEW_SKIPPED_RESPONSE;
+      }
       log.warn("mindmodel", `Reviewer failed: ${extractErrorMessage(error)}`);
-      return '{"status": "PASS", "violations": [], "summary": "Review failed"}';
+      return REVIEW_FAILED_RESPONSE;
     } finally {
       if (sessionId) {
         internalSessions.delete(sessionId);
-        await ctx.client.session.delete({ path: { id: sessionId } }).catch((_e: unknown) => {
-          /* fire-and-forget */
-        });
+        await deleteInternalSession({ ctx, sessionId, agent: "constraint-reviewer" });
       }
     }
   });

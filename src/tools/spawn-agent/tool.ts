@@ -6,6 +6,7 @@ import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./classify";
@@ -17,10 +18,6 @@ import { SPAWN_OUTCOMES, type SpawnResult } from "./types";
 type ExtendedContext = ToolContext & {
   metadata?: (input: { title?: string; metadata?: Record<string, unknown> }) => void;
 };
-
-interface SessionCreateResponse {
-  readonly data?: { readonly id?: string };
-}
 
 interface MessagePart {
   readonly type: string;
@@ -34,13 +31,6 @@ interface SessionMessage {
 
 interface SessionMessagesResponse {
   readonly data?: readonly SessionMessage[];
-}
-
-interface SessionDeleteClient {
-  readonly delete: (input: {
-    readonly path: { readonly id: string };
-    readonly query: { readonly directory: string };
-  }) => Promise<unknown>;
 }
 
 interface NamedAgent {
@@ -101,7 +91,6 @@ interface AttemptValue {
 const MS_PER_SECOND = 1000;
 const FAILURE_HEADER = "## spawn_agent Failed";
 const TOOL_NAME = "spawn-agent";
-const SESSION_CREATE_ERROR = "Failed to create session";
 const MODEL_OVERRIDE_EVENT = "spawn_agent.model_override";
 const UNKNOWN_CALLER = "unknown";
 
@@ -146,10 +135,6 @@ type AgentsSchema = ReturnType<typeof sequenceSchema>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function hasSessionDelete(value: unknown): value is SessionDeleteClient {
-  return isRecord(value) && typeof value.delete === "function";
 }
 
 function updateProgress(toolCtx: ExtendedContext, progress: ProgressState | undefined, status: string): void {
@@ -233,15 +218,6 @@ function createSessionError(error: unknown, sessionId: string | null): Error & {
   return wrapped;
 }
 
-async function deleteSession(ctx: PluginInput, sessionId: string | null): Promise<void> {
-  if (sessionId === null) return;
-  const session = ctx.client.session;
-  if (!hasSessionDelete(session)) return;
-  await session.delete({ path: { id: sessionId }, query: { directory: ctx.directory } }).catch((_e: unknown) => {
-    /* cleanup should not hide the primary spawn result */
-  });
-}
-
 function buildPromptBody(
   task: AgentTask,
   model: ModelReference | null,
@@ -261,13 +237,8 @@ async function executeAgentSessionWith(
 
   let sessionId: string | null = null;
   try {
-    const sessionResp = (await ctx.client.session.create({
-      body: {},
-      query: { directory: ctx.directory },
-    })) as SessionCreateResponse;
-
-    sessionId = sessionResp.data?.id ?? null;
-    if (sessionId === null) throw new Error(SESSION_CREATE_ERROR);
+    const session = await createInternalSession({ ctx, title: `spawn-agent.${task.agent}` });
+    sessionId = session.sessionId;
 
     await ctx.client.session.prompt({
       path: { id: sessionId },
@@ -324,7 +295,9 @@ async function classifyThrown(
 ): Promise<{ readonly class: InternalClass; readonly value: AttemptValue }> {
   const sessionId = getSessionId(error);
   const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error) });
-  if (classification.class === INTERNAL_CLASSES.TRANSIENT) await deleteSession(ctx, sessionId);
+  if (classification.class === INTERNAL_CLASSES.TRANSIENT) {
+    await deleteInternalSession({ ctx, sessionId, agent: "spawn-agent.transient" });
+  }
   return { class: classification.class, value: { sessionId, output: "", error: classification.reason } };
 }
 
@@ -372,7 +345,7 @@ async function runAgent(
   const elapsedMs = Date.now() - started;
   const result = toPublicResult(task, elapsedMs, settled.class, settled.value);
   if (result.outcome === SPAWN_OUTCOMES.SUCCESS || result.outcome === SPAWN_OUTCOMES.HARD_FAILURE) {
-    await deleteSession(ctx, settled.value.sessionId);
+    await deleteInternalSession({ ctx, sessionId: settled.value.sessionId, agent: task.agent });
     return result;
   }
   return preserveIfNeeded(options.registry, result);

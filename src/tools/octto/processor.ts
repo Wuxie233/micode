@@ -3,12 +3,17 @@
 import * as v from "valibot";
 import type { Answer, QuestionType, SessionStore } from "@/octto/session";
 import { BRANCH_STATUSES, type BrainstormState, type StateStore } from "@/octto/state";
+import { extractErrorMessage } from "@/utils/errors";
+import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 
 import type { OpencodeClient } from "./types";
 
 // Agent name constant - matches the agent exported from src/agents/probe.ts
 const PROBE_AGENT = "probe";
+const INTERNAL_SESSION_DIRECTORY = "";
+const INTERNAL_SESSION_CREATE_NO_ID = "internal session create returned no id";
+const PROBE_SESSION_CREATE_FAILED = "Failed to create probe session";
 
 const ProbeQuestionSchema = v.object({
   type: v.string(),
@@ -96,15 +101,11 @@ function parseProbeResponse(responseText: string): ProbeResult {
 }
 
 async function runProbeAgent(client: OpencodeClient, state: BrainstormState, branchId: string): Promise<ProbeResult> {
-  const sessionResult = await client.session.create({
-    body: { title: `probe-${branchId}` },
-  });
-
-  if (!sessionResult.data) {
-    throw new Error("Failed to create probe session");
-  }
-
-  const probeSessionId = sessionResult.data.id;
+  const ctx = { client, directory: INTERNAL_SESSION_DIRECTORY } as unknown as Parameters<
+    typeof createInternalSession
+  >[0]["ctx"];
+  const created = await createProbeSession(ctx, branchId);
+  const probeSessionId = created.sessionId;
 
   try {
     const promptResult = await client.session.prompt({
@@ -123,9 +124,21 @@ async function runProbeAgent(client: OpencodeClient, state: BrainstormState, bra
     const responseText = extractTextFromParts(promptResult.data.parts);
     return parseProbeResponse(responseText);
   } finally {
-    await client.session.delete({ path: { id: probeSessionId } }).catch((_e: unknown) => {
-      /* fire-and-forget */
-    });
+    await deleteInternalSession({ ctx, sessionId: probeSessionId, agent: `probe-${branchId}` });
+  }
+}
+
+async function createProbeSession(
+  ctx: Parameters<typeof createInternalSession>[0]["ctx"],
+  branchId: string,
+): Promise<{ readonly sessionId: string }> {
+  try {
+    return await createInternalSession({ ctx, title: `probe-${branchId}` });
+  } catch (error) {
+    if (extractErrorMessage(error) === INTERNAL_SESSION_CREATE_NO_ID) {
+      throw new Error(PROBE_SESSION_CREATE_FAILED, { cause: error });
+    }
+    throw error;
   }
 }
 
