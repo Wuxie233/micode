@@ -27,10 +27,19 @@ export interface TopicTitleParts {
   readonly status: TitleStatus;
 }
 
+export interface IssueTitleParts {
+  readonly issueNumber: number | null;
+  readonly topic: string;
+  readonly status: TitleStatus;
+}
+
 const DEFAULT_MAX_LENGTH = 50;
 const ELLIPSIS = "…";
 const SEPARATOR = ": ";
 const STATUS_SUFFIX_SEPARATOR = " · ";
+const ISSUE_PREFIX_SYMBOL = "#";
+const ISSUE_SEPARATOR_FULLWIDTH = "：";
+const ISSUE_PREFIX_SPACE = " ";
 const WHITESPACE_PATTERN = /\s+/g;
 const SPACE = " ";
 const EMPTY = "";
@@ -69,6 +78,32 @@ export function buildTopicTitle(parts: TopicTitleParts, maxLength: number = DEFA
   if (topic.length === 0) return parts.status;
   if (!CONCLUSIVE_STATUSES.includes(parts.status)) return truncate(topic, maxLength);
   return buildConclusiveTitle(topic, parts.status, maxLength);
+}
+
+const buildIssueFixedPrefix = (issueNumber: number, status: TitleStatus): string => {
+  return `${ISSUE_PREFIX_SYMBOL}${issueNumber}${ISSUE_PREFIX_SPACE}${status}${ISSUE_SEPARATOR_FULLWIDTH}`;
+};
+
+const buildIssueStatusOnly = (issueNumber: number, status: TitleStatus): string => {
+  return `${ISSUE_PREFIX_SYMBOL}${issueNumber}${ISSUE_PREFIX_SPACE}${status}`;
+};
+
+export function buildIssueAwareTitle(parts: IssueTitleParts, maxLength: number = DEFAULT_MAX_LENGTH): string {
+  const topic = normalizeWhitespace(parts.topic);
+
+  if (parts.issueNumber === null) {
+    return buildTopicTitle({ topic, status: parts.status }, maxLength);
+  }
+
+  if (topic.length === 0) {
+    const statusOnly = buildIssueStatusOnly(parts.issueNumber, parts.status);
+    return truncate(statusOnly, maxLength);
+  }
+
+  const fixed = buildIssueFixedPrefix(parts.issueNumber, parts.status);
+  const remaining = maxLength - fixed.length;
+  if (remaining <= 0) return truncate(parts.status, maxLength);
+  return `${fixed}${truncate(topic, remaining)}`;
 }
 
 const SLUG_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}-/;

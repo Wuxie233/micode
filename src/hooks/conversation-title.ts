@@ -95,6 +95,7 @@ interface DispatchOptions {
   readonly summary: string | null;
   readonly source: TitleSource;
   readonly currentTitle: string | null;
+  readonly issueNumber: number | null;
 }
 
 interface ConversationTitleHookHandlers {
@@ -130,6 +131,7 @@ const dispatch = async (deps: ContextDeps, sessionID: string, options: DispatchO
     currentTitle: options.currentTitle,
     now: Date.now(),
     maxLength: deps.config.maxLength,
+    issueNumber: options.issueNumber,
   });
 
   if (decision.kind === "skip") return;
@@ -151,6 +153,7 @@ const handleToolAfter = async (deps: ContextDeps, input: ToolAfterInput, output:
     summary: signal.summary,
     source: signal.source,
     currentTitle: info?.title ?? null,
+    issueNumber: signal.issueNumber,
   });
 };
 
@@ -175,6 +178,7 @@ const handleChatMessage = async (
     summary,
     source: TITLE_SOURCE.USER_MESSAGE,
     currentTitle: info?.title ?? null,
+    issueNumber: null,
   });
 };
 
