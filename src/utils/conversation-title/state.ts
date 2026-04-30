@@ -1,6 +1,6 @@
 // src/utils/conversation-title/state.ts
-import { buildTopicTitle, CONCLUSIVE_STATUSES, type TitleStatus } from "./format";
-import { compareConfidence, type TitleSource } from "./source";
+import { buildIssueAwareTitle, CONCLUSIVE_STATUSES, type TitleStatus } from "./format";
+import { compareConfidence, isToolLikeTopic, type TitleSource } from "./source";
 
 const TITLE_THROTTLE_MS = 1000;
 const DONE_FREEZE_MS = 60_000;
@@ -20,11 +20,13 @@ export interface DecisionInput {
   readonly currentTitle: string | null;
   readonly now: number;
   readonly maxLength?: number;
+  readonly issueNumber?: number | null;
 }
 
 export interface SessionTopic {
   readonly topic: string | null;
   readonly source: TitleSource | null;
+  readonly issueNumber: number | null;
 }
 
 export type TitleDecision =
@@ -39,6 +41,7 @@ interface SessionRecord {
   systemTitleConfirmed: boolean;
   topic: string | null;
   topicSource: TitleSource | null;
+  issueNumber: number | null;
 }
 
 export interface TitleStateRegistry {
@@ -92,10 +95,17 @@ const canReplaceTopic = (record: SessionRecord, source: TitleSource, allowEqualC
 const applyTopic = (record: SessionRecord, input: DecisionInput, allowEqualConfidence: boolean): boolean => {
   const incomingTopic = input.summary;
   if (incomingTopic === null || incomingTopic === "") return false;
+  if (isToolLikeTopic(incomingTopic)) return false;
   if (!canReplaceTopic(record, input.source, allowEqualConfidence)) return false;
   record.topic = incomingTopic;
   record.topicSource = input.source;
   return true;
+};
+
+const applyIssueNumber = (record: SessionRecord, incoming: number | null | undefined): void => {
+  if (incoming === null || incoming === undefined) return;
+  if (!Number.isSafeInteger(incoming) || incoming <= 0) return;
+  record.issueNumber = incoming;
 };
 
 const isDoneExpired = (record: SessionRecord, now: number): boolean => {
@@ -131,11 +141,13 @@ const newRecord = (): SessionRecord => ({
   systemTitleConfirmed: false,
   topic: null,
   topicSource: null,
+  issueNumber: null,
 });
 
 const readTopic = (record: SessionRecord | undefined): SessionTopic => ({
   topic: record?.topic ?? null,
   source: record?.topicSource ?? null,
+  issueNumber: record?.issueNumber ?? null,
 });
 
 const getOrCreate = (records: Map<string, SessionRecord>, sessionID: string): SessionRecord => {
@@ -160,8 +172,12 @@ const decideForRecord = (record: SessionRecord, input: DecisionInput): TitleDeci
   }
 
   const doneExpired = isDoneExpired(record, input.now);
+  applyIssueNumber(record, input.issueNumber);
   const replacedTopic = applyTopic(record, input, doneExpired);
-  const title = buildTopicTitle({ topic: record.topic ?? "", status: input.status }, input.maxLength);
+  const title = buildIssueAwareTitle(
+    { issueNumber: record.issueNumber, topic: record.topic ?? "", status: input.status },
+    input.maxLength,
+  );
 
   if (isThrottled(record, title, input.now)) {
     return skip("throttled");

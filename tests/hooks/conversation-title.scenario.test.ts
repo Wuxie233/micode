@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
 import { type ConversationTitleHook, createConversationTitleHook } from "@/hooks";
@@ -21,25 +21,28 @@ interface Harness {
 }
 
 const SESSION_MAIN = "ses_main";
-const FIRST_USER_TITLE = "修复 lifecycle pre-flight";
-const LIFECYCLE_TITLE = "修复 fork pre-flight 与会话标题 v2";
-const NEXT_LIFECYCLE_TITLE = "修复会话标题完成态冻结";
-const FINISHED_TITLE = `${LIFECYCLE_TITLE} · 已完成`;
-const PLAN_PATH = "thoughts/shared/plans/2026-04-28-lifecycle-preflight-and-title-v2.md";
-const ISSUE_NUMBER = 1;
-const COMMIT_SCOPE = "lifecycle";
-const COMMIT_SUMMARY = "relax parent schema";
-const FINISH_OUTPUT = "merged and closed";
-const LOW_INFO_MESSAGES = ["重启了", "继续"] as const;
-const NOW = 1_700_000_000_000;
-const FROZEN_NOW = NOW + 30_000;
-const THAWED_NOW = NOW + 70_000;
+const SESSION_CHILD = "ses_child";
+const THROTTLE_BUFFER_MS = 1100;
 
 const TOOL_NAMES = {
   WRITE: "write",
   LIFECYCLE_START: "lifecycle_start_request",
   LIFECYCLE_COMMIT: "lifecycle_commit",
   LIFECYCLE_FINISH: "lifecycle_finish",
+} as const;
+
+const ISSUE_NUMBER = 13;
+const USER_ISSUE_TITLE = "想让主对话标题在有 issue 时显示中文需求和编号";
+const ISSUE_TOPIC = "优化主会话标题生成";
+const LOGIN_TOPIC = "登录注册页面";
+const ISSUE_TABLE_OUTPUT = "| 13 | `issue/13-main-agent-title` | `/tmp/wt-13` | `planning` |";
+const FINISH_OUTPUT = "merged and closed";
+const MANUAL_TITLE = "我自己起的名字";
+const LOGIN_PLAN_PATH = "thoughts/shared/plans/2026-04-30-login-signup.md";
+const ISSUE_TITLES = {
+  planning: "#13 规划中：优化主会话标题生成",
+  executing: "#13 执行中：优化主会话标题生成",
+  done: "#13 已完成：优化主会话标题生成",
 } as const;
 
 const createHarness = (): Harness => {
@@ -58,8 +61,8 @@ const createHarness = (): Harness => {
         update: async ({ path, body }: { path: { id: string }; body: { title?: string } }) => {
           if (typeof body.title !== "string") return { data: undefined };
           updates.push({ id: path.id, title: body.title });
-          const existing = sessions.get(path.id);
-          if (existing) sessions.set(path.id, { ...existing, title: body.title });
+          const session = sessions.get(path.id);
+          if (session) sessions.set(path.id, { ...session, title: body.title });
           return { data: { id: path.id } };
         },
       },
@@ -69,114 +72,141 @@ const createHarness = (): Harness => {
   return { ctx, sessions, updates };
 };
 
-const sendMessage = (hook: ConversationTitleHook, text: string): Promise<void> => {
-  return hook["chat.message"]({ sessionID: SESSION_MAIN }, { parts: [{ type: "text", text }] });
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const sleepPastThrottle = (): Promise<void> => wait(THROTTLE_BUFFER_MS);
+
+const createHook = (harness: Harness): ConversationTitleHook => {
+  return createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
+};
+
+const sendMessage = (hook: ConversationTitleHook, sessionID: string, text: string): Promise<void> => {
+  return hook["chat.message"]({ sessionID }, { parts: [{ type: "text", text }] });
 };
 
 const runTool = (
   hook: ConversationTitleHook,
+  sessionID: string,
   tool: string,
   args: Record<string, unknown>,
   output = "",
 ): Promise<void> => {
-  return hook["tool.execute.after"]({ tool, sessionID: SESSION_MAIN, args }, { output });
+  return hook["tool.execute.after"]({ tool, sessionID, args }, { output });
 };
 
-const currentTitle = (harness: Harness): string | null => harness.sessions.get(SESSION_MAIN)?.title ?? null;
+const setMainTitle = (harness: Harness, title: string): void => {
+  const session = harness.sessions.get(SESSION_MAIN);
+  if (!session) throw new Error("missing main session");
+  harness.sessions.set(SESSION_MAIN, { ...session, title });
+};
 
-describe("conversation-title scenario", () => {
+describe("conversation-title scenario - full lifecycle", () => {
   let harness: Harness;
-  let hook: ConversationTitleHook;
-  let now = NOW;
-  const originalNow = Date.now;
 
   beforeEach(() => {
-    now = NOW;
-    Date.now = () => now;
     harness = createHarness();
     harness.sessions.set(SESSION_MAIN, { id: SESSION_MAIN, title: null, parentID: null });
-    hook = createConversationTitleHook(harness.ctx);
+    harness.sessions.set(SESSION_CHILD, { id: SESSION_CHILD, title: null, parentID: SESSION_MAIN });
   });
 
-  afterEach(() => {
-    Date.now = originalNow;
-  });
+  it("applies the user, planning, executing, and done titles for an issue lifecycle", async () => {
+    const hook = createHook(harness);
 
-  it("keeps the lifecycle topic stable until the work is completed", async () => {
-    // Chat fallback is off by default. The first user message no longer renames.
-    await sendMessage(hook, FIRST_USER_TITLE);
-    expect(currentTitle(harness)).toBeNull();
-    expect(harness.updates).toHaveLength(0);
+    await sendMessage(hook, SESSION_MAIN, USER_ISSUE_TITLE);
+    await sleepPastThrottle();
 
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
-      summary: LIFECYCLE_TITLE,
-      goals: [],
-      constraints: [],
-    });
-    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
+    await runTool(
+      hook,
+      SESSION_MAIN,
+      TOOL_NAMES.LIFECYCLE_START,
+      { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      ISSUE_TABLE_OUTPUT,
+    );
+    await sleepPastThrottle();
 
-    await runTool(hook, TOOL_NAMES.WRITE, { filePath: PLAN_PATH });
-    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
-
-    const updatesAfterPlan = harness.updates.length;
-    for (const message of LOW_INFO_MESSAGES) {
-      await sendMessage(hook, message);
-    }
-    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
-    expect(harness.updates).toHaveLength(updatesAfterPlan);
-
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_COMMIT, {
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.LIFECYCLE_COMMIT, {
       issue_number: ISSUE_NUMBER,
-      scope: COMMIT_SCOPE,
-      summary: COMMIT_SUMMARY,
+      scope: "title",
+      summary: "wire hook",
     });
-    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
+    await sleepPastThrottle();
 
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_FINISH, { issue_number: ISSUE_NUMBER }, FINISH_OUTPUT);
-    expect(currentTitle(harness)).toBe(FINISHED_TITLE);
-    expect(harness.updates.at(-1)).toEqual({ id: SESSION_MAIN, title: FINISHED_TITLE });
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.LIFECYCLE_FINISH, { issue_number: ISSUE_NUMBER }, FINISH_OUTPUT);
+
+    expect(harness.updates.map((update) => update.title)).toEqual([
+      USER_ISSUE_TITLE,
+      ISSUE_TITLES.planning,
+      ISSUE_TITLES.executing,
+      ISSUE_TITLES.done,
+    ]);
   });
 
-  it("keeps the legacy chat-driven first title when chatFallbackEnabled is opted in", async () => {
-    hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
+  it("keeps a defined no-issue title when a plan path is written", async () => {
+    const hook = createHook(harness);
 
-    await sendMessage(hook, FIRST_USER_TITLE);
-    expect(currentTitle(harness)).toBe(FIRST_USER_TITLE);
+    await sendMessage(hook, SESSION_MAIN, LOGIN_TOPIC);
+    await sleepPastThrottle();
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.WRITE, { filePath: LOGIN_PLAN_PATH });
 
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
-      summary: LIFECYCLE_TITLE,
-      goals: [],
-      constraints: [],
-    });
-    expect(currentTitle(harness)).toBe(LIFECYCLE_TITLE);
+    const title = harness.updates.at(-1)?.title;
+    expect(title).toBeDefined();
+    expect(title).not.toContain("#");
   });
 
-  it("keeps done title frozen, then lets a new lifecycle_start_request replace it after expiry", async () => {
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
-      summary: LIFECYCLE_TITLE,
-      goals: [],
-      constraints: [],
-    });
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_FINISH, { issue_number: ISSUE_NUMBER }, FINISH_OUTPUT);
-    expect(currentTitle(harness)).toBe(FINISHED_TITLE);
+  it("preserves the user topic when a lifecycle commit has a tool-like summary", async () => {
+    const hook = createHook(harness);
 
-    const finishedUpdates = harness.updates.length;
-    now = FROZEN_NOW;
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
-      summary: NEXT_LIFECYCLE_TITLE,
-      goals: [],
-      constraints: [],
-    });
-    expect(currentTitle(harness)).toBe(FINISHED_TITLE);
-    expect(harness.updates).toHaveLength(finishedUpdates);
+    await sendMessage(hook, SESSION_MAIN, LOGIN_TOPIC);
+    await sleepPastThrottle();
 
-    now = THAWED_NOW;
-    await runTool(hook, TOOL_NAMES.LIFECYCLE_START, {
-      summary: NEXT_LIFECYCLE_TITLE,
-      goals: [],
-      constraints: [],
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.LIFECYCLE_COMMIT, {
+      issue_number: ISSUE_NUMBER,
+      scope: "title",
+      summary: "executor",
     });
-    expect(currentTitle(harness)).toBe(NEXT_LIFECYCLE_TITLE);
-    expect(harness.updates.at(-1)).toEqual({ id: SESSION_MAIN, title: NEXT_LIFECYCLE_TITLE });
+
+    expect(harness.updates.at(-1)?.title).toBe("#13 执行中：登录注册页面");
+  });
+
+  it("does not write titles when a lifecycle starts on a child session", async () => {
+    const hook = createHook(harness);
+
+    await runTool(
+      hook,
+      SESSION_CHILD,
+      TOOL_NAMES.LIFECYCLE_START,
+      { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      ISSUE_TABLE_OUTPUT,
+    );
+
+    expect(harness.updates).toHaveLength(0);
+  });
+
+  it("preserves opt-out semantics after the user manually edits the title", async () => {
+    const hook = createHook(harness);
+
+    await runTool(
+      hook,
+      SESSION_MAIN,
+      TOOL_NAMES.LIFECYCLE_START,
+      { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      ISSUE_TABLE_OUTPUT,
+    );
+    await sleepPastThrottle();
+
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.LIFECYCLE_COMMIT, {
+      issue_number: ISSUE_NUMBER,
+      scope: "title",
+      summary: "wire hook",
+    });
+    await sleepPastThrottle();
+
+    setMainTitle(harness, MANUAL_TITLE);
+    const updates = harness.updates.length;
+
+    await runTool(hook, SESSION_MAIN, TOOL_NAMES.LIFECYCLE_FINISH, { issue_number: ISSUE_NUMBER }, FINISH_OUTPUT);
+
+    expect(harness.updates).toHaveLength(updates);
+    expect(harness.sessions.get(SESSION_MAIN)?.title).toBe(MANUAL_TITLE);
   });
 });

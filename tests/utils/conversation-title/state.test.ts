@@ -20,6 +20,8 @@ const NEXT_LIFECYCLE_TOPIC = "start follow-up title work";
 const USER_TOPIC = "add settings button";
 const PLAN_TOPIC = "lifecycle preflight title v2";
 const MANUAL_TITLE = "我的对话";
+const ISSUE_TOPIC = "优化主会话标题生成";
+const RENAMED_ISSUE_TOPIC = "改进主会话标题命名";
 
 type Registry = ReturnType<typeof createTitleStateRegistry>;
 
@@ -55,7 +57,11 @@ describe("title state registry", () => {
     const title = writtenTitle(decide(registry));
 
     expect(title).toBe(LIFECYCLE_TOPIC);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("keeps the topic when a lower-confidence source arrives later", () => {
@@ -71,7 +77,11 @@ describe("title state registry", () => {
     });
 
     expect(writtenTitle(next)).toBe(LIFECYCLE_TOPIC);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("upgrades the topic when a higher-confidence source arrives", () => {
@@ -91,7 +101,11 @@ describe("title state registry", () => {
     });
 
     expect(writtenTitle(upgraded)).toBe(LIFECYCLE_TOPIC);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("keeps the topic when summary is null and appends a conclusive suffix", () => {
@@ -107,13 +121,21 @@ describe("title state registry", () => {
     });
 
     expect(writtenTitle(done)).toBe(`${LIFECYCLE_TOPIC} · 已完成`);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("returns the current topic without creating missing records", () => {
     const registry = createTitleStateRegistry();
 
-    expect(registry.getTopic(OTHER_SESSION)).toEqual({ topic: null, source: null });
+    expect(registry.getTopic(OTHER_SESSION)).toEqual({
+      topic: null,
+      source: null,
+      issueNumber: null,
+    });
     expect(registry.size()).toBe(0);
 
     writtenTitle(
@@ -122,10 +144,18 @@ describe("title state registry", () => {
         source: TITLE_SOURCE.PLAN_PATH,
       }),
     );
-    expect(registry.getTopic(SESSION)).toEqual({ topic: PLAN_TOPIC, source: TITLE_SOURCE.PLAN_PATH });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: PLAN_TOPIC,
+      source: TITLE_SOURCE.PLAN_PATH,
+      issueNumber: null,
+    });
 
     registry.forget(SESSION);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: null, source: null });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: null,
+      source: null,
+      issueNumber: null,
+    });
     expect(registry.size()).toBe(0);
   });
 
@@ -185,7 +215,11 @@ describe("title state registry", () => {
     });
 
     expect(skippedReason(frozen)).toBe("done-frozen");
-    expect(registry.getTopic(SESSION)).toEqual({ topic: LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("replaces the lifecycle topic with an equal-confidence topic after the done freeze expires", () => {
@@ -205,7 +239,11 @@ describe("title state registry", () => {
     });
 
     expect(writtenTitle(thawed)).toBe(NEXT_LIFECYCLE_TOPIC);
-    expect(registry.getTopic(SESSION)).toEqual({ topic: NEXT_LIFECYCLE_TOPIC, source: TITLE_SOURCE.LIFECYCLE_ISSUE });
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: NEXT_LIFECYCLE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
   });
 
   it("does not opt out when an early host title differs before system title is confirmed", () => {
@@ -260,5 +298,195 @@ describe("title state registry", () => {
     });
     expect(skippedReason(userEdit)).toBe("opted-out");
     expect(registry.isOptedOut(SESSION)).toBe(true);
+  });
+
+  it("renders #N status and topic when issueNumber is set", () => {
+    const registry = createTitleStateRegistry();
+
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    expect(title).toBe("#13 规划中：优化主会话标题生成");
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: ISSUE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: 13,
+    });
+  });
+
+  it("keeps issueNumber sticky across later null signals", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    const next = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: null,
+      source: TITLE_SOURCE.COMMIT_TITLE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: null,
+    });
+
+    expect(writtenTitle(next)).toBe("#13 执行中：优化主会话标题生成");
+    expect(registry.getTopic(SESSION).issueNumber).toBe(13);
+  });
+
+  it("keeps issueNumber sticky across later invalid signals", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    const next = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: null,
+      source: TITLE_SOURCE.COMMIT_TITLE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 0,
+    });
+
+    expect(writtenTitle(next)).toBe("#13 执行中：优化主会话标题生成");
+    expect(registry.getTopic(SESSION).issueNumber).toBe(13);
+  });
+
+  it("formats DONE with full-width colon under issue prefix", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    const finished = decide(registry, {
+      status: TITLE_STATUS.DONE,
+      summary: null,
+      source: TITLE_SOURCE.LIFECYCLE_FINISH,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 13,
+    });
+
+    expect(writtenTitle(finished)).toBe("#13 已完成：优化主会话标题生成");
+  });
+
+  it("renders no-issue title when issueNumber is null and never set", () => {
+    const registry = createTitleStateRegistry();
+
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: null,
+      }),
+    );
+
+    expect(title).toBe(ISSUE_TOPIC);
+    expect(registry.getTopic(SESSION).issueNumber).toBeNull();
+  });
+
+  it("upgrades from no-issue to issue-prefixed once issueNumber arrives", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: null,
+      }),
+    );
+
+    const upgraded = decide(registry, {
+      summary: null,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 13,
+    });
+
+    expect(writtenTitle(upgraded)).toBe("#13 规划中：优化主会话标题生成");
+  });
+
+  it("rejects tool-like summary as topic regardless of source confidence", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    const polluted = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: "executor",
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 13,
+    });
+
+    expect(writtenTitle(polluted)).toBe("#13 执行中：优化主会话标题生成");
+  });
+
+  it("keeps a real topic when a higher-confidence tool-like summary arrives", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        source: TITLE_SOURCE.USER_MESSAGE,
+        issueNumber: null,
+      }),
+    );
+
+    const polluted = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: "implementer-backend",
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 13,
+    });
+
+    expect(writtenTitle(polluted)).toBe("#13 执行中：优化主会话标题生成");
+  });
+
+  it("still replaces a weaker topic with a higher-confidence real topic", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        source: TITLE_SOURCE.USER_MESSAGE,
+        issueNumber: null,
+      }),
+    );
+
+    const upgraded = decide(registry, {
+      summary: RENAMED_ISSUE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: 13,
+    });
+
+    expect(writtenTitle(upgraded)).toBe("#13 规划中：改进主会话标题命名");
+  });
+
+  it("getTopic returns issueNumber as null when never set", () => {
+    const registry = createTitleStateRegistry();
+
+    expect(registry.getTopic("never_seen")).toEqual({
+      topic: null,
+      source: null,
+      issueNumber: null,
+    });
   });
 });
