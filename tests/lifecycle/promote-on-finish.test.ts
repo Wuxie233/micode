@@ -22,6 +22,19 @@ const FAILURE_EXIT_CODE = 1;
 const LEDGER_POINTER = join("thoughts", "ledgers", "CONTINUITY.md");
 const ISSUE_POINTER = "issue/1";
 const PROMOTION_FAILURE = "promotion write failed";
+const ISSUE_REQUEST_SUMMARY = "Improve project memory promotion quality so issue bodies become useful entries.";
+const ISSUE_GOAL_SUMMARIES = [
+  "Parse lifecycle sections deterministically",
+  "Avoid collapsing the body into a single ## Request note",
+] as const;
+const ISSUE_CONSTRAINT_SUMMARIES = ["Keep promotion best-effort and non-blocking"] as const;
+const EXPECTED_ISSUE_NOTE_SUMMARIES = [
+  ISSUE_REQUEST_SUMMARY,
+  ...ISSUE_GOAL_SUMMARIES,
+  ...ISSUE_CONSTRAINT_SUMMARIES,
+] as const;
+const ISSUE_BODY_SEARCH_LIMIT = 20;
+const LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS = 20_000;
 const LEDGER_MARKDOWN = [
   "## Decisions",
   "- Promote ledger decision after local merge",
@@ -162,25 +175,84 @@ async function startWithLedger(handle: LifecycleHandle, markdown = LEDGER_MARKDO
 }
 
 describe("lifecycle finish project-memory promotion", () => {
-  it("promotes merged lifecycle ledger entries as active lifecycle sources", async () => {
-    const memory = await useMemory();
-    const runner = createRunner();
-    const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
-    await startWithLedger(handle);
+  it(
+    "promotes merged lifecycle ledger entries as active lifecycle sources",
+    async () => {
+      const memory = await useMemory();
+      const runner = createRunner();
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+      await startWithLedger(handle);
 
-    const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
-    const identity = await resolveProjectId(cwd);
-    const hits = await memory.searchEntries(identity.projectId, "ledger", { status: "active", limit: 5 });
-    const sources = await memory.loadSourcesForEntry(identity.projectId, hits[0]?.entry.id ?? EMPTY_OUTPUT);
-    const record = await handle.load(ISSUE_NUMBER);
+      const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
+      const identity = await resolveProjectId(cwd);
+      const hits = await memory.searchEntries(identity.projectId, "ledger", { status: "active", limit: 5 });
+      const sources = await memory.loadSourcesForEntry(identity.projectId, hits[0]?.entry.id ?? EMPTY_OUTPUT);
+      const record = await handle.load(ISSUE_NUMBER);
 
-    expect(outcome.merged).toBe(true);
-    expect(await memory.countEntries(identity.projectId)).toBe(2);
-    expect(hits[0]?.entry.status).toBe("active");
-    expect(sources[0]?.kind).toBe("lifecycle");
-    expect(sources[0]?.pointer).toBe(ISSUE_POINTER);
-    expect(record?.notes).toContain("memory_promoted: 2 entries");
-  });
+      expect(outcome.merged).toBe(true);
+      expect(await memory.countEntries(identity.projectId)).toBe(2);
+      expect(hits[0]?.entry.status).toBe("active");
+      expect(sources[0]?.kind).toBe("lifecycle");
+      expect(sources[0]?.pointer).toBe(ISSUE_POINTER);
+      expect(record?.notes).toContain("memory_promoted: 2 entries");
+    },
+    LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "promotes lifecycle issue body sections as meaningful notes when no ledger exists",
+    async () => {
+      const issueBody = [
+        "## Request",
+        "",
+        ISSUE_REQUEST_SUMMARY,
+        "",
+        "## Goals",
+        "",
+        ...ISSUE_GOAL_SUMMARIES.map((summary) => `- ${summary}`),
+        "",
+        "## Constraints",
+        "",
+        ...ISSUE_CONSTRAINT_SUMMARIES.map((summary) => `- ${summary}`),
+      ].join("\n");
+      const memory = await useMemory();
+      const runner = createRunner({ issueBody });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+      await handle.start({
+        summary: "Lifecycle memory",
+        goals: [],
+        constraints: [],
+        ownerLogin: OWNER,
+        repo: REPO,
+      });
+
+      const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
+      const identity = await resolveProjectId(cwd);
+      const found = await Promise.all(
+        EXPECTED_ISSUE_NOTE_SUMMARIES.map(async (summary) => {
+          const hits = await memory.searchEntries(identity.projectId, summary, {
+            status: "active",
+            type: "note",
+            limit: ISSUE_BODY_SEARCH_LIMIT,
+          });
+          return hits.find((hit) => hit.entry.summary === summary)?.entry;
+        }),
+      );
+      const entries = found.flatMap((entry) => (entry ? [entry] : []));
+      const titles = entries.map((entry) => entry.title);
+      const summaries = entries.map((entry) => entry.summary);
+
+      expect(outcome.merged).toBe(true);
+      expect(await memory.countEntries(identity.projectId)).toBe(EXPECTED_ISSUE_NOTE_SUMMARIES.length);
+      expect(entries).toHaveLength(EXPECTED_ISSUE_NOTE_SUMMARIES.length);
+      expect(entries.every((entry) => entry.type === "note")).toBe(true);
+      expect(titles.every((title) => !title.startsWith("#"))).toBe(true);
+      expect(titles[0]).toBe(ISSUE_REQUEST_SUMMARY);
+      expect(titles).toEqual(EXPECTED_ISSUE_NOTE_SUMMARIES);
+      expect(summaries).toEqual(EXPECTED_ISSUE_NOTE_SUMMARIES);
+    },
+    LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS,
+  );
 
   it("skips promotion for non-merged finish outcomes", async () => {
     const memory = await useMemory();

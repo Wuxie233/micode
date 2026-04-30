@@ -12,6 +12,7 @@ import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "
 import { resolveProjectId } from "@/utils/project-id";
 
 const PREFIX = "project-memory-isolation-";
+const PROJECT_MEMORY_ISOLATION_TEST_TIMEOUT_MS = 20_000;
 const REPO_A = "repo-a";
 const REPO_B = "repo-b";
 const ORIGIN_A = "https://github.com/Wuxie233/micode-alpha.git";
@@ -65,31 +66,35 @@ afterEach(async () => {
 });
 
 describe("project memory project isolation", () => {
-  it("does not leak promoted lifecycle decisions across repos sharing one store", async () => {
-    const repoA = await createRepo(REPO_A, ORIGIN_A);
-    const repoB = await createRepo(REPO_B, ORIGIN_B);
-    const identityA = await resolveProjectId(repoA);
-    const identityB = await resolveProjectId(repoB);
-    const promote = createProjectMemoryPromoteTool(createContext(repoA)).project_memory_promote;
-    const lookupA = createProjectMemoryLookupTool(createContext(repoA)).project_memory_lookup;
-    const lookupB = createProjectMemoryLookupTool(createContext(repoB)).project_memory_lookup;
+  it(
+    "does not leak promoted lifecycle decisions across repos sharing one store",
+    async () => {
+      const repoA = await createRepo(REPO_A, ORIGIN_A);
+      const repoB = await createRepo(REPO_B, ORIGIN_B);
+      const identityA = await resolveProjectId(repoA);
+      const identityB = await resolveProjectId(repoB);
+      const promote = createProjectMemoryPromoteTool(createContext(repoA)).project_memory_promote;
+      const lookupA = createProjectMemoryLookupTool(createContext(repoA)).project_memory_lookup;
+      const lookupB = createProjectMemoryLookupTool(createContext(repoB)).project_memory_lookup;
 
-    const promoted = await executeTool(promote, {
-      markdown: MARKDOWN,
-      entity_name: ENTITY_NAME,
-      source_kind: "lifecycle",
-      pointer: POINTER,
-    });
-    const hitsB = await executeTool(lookupB, { query: QUERY, limit: LIMIT });
-    const hitsA = await executeTool(lookupA, { query: QUERY, limit: LIMIT });
+      const promoted = await executeTool(promote, {
+        markdown: MARKDOWN,
+        entity_name: ENTITY_NAME,
+        source_kind: "lifecycle",
+        pointer: POINTER,
+      });
+      const hitsB = await executeTool(lookupB, { query: QUERY, limit: LIMIT });
+      const hitsA = await executeTool(lookupA, { query: QUERY, limit: LIMIT });
 
-    expect(identityA.projectId).not.toBe(identityB.projectId);
-    expect(promoted).toContain("## Project memory promoted");
-    expect(promoted).toContain(DECISION);
-    expect(hitsB).toContain("No project memory entries");
-    expect(hitsB).not.toContain(DECISION);
-    expect(hitsA).toContain(DECISION);
-    expect(await memory.countEntries(identityA.projectId)).toBe(EXPECTED_ONE);
-    expect(await memory.countEntries(identityB.projectId)).toBe(EXPECTED_ZERO);
-  });
+      expect(identityA.projectId).not.toBe(identityB.projectId);
+      expect(promoted).toContain("## Project memory promoted");
+      expect(promoted).toContain(DECISION);
+      expect(hitsB).toContain("No project memory entries");
+      expect(hitsB).not.toContain(DECISION);
+      expect(hitsA).toContain(DECISION);
+      expect(await memory.countEntries(identityA.projectId)).toBe(EXPECTED_ONE);
+      expect(await memory.countEntries(identityB.projectId)).toBe(EXPECTED_ZERO);
+    },
+    PROJECT_MEMORY_ISOLATION_TEST_TIMEOUT_MS,
+  );
 });

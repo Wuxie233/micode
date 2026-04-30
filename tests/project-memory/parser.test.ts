@@ -75,4 +75,126 @@ describe("extractCandidates", () => {
     expect(r.candidates[0].summary.length).toBe(1000);
     expect(r.candidates[0].summary).toBe("n".repeat(1000));
   });
+
+  it("emits a meaningful note from a lifecycle Request section when no structured section is present", () => {
+    const md = [
+      "## Request",
+      "",
+      "Improve project memory promotion quality so issue bodies become useful entries.",
+      "",
+      "## Goals",
+      "",
+      "- Parse lifecycle sections deterministically",
+      "- Avoid collapsing the body into a single ## Request note",
+      "",
+      "## Constraints",
+      "",
+      "- Keep promotion best-effort and non-blocking",
+    ].join("\n");
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "issue-15",
+      sourceKind: "lifecycle",
+      pointer: "issue/15",
+    });
+
+    const types = r.candidates.map((c) => c.entryType);
+    const titles = r.candidates.map((c) => c.title);
+    const summaries = r.candidates.map((c) => c.summary);
+
+    expect(types).toEqual(["note", "note", "note", "note"]);
+    expect(titles[0]).toBe("Improve project memory promotion quality so issue bodies become useful entries.");
+    expect(summaries[0]).toBe("Improve project memory promotion quality so issue bodies become useful entries.");
+    expect(summaries.slice(1, 3)).toEqual([
+      "Parse lifecycle sections deterministically",
+      "Avoid collapsing the body into a single ## Request note",
+    ]);
+    expect(summaries.slice(3)).toEqual(["Keep promotion best-effort and non-blocking"]);
+    expect(titles.every((t) => !t.startsWith("##"))).toBe(true);
+  });
+
+  it("prefers explicit Decisions over lifecycle Request fallback", () => {
+    const md = [
+      "## Request",
+      "Free-form request body that should be ignored when decisions exist.",
+      "",
+      "## Decisions",
+      "- Persist promoted memory in SQLite",
+      "",
+      "## Goals",
+      "- Should also be ignored",
+    ].join("\n");
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "issue-15",
+      sourceKind: "lifecycle",
+      pointer: "issue/15",
+    });
+
+    expect(r.candidates.length).toBe(1);
+    expect(r.candidates[0].entryType).toBe("decision");
+    expect(r.candidates[0].summary).toBe("Persist promoted memory in SQLite");
+  });
+
+  it("ignores empty lifecycle sections", () => {
+    const md = ["## Request", "", "## Goals", "", "## Constraints", ""].join("\n");
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "issue-15",
+      sourceKind: "lifecycle",
+      pointer: "issue/15",
+    });
+
+    expect(r.candidates).toEqual([]);
+  });
+
+  it("derives a fallback title from the first meaningful line, not the markdown heading", () => {
+    const md = ["# Heading", "", "Real first sentence describing the change.", "", "More detail."].join("\n");
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "memory",
+      sourceKind: "manual",
+      pointer: "manual://x",
+    });
+
+    expect(r.candidates.length).toBe(1);
+    expect(r.candidates[0].entryType).toBe("note");
+    expect(r.candidates[0].title).toBe("Real first sentence describing the change.");
+    expect(r.candidates[0].title.startsWith("#")).toBe(false);
+  });
+
+  it("falls back to the heading text only when no other meaningful content exists", () => {
+    const md = "## Request";
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "issue-15",
+      sourceKind: "lifecycle",
+      pointer: "issue/15",
+    });
+
+    expect(r.candidates).toEqual([]);
+  });
+
+  it("treats a lifecycle Request body that spans multiple lines as a single note titled by the first line", () => {
+    const md = [
+      "## Request",
+      "",
+      "First sentence summary.",
+      "",
+      "Second paragraph with extra context that should appear in the summary.",
+      "",
+    ].join("\n");
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "issue-15",
+      sourceKind: "lifecycle",
+      pointer: "issue/15",
+    });
+
+    expect(r.candidates.length).toBe(1);
+    expect(r.candidates[0].entryType).toBe("note");
+    expect(r.candidates[0].title).toBe("First sentence summary.");
+    expect(r.candidates[0].summary).toContain("First sentence summary.");
+    expect(r.candidates[0].summary).toContain("Second paragraph with extra context");
+  });
 });

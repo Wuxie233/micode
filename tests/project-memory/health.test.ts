@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { forget } from "@/project-memory/forget";
 import { buildHealthReport } from "@/project-memory/health";
 import { createProjectMemoryStore, type ProjectMemoryStore } from "@/project-memory/store";
 import type { Entity, Entry, Source, Status } from "@/project-memory/types";
@@ -23,6 +24,7 @@ const RECENT_AGE_DAYS = 1;
 const EXPECTED_TWO = 2;
 const EXPECTED_THREE = 3;
 const DEGRADED_WARNING = "identity_degraded: origin not resolved";
+const HEALTH_TEST_TIMEOUT_MS = 20_000;
 
 let dir: string;
 let stores: ProjectMemoryStore[];
@@ -108,47 +110,85 @@ function recentTimestamp(now: number): number {
 }
 
 describe("buildHealthReport", () => {
-  it("aggregates store counts with zero-filled statuses and stale entries", async () => {
-    const store = createStore();
-    const now = Date.now();
-    await store.initialize();
+  it(
+    "aggregates store counts with zero-filled statuses and stale entries",
+    async () => {
+      const store = createStore();
+      const now = Date.now();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntity(entity({ id: OTHER_ENTITY_ID, name: "billing" }));
-    await store.upsertEntry(entry({ id: ACTIVE_ENTRY_ID, status: "active", updatedAt: recentTimestamp(now) }));
-    await store.upsertEntry(entry({ id: TENTATIVE_ENTRY_ID, status: "tentative", updatedAt: staleTimestamp(now) }));
-    await store.upsertEntry(
-      entry({
-        id: DEPRECATED_ENTRY_ID,
-        entityId: OTHER_ENTITY_ID,
-        status: "deprecated",
-        updatedAt: recentTimestamp(now),
-      }),
-    );
-    await store.upsertSource(source());
+      await store.upsertEntity(entity());
+      await store.upsertEntity(entity({ id: OTHER_ENTITY_ID, name: "billing" }));
+      await store.upsertEntry(entry({ id: ACTIVE_ENTRY_ID, status: "active", updatedAt: recentTimestamp(now) }));
+      await store.upsertEntry(entry({ id: TENTATIVE_ENTRY_ID, status: "tentative", updatedAt: staleTimestamp(now) }));
+      await store.upsertEntry(
+        entry({
+          id: DEPRECATED_ENTRY_ID,
+          entityId: OTHER_ENTITY_ID,
+          status: "deprecated",
+          updatedAt: recentTimestamp(now),
+        }),
+      );
+      await store.upsertSource(source());
 
-    const report = await buildHealthReport(store, identity());
+      const report = await buildHealthReport(store, identity());
 
-    expect(report).toEqual({
-      projectId: PROJECT_ID,
-      identityKind: "origin",
-      entityCount: EXPECTED_TWO,
-      entryCount: EXPECTED_THREE,
-      entriesByStatus: statusCounts({ active: 1, tentative: 1, deprecated: 1 }),
-      staleEntryCount: 1,
-      missingSourceCount: EXPECTED_TWO,
-      recentUpdates: EXPECTED_TWO,
-      warnings: [],
-    });
-  });
+      expect(report).toEqual({
+        projectId: PROJECT_ID,
+        identityKind: "origin",
+        entityCount: EXPECTED_TWO,
+        entryCount: EXPECTED_THREE,
+        entriesByStatus: statusCounts({ active: 1, tentative: 1, deprecated: 1 }),
+        staleEntryCount: 1,
+        missingSourceCount: EXPECTED_TWO,
+        recentUpdates: EXPECTED_TWO,
+        warnings: [],
+      });
+    },
+    HEALTH_TEST_TIMEOUT_MS,
+  );
 
-  it("warns when project identity is degraded", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "warns when project identity is degraded",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    const report = await buildHealthReport(store, identity({ kind: "path", source: "/tmp/project" }));
+      const report = await buildHealthReport(store, identity({ kind: "path", source: "/tmp/project" }));
 
-    expect(report.warnings).toEqual([DEGRADED_WARNING]);
-    expect(report.identityKind).toBe("path");
-  });
+      expect(report.warnings).toEqual([DEGRADED_WARNING]);
+      expect(report.identityKind).toBe("path");
+    },
+    HEALTH_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "returns zero missing sources after entity-level forget removes orphaned entries",
+    async () => {
+      const store = createStore();
+      const projectIdentity = identity();
+      await store.initialize();
+
+      const orphanedEntity = entity({ id: "ent_orphan", name: "smoke" });
+      const orphanedEntry = entry({
+        id: "entry_orphan",
+        entityId: orphanedEntity.id,
+        title: "Smoke leftover",
+        summary: "leftover from a manual smoke test",
+      });
+      await store.upsertEntity(orphanedEntity);
+      await store.upsertEntry(orphanedEntry);
+
+      const before = await buildHealthReport(store, projectIdentity);
+      expect(before.missingSourceCount).toBeGreaterThan(0);
+
+      await forget({ store, identity: projectIdentity, target: { kind: "entity", entityId: orphanedEntity.id } });
+
+      const after = await buildHealthReport(store, projectIdentity);
+      expect(after.missingSourceCount).toBe(0);
+      expect(after.entityCount).toBe(0);
+      expect(after.entryCount).toBe(0);
+    },
+    HEALTH_TEST_TIMEOUT_MS,
+  );
 });

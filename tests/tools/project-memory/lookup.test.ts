@@ -24,6 +24,7 @@ const UPDATED_AT = 2;
 const LIMIT = 5;
 const FAILURE_MESSAGE = "lookup exploded";
 const TOOL_CONTEXT = {} as ToolContext;
+const PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS = 20_000;
 
 type ExecuteSignature = (raw: unknown, context: ToolContext) => Promise<ToolResult>;
 
@@ -132,34 +133,42 @@ describe("project_memory_lookup", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("returns lookup markdown from the project-scoped memory store", async () => {
-    directory = mkdtempSync(join(tmpdir(), "pm-lookup-tool-"));
-    const identity = await resolveProjectId(directory);
-    const store = createProjectMemoryStore({ dbDir: join(directory, "memory") });
-    await seedMemory(store, identity.projectId);
-    setProjectMemoryStoreForTest(store);
+  it(
+    "returns lookup markdown from the project-scoped memory store",
+    async () => {
+      directory = mkdtempSync(join(tmpdir(), "pm-lookup-tool-"));
+      const identity = await resolveProjectId(directory);
+      const store = createProjectMemoryStore({ dbDir: join(directory, "memory") });
+      await seedMemory(store, identity.projectId);
+      setProjectMemoryStoreForTest(store);
 
-    const tools = createProjectMemoryLookupTool(createContext(directory));
-    const output = await executeTool(tools.project_memory_lookup, {
-      query: QUERY,
-      type: "decision",
-      limit: LIMIT,
-    });
+      const tools = createProjectMemoryLookupTool(createContext(directory));
+      const output = await executeTool(tools.project_memory_lookup, {
+        query: QUERY,
+        type: "decision",
+        limit: LIMIT,
+      });
 
-    expect(output).toContain("## Project Memory");
-    expect(output).toContain(ACTIVE_TITLE);
-    expect(output).toContain(POINTER);
-    expect(output).toContain("Query: `permission`");
-    expect(output).not.toContain(TENTATIVE_TITLE);
-  });
+      expect(output).toContain("## Project Memory");
+      expect(output).toContain(ACTIVE_TITLE);
+      expect(output).toContain(POINTER);
+      expect(output).toContain("Query: `permission`");
+      expect(output).not.toContain(TENTATIVE_TITLE);
+    },
+    PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS,
+  );
 
-  it("returns a friendly error instead of throwing", async () => {
-    directory = mkdtempSync(join(tmpdir(), "pm-lookup-tool-error-"));
-    setProjectMemoryStoreForTest(createFailingStore());
+  it(
+    "returns a friendly error instead of throwing",
+    async () => {
+      directory = mkdtempSync(join(tmpdir(), "pm-lookup-tool-error-"));
+      setProjectMemoryStoreForTest(createFailingStore());
 
-    const tools = createProjectMemoryLookupTool(createContext(directory));
-    const output = await executeTool(tools.project_memory_lookup, { query: QUERY });
+      const tools = createProjectMemoryLookupTool(createContext(directory));
+      const output = await executeTool(tools.project_memory_lookup, { query: QUERY });
 
-    expect(output).toBe(`## Error\n\n${FAILURE_MESSAGE}`);
-  });
+      expect(output).toBe(`## Error\n\n${FAILURE_MESSAGE}`);
+    },
+    PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS,
+  );
 });

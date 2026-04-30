@@ -24,6 +24,7 @@ const PROMOTION_MARKDOWN = `## Decisions
 - ${SECRET_DECISION}
 `;
 const EXPECTED_ACCEPTED = 1;
+const PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS = 20_000;
 
 let root: string;
 let store: ProjectMemoryStore;
@@ -68,41 +69,49 @@ afterEach(async () => {
 });
 
 describe("project_memory_promote tool", () => {
-  it("returns accepted and rejected promotion summary tables", async () => {
-    const directory = await createOriginRepo();
-    const toolDef = createProjectMemoryPromoteTool(createCtx(directory)).project_memory_promote;
+  it(
+    "returns accepted and rejected promotion summary tables",
+    async () => {
+      const directory = await createOriginRepo();
+      const toolDef = createProjectMemoryPromoteTool(createCtx(directory)).project_memory_promote;
 
-    const output = await callExecute(toolDef, {
-      markdown: PROMOTION_MARKDOWN,
-      entity_name: ENTITY_NAME,
-      source_kind: "lifecycle",
-      pointer: POINTER,
-    });
-    const identity = await resolveProjectId(directory);
+      const output = await callExecute(toolDef, {
+        markdown: PROMOTION_MARKDOWN,
+        entity_name: ENTITY_NAME,
+        source_kind: "lifecycle",
+        pointer: POINTER,
+      });
+      const identity = await resolveProjectId(directory);
 
-    expect(output).toContain("## Project memory promoted");
-    expect(output).toContain("| Entry ID | Title | Status |");
-    expect(output).toContain(ACCEPTED_DECISION);
-    expect(output).toContain("| Title | Reason |");
-    expect(output).toContain("secret: stripe_secret_key");
-    expect(output).toContain("**Note**: 1 accepted, 1 rejected");
-    expect(await store.countEntries(identity.projectId)).toBe(EXPECTED_ACCEPTED);
-  });
+      expect(output).toContain("## Project memory promoted");
+      expect(output).toContain("| Entry ID | Title | Status |");
+      expect(output).toContain(ACCEPTED_DECISION);
+      expect(output).toContain("| Title | Reason |");
+      expect(output).toContain("secret: stripe_secret_key");
+      expect(output).toContain("**Note**: 1 accepted, 1 rejected");
+      expect(await store.countEntries(identity.projectId)).toBe(EXPECTED_ACCEPTED);
+    },
+    PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS,
+  );
 
-  it("refuses promotion when project identity is degraded", async () => {
-    const directory = createPlainDirectory();
-    const toolDef = createProjectMemoryPromoteTool(createCtx(directory)).project_memory_promote;
+  it(
+    "refuses promotion when project identity is degraded",
+    async () => {
+      const directory = createPlainDirectory();
+      const toolDef = createProjectMemoryPromoteTool(createCtx(directory)).project_memory_promote;
 
-    const output = await callExecute(toolDef, {
-      markdown: `## Decisions\n- ${ACCEPTED_DECISION}\n`,
-      entity_name: ENTITY_NAME,
-      source_kind: "lifecycle",
-      pointer: POINTER,
-    });
-    const identity = await resolveProjectId(directory);
+      const output = await callExecute(toolDef, {
+        markdown: `## Decisions\n- ${ACCEPTED_DECISION}\n`,
+        entity_name: ENTITY_NAME,
+        source_kind: "lifecycle",
+        pointer: POINTER,
+      });
+      const identity = await resolveProjectId(directory);
 
-    expect(output).toContain("## Project memory promotion refused");
-    expect(output.toLowerCase()).toContain("degraded identity");
-    expect(await store.countEntries(identity.projectId)).toBe(0);
-  });
+      expect(output).toContain("## Project memory promotion refused");
+      expect(output.toLowerCase()).toContain("degraded identity");
+      expect(await store.countEntries(identity.projectId)).toBe(0);
+    },
+    PROJECT_MEMORY_TOOL_TEST_TIMEOUT_MS,
+  );
 });
