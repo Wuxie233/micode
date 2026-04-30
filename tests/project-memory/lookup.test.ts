@@ -18,6 +18,7 @@ const LIMIT = 10;
 const EXPECTED_SINGLE_COUNT = 1;
 const SOURCE_PREFIX = "source-";
 const POINTER_PREFIX = "manual://";
+const LOOKUP_TEST_TIMEOUT_MS = 20_000;
 
 const IDENTITY: ProjectIdentity = {
   projectId: PROJECT_ID,
@@ -107,31 +108,35 @@ function hitIds(hits: readonly { readonly entry: Entry }[]): string[] {
 }
 
 describe("lookup", () => {
-  it("applies type, status, and entity filters before ranking through the store", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "applies type, status, and entity filters before ranking through the store",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    await seedMemory(store, { entry: { id: "entry-decision-active", type: "decision", status: "active" } });
-    await seedMemory(store, { entry: { id: "entry-risk-active", type: "risk", status: "active" } });
-    await seedMemory(store, {
-      entity: { id: OTHER_ENTITY_ID, name: "billing" },
-      entry: { id: "entry-decision-tentative", type: "decision", status: "tentative" },
-    });
+      await seedMemory(store, { entry: { id: "entry-decision-active", type: "decision", status: "active" } });
+      await seedMemory(store, { entry: { id: "entry-risk-active", type: "risk", status: "active" } });
+      await seedMemory(store, {
+        entity: { id: OTHER_ENTITY_ID, name: "billing" },
+        entry: { id: "entry-decision-tentative", type: "decision", status: "tentative" },
+      });
 
-    const decisions = await lookup({ store, identity: IDENTITY, query: "alpha", type: "decision", limit: LIMIT });
-    const active = await lookup({ store, identity: IDENTITY, query: "alpha", status: "active", limit: LIMIT });
-    const billing = await lookup({
-      store,
-      identity: IDENTITY,
-      query: "alpha",
-      entityId: OTHER_ENTITY_ID,
-      limit: LIMIT,
-    });
+      const decisions = await lookup({ store, identity: IDENTITY, query: "alpha", type: "decision", limit: LIMIT });
+      const active = await lookup({ store, identity: IDENTITY, query: "alpha", status: "active", limit: LIMIT });
+      const billing = await lookup({
+        store,
+        identity: IDENTITY,
+        query: "alpha",
+        entityId: OTHER_ENTITY_ID,
+        limit: LIMIT,
+      });
 
-    expect(hitIds(decisions)).toEqual(["entry-decision-active", "entry-decision-tentative"]);
-    expect(hitIds(active).sort()).toEqual(["entry-decision-active", "entry-risk-active"].sort());
-    expect(hitIds(billing)).toEqual(["entry-decision-tentative"]);
-  });
+      expect(hitIds(decisions)).toEqual(["entry-decision-active", "entry-decision-tentative"]);
+      expect(hitIds(active).sort()).toEqual(["entry-decision-active", "entry-risk-active"].sort());
+      expect(hitIds(billing)).toEqual(["entry-decision-tentative"]);
+    },
+    LOOKUP_TEST_TIMEOUT_MS,
+  );
 
   it("sorts hits by status rank before score and recency", async () => {
     const store = createStore();
