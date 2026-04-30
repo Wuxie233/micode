@@ -23,6 +23,13 @@ interface Harness {
 const SESSION_MAIN = "ses_main";
 const SESSION_CHILD = "ses_child";
 const SESSION_INTERNAL = "ses_internal";
+const ISSUE_TOPIC = "优化主会话标题生成";
+const ISSUE_TABLE_OUTPUT = "| 13 | `issue/13-foo` | `/tmp/wt-13` | `planning` |";
+const THROTTLE_BYPASS_MS = 1100;
+
+const waitThroughThrottle = (): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, THROTTLE_BYPASS_MS));
+};
 
 const createHarness = (): Harness => {
   const sessions = new Map<string, FakeSession>();
@@ -237,7 +244,7 @@ describe("conversation-title hook", () => {
       { output: "merged and closed" },
     );
 
-    expect(harness.updates.at(-1)?.title).toBe("修复 fork 检测 · 已完成");
+    expect(harness.updates.at(-1)?.title).toBe("#1 已完成：修复 fork 检测");
   });
 
   it("opts out after the confirmed system title is manually edited and freezes further updates", async () => {
@@ -333,5 +340,126 @@ describe("conversation-title hook", () => {
         { output: "" },
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("renames the main session with issue prefix after lifecycle_start_request", async () => {
+    const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_MAIN,
+        args: { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      },
+      {
+        output: ["| Issue # | Branch | Worktree | State |", "|---|---|---|---|", ISSUE_TABLE_OUTPUT].join("\n"),
+      },
+    );
+
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0]?.id).toBe(SESSION_MAIN);
+    expect(harness.updates[0]?.title).toBe("#13 规划中：优化主会话标题生成");
+  });
+
+  it("preserves issue prefix and full-width colon across lifecycle_commit calls", async () => {
+    const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_MAIN,
+        args: { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      },
+      { output: ISSUE_TABLE_OUTPUT },
+    );
+
+    await waitThroughThrottle();
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_commit",
+        sessionID: SESSION_MAIN,
+        args: { issue_number: 13, scope: "title", summary: "wire hook" },
+      },
+      { output: "" },
+    );
+
+    expect(harness.updates.at(-1)?.title).toBe("#13 执行中：优化主会话标题生成");
+  });
+
+  it("renders issue-prefixed done title after lifecycle_finish closes the issue", async () => {
+    const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_MAIN,
+        args: { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      },
+      { output: ISSUE_TABLE_OUTPUT },
+    );
+
+    await waitThroughThrottle();
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_finish",
+        sessionID: SESSION_MAIN,
+        args: { issue_number: 13 },
+      },
+      { output: "merged and closed" },
+    );
+
+    expect(harness.updates.at(-1)?.title).toBe("#13 已完成：优化主会话标题生成");
+  });
+
+  it("does not add issue prefix to child spawn-agent sessions", async () => {
+    const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_CHILD,
+        args: { summary: "should not affect child", goals: [], constraints: [] },
+      },
+      { output: ISSUE_TABLE_OUTPUT },
+    );
+
+    expect(harness.updates).toHaveLength(0);
+  });
+
+  it("falls back to no-issue title when start output has no parseable issue number", async () => {
+    const hook = createConversationTitleHook(harness.ctx);
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_MAIN,
+        args: { summary: ISSUE_TOPIC, goals: [], constraints: [] },
+      },
+      { output: "(no table)" },
+    );
+
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0]?.title).toBe(ISSUE_TOPIC);
+  });
+
+  it("rejects tool-like summary while preserving prior Chinese topic", async () => {
+    const hook = createConversationTitleHook(harness.ctx, { chatFallbackEnabled: true });
+
+    await hook["chat.message"]({ sessionID: SESSION_MAIN }, { parts: [{ type: "text", text: ISSUE_TOPIC }] });
+
+    await waitThroughThrottle();
+
+    await hook["tool.execute.after"](
+      {
+        tool: "lifecycle_start_request",
+        sessionID: SESSION_MAIN,
+        args: { summary: "executor", goals: [], constraints: [] },
+      },
+      { output: ISSUE_TABLE_OUTPUT },
+    );
+
+    expect(harness.updates.at(-1)?.title).toBe("#13 规划中：优化主会话标题生成");
   });
 });

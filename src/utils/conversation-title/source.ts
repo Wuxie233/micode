@@ -24,6 +24,32 @@ const EMPTY = "";
 const EDGE_START_PATTERN = /^[\p{P}\s]+/u;
 const EDGE_END_PATTERN = /[\p{P}\s]+$/u;
 
+const TOOL_AND_AGENT_NAMES = [
+  "spawn-agent",
+  "spawn_agent",
+  "implementer-frontend",
+  "implementer-backend",
+  "implementer-general",
+  "executor",
+  "reviewer",
+  "codebase-locator",
+  "codebase-analyzer",
+  "pattern-finder",
+  "planner",
+  "brainstormer",
+  "octto",
+  "commander",
+] as const;
+
+const PROCESS_PHRASES = [
+  "create implementation plan",
+  "execute implementation plan",
+  "creating implementation plan",
+  "running executor",
+  "start executor",
+  "start implementer",
+] as const;
+
 const LOW_INFO_MESSAGES = [
   "重启了",
   "什么",
@@ -47,10 +73,16 @@ const LOW_INFO_MESSAGES = [
   "next",
   "继续做",
   "继续吧",
+  ...TOOL_AND_AGENT_NAMES,
+  ...PROCESS_PHRASES,
 ] as const;
 
 const normalizeLowInformationMessage = (text: string): string =>
   text.toLowerCase().trim().replace(EDGE_START_PATTERN, EMPTY).replace(EDGE_END_PATTERN, EMPTY);
+
+const TOOL_LIKE_PATTERNS: ReadonlySet<string> = new Set(
+  TOOL_AND_AGENT_NAMES.map((name) => normalizeLowInformationMessage(name)),
+);
 
 export const LOW_INFO_PATTERNS: ReadonlySet<string> = new Set(
   LOW_INFO_MESSAGES.map((message) => normalizeLowInformationMessage(message)),
@@ -60,6 +92,12 @@ export function isLowInformationMessage(text: string): boolean {
   const normalized = normalizeLowInformationMessage(text);
   if (normalized === EMPTY) return true;
   return LOW_INFO_PATTERNS.has(normalized);
+}
+
+export function isToolLikeTopic(text: string): boolean {
+  const normalized = normalizeLowInformationMessage(text);
+  if (normalized === EMPTY) return false;
+  return TOOL_LIKE_PATTERNS.has(normalized);
 }
 
 export function compareConfidence(a: TitleSource, b: TitleSource): number {
