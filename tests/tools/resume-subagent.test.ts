@@ -2,9 +2,10 @@ import { describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
 import { createResumeSubagentTool } from "../../src/tools/resume-subagent";
+import { buildSpawnCompletionTitle } from "../../src/tools/spawn-agent/naming";
 import { createPreservedRegistry } from "../../src/tools/spawn-agent/registry";
 import { buildSubagentResumePrompt } from "../../src/tools/spawn-agent/resume-prompt";
-import { SPAWN_OUTCOMES } from "../../src/tools/spawn-agent/types";
+import { SPAWN_OUTCOMES, type SpawnOutcome } from "../../src/tools/spawn-agent/types";
 import { config } from "../../src/utils/config";
 
 const SESSION_ID = "session-resume";
@@ -12,6 +13,7 @@ const AGENT = "implementer-general";
 const DESCRIPTION = "Resume preserved task";
 const TTL_HOURS = 1;
 const SUCCESS_OUTPUT = "Implementation completed successfully.";
+const BLOCKED_OUTPUT = "BLOCKED: missing credentials, escalate to operator.";
 const TRANSIENT_MESSAGE = "fetch failed";
 
 interface PromptCall {
@@ -19,14 +21,21 @@ interface PromptCall {
   readonly text: string;
 }
 
+interface UpdateCall {
+  readonly id: string;
+  readonly title: string;
+}
+
 interface FakeRecorder {
   readonly promptCalls: PromptCall[];
+  readonly updateCalls: UpdateCall[];
   readonly deleteCalls: string[];
 }
 
 interface FakeOptions {
   readonly assistantText?: string;
   readonly promptError?: Error;
+  readonly updateError?: Error;
 }
 
 type ExecuteSignature = (raw: unknown, ctx: unknown) => Promise<string>;
@@ -45,6 +54,10 @@ function preserveSession(registry: ReturnType<typeof createRegistry>): void {
     description: DESCRIPTION,
     outcome: SPAWN_OUTCOMES.TASK_ERROR,
   });
+}
+
+function buildExpectedTitle(outcome: SpawnOutcome): string {
+  return buildSpawnCompletionTitle({ agent: AGENT, description: DESCRIPTION, outcome });
 }
 
 function buildSession(recorder: FakeRecorder, options: FakeOptions) {
@@ -70,11 +83,18 @@ function buildSession(recorder: FakeRecorder, options: FakeOptions) {
     delete: async (input: { readonly path: { readonly id: string } }) => {
       recorder.deleteCalls.push(input.path.id);
     },
+    update: async (input: { readonly path: { readonly id: string }; readonly body: { readonly title: string } }) => {
+      recorder.updateCalls.push({
+        id: input.path.id,
+        title: input.body.title,
+      });
+      if (options.updateError) throw options.updateError;
+    },
   };
 }
 
 function createCtx(options: FakeOptions = {}): { readonly ctx: PluginInput; readonly recorder: FakeRecorder } {
-  const recorder: FakeRecorder = { promptCalls: [], deleteCalls: [] };
+  const recorder: FakeRecorder = { promptCalls: [], updateCalls: [], deleteCalls: [] };
   const ctx = {
     directory: "/tmp/resume-subagent-test",
     client: { session: buildSession(recorder, options) },
@@ -85,6 +105,21 @@ function createCtx(options: FakeOptions = {}): { readonly ctx: PluginInput; read
 async function callExecute(toolDef: ReturnType<typeof createResumeSubagentTool>, args: unknown): Promise<string> {
   const execute = toolDef.execute.bind(toolDef) as unknown as ExecuteSignature;
   return execute(args, {});
+}
+
+async function captureWarnings(
+  run: () => Promise<string>,
+): Promise<{ readonly output: string; readonly warnings: string[] }> {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: Parameters<typeof console.warn>) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  try {
+    return { output: await run(), warnings };
+  } finally {
+    console.warn = originalWarn;
+  }
 }
 
 describe("createResumeSubagentTool", () => {
@@ -99,9 +134,10 @@ describe("createResumeSubagentTool", () => {
     expect(output).toContain("**SessionID**: -");
     expect(output).toContain("Session not preserved or expired.");
     expect(recorder.promptCalls).toEqual([]);
+    expect(recorder.updateCalls).toEqual([]);
   });
 
-  it("stops at the configured maximum resume count", async () => {
+  it("stops at the configured maximum resume count after rewriting the title", async () => {
     const registry = createRegistry();
     preserveSession(registry);
     for (let index = 0; index < config.subagent.maxResumesPerSession; index += 1) {
@@ -116,10 +152,16 @@ describe("createResumeSubagentTool", () => {
     expect(output).toContain(`**Resume count**: ${config.subagent.maxResumesPerSession}`);
     expect(output).toContain("Maximum resume count reached.");
     expect(recorder.promptCalls).toEqual([]);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.HARD_FAILURE),
+      },
+    ]);
     expect(registry.size()).toBe(0);
   });
 
-  it("resumes once, formats success, and cleans up the preserved session", async () => {
+  it("resumes once, rewrites the title to success, and cleans up the preserved session", async () => {
     const registry = createRegistry();
     preserveSession(registry);
     const { ctx, recorder } = createCtx({ assistantText: SUCCESS_OUTPUT });
@@ -138,11 +180,17 @@ describe("createResumeSubagentTool", () => {
         text: buildSubagentResumePrompt({ errorType: SPAWN_OUTCOMES.TASK_ERROR, hint }),
       },
     ]);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.SUCCESS),
+      },
+    ]);
     expect(recorder.deleteCalls).toEqual([SESSION_ID]);
     expect(registry.size()).toBe(0);
   });
 
-  it("classifies a transient resume failure as a terminal hard failure", async () => {
+  it("classifies a transient resume failure as a terminal hard failure and rewrites the title", async () => {
     const registry = createRegistry();
     preserveSession(registry);
     const { ctx, recorder } = createCtx({ promptError: new Error(TRANSIENT_MESSAGE) });
@@ -153,6 +201,57 @@ describe("createResumeSubagentTool", () => {
     expect(output).toContain("**Outcome**: hard_failure");
     expect(output).toContain("**Resume count**: 1");
     expect(output).toContain(TRANSIENT_MESSAGE);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.HARD_FAILURE),
+      },
+    ]);
+    expect(recorder.deleteCalls).toEqual([SESSION_ID]);
+    expect(registry.size()).toBe(0);
+  });
+
+  it("keeps the preserved session after rewriting the title for a blocked resume", async () => {
+    const registry = createRegistry();
+    preserveSession(registry);
+    const { ctx, recorder } = createCtx({ assistantText: BLOCKED_OUTPUT });
+    const toolDef = createResumeSubagentTool(ctx, { registry });
+
+    const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+    expect(output).toContain("**Outcome**: blocked");
+    expect(output).toContain("**Resume count**: 1");
+    expect(output).toContain(BLOCKED_OUTPUT);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.BLOCKED),
+      },
+    ]);
+    expect(recorder.deleteCalls).toEqual([]);
+    expect(registry.size()).toBe(1);
+  });
+
+  it("keeps a successful resume outcome and cleanup when the title update fails", async () => {
+    const registry = createRegistry();
+    preserveSession(registry);
+    const updateError = new Error("update failed");
+    const { ctx, recorder } = createCtx({ assistantText: SUCCESS_OUTPUT, updateError });
+    const toolDef = createResumeSubagentTool(ctx, { registry });
+
+    const captured = await captureWarnings(() => callExecute(toolDef, { session_id: SESSION_ID }));
+
+    expect(captured.output).toContain("**Outcome**: success");
+    expect(captured.output).toContain(SUCCESS_OUTPUT);
+    expect(captured.warnings).toEqual([
+      "[internal-session] Failed to update internal session session-resume title: update failed",
+    ]);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.SUCCESS),
+      },
+    ]);
     expect(recorder.deleteCalls).toEqual([SESSION_ID]);
     expect(registry.size()).toBe(0);
   });
