@@ -2,7 +2,9 @@ import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
 import { config } from "@/utils/config";
+import { updateInternalSession } from "@/utils/internal-session";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./spawn-agent/classify";
+import { buildSpawnCompletionTitle } from "./spawn-agent/naming";
 import type { PreservedRecord, PreservedRegistry } from "./spawn-agent/registry";
 import { buildSubagentResumePrompt } from "./spawn-agent/resume-prompt";
 import { type ResumeSubagentResult, SPAWN_OUTCOMES, type SpawnOutcome } from "./spawn-agent/types";
@@ -108,6 +110,18 @@ function hardFailure(output: string, sessionId: string | null, resumeCount: numb
   };
 }
 
+async function syncResumedTitle(ctx: PluginInput, record: PreservedRecord, outcome: SpawnOutcome): Promise<void> {
+  await updateInternalSession({
+    ctx,
+    sessionId: record.sessionId,
+    title: buildSpawnCompletionTitle({
+      agent: record.agent,
+      description: record.description,
+      outcome,
+    }),
+  });
+}
+
 async function deleteSession(ctx: PluginInput, sessionId: string): Promise<void> {
   const session = ctx.client.session;
   if (!hasSessionDelete(session)) return;
@@ -139,6 +153,7 @@ async function handleMaxResumes(
   registry: PreservedRegistry,
   record: PreservedRecord,
 ): Promise<string> {
+  await syncResumedTitle(ctx, record, SPAWN_OUTCOMES.HARD_FAILURE);
   await cleanup(ctx, registry, record.sessionId);
   return formatResumeResult(hardFailure(MAX_RESUMES_REASON, record.sessionId, record.resumeCount));
 }
@@ -158,6 +173,7 @@ async function runResume(
     resumeCount,
     output: attempt.output,
   };
+  await syncResumedTitle(ctx, record, result.outcome);
   if (result.outcome === SPAWN_OUTCOMES.SUCCESS || result.outcome === SPAWN_OUTCOMES.HARD_FAILURE) {
     await cleanup(ctx, registry, record.sessionId);
   }
