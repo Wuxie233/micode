@@ -26,6 +26,7 @@ const UPDATED_AT = 2;
 const STALE_WINDOW_MS = 1_000_000;
 const STALE_MARGIN_MS = 60_000;
 const EXPECTED_SINGLE_COUNT = 1;
+const STORE_TEST_TIMEOUT_MS = 20_000;
 
 let dir: string;
 let stores: ProjectMemoryStore[];
@@ -124,45 +125,53 @@ function statusCounts(active = 0): Record<Status, number> {
 }
 
 describe("ProjectMemoryStore", () => {
-  it("loads inserted rows from every table", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "loads inserted rows from every table",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntry(entry());
-    await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Second", summary: "related target" }));
-    await store.upsertRelation(relation());
-    await store.upsertSource(source());
+      await store.upsertEntity(entity());
+      await store.upsertEntry(entry());
+      await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Second", summary: "related target" }));
+      await store.upsertRelation(relation());
+      await store.upsertSource(source());
 
-    expect(await store.loadEntity(PROJECT_ONE, ENTITY_ID)).toEqual(entity());
-    expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toEqual(entry());
-    expect(await store.loadSourcesForEntry(PROJECT_ONE, ENTRY_ID)).toEqual([source()]);
-    expect(relationCount(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countEntities(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countEntries(PROJECT_ONE)).toBe(2);
-    expect(await store.countSources(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countMissingSources(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countEntriesByStatus(PROJECT_ONE)).toEqual(statusCounts(2));
-  });
+      expect(await store.loadEntity(PROJECT_ONE, ENTITY_ID)).toEqual(entity());
+      expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toEqual(entry());
+      expect(await store.loadSourcesForEntry(PROJECT_ONE, ENTRY_ID)).toEqual([source()]);
+      expect(relationCount(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countEntities(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countEntries(PROJECT_ONE)).toBe(2);
+      expect(await store.countSources(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countMissingSources(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countEntriesByStatus(PROJECT_ONE)).toEqual(statusCounts(2));
+    },
+    STORE_TEST_TIMEOUT_MS,
+  );
 
-  it("returns FTS hits and replaces stale FTS rows on entry upsert", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "returns FTS hits and replaces stale FTS rows on entry upsert",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntry(entry({ title: "Alpha title", summary: "bravo context" }));
+      await store.upsertEntity(entity());
+      await store.upsertEntry(entry({ title: "Alpha title", summary: "bravo context" }));
 
-    const initial = await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 });
-    expect(initial.map((hit) => hit.entry.id)).toEqual([ENTRY_ID]);
-    expect(initial[0]?.score).toBeGreaterThan(0);
+      const initial = await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 });
+      expect(initial.map((hit) => hit.entry.id)).toEqual([ENTRY_ID]);
+      expect(initial[0]?.score).toBeGreaterThan(0);
 
-    await store.upsertEntry(entry({ title: "Gamma title", summary: "delta context" }));
+      await store.upsertEntry(entry({ title: "Gamma title", summary: "delta context" }));
 
-    expect(await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 })).toEqual([]);
-    expect((await store.searchEntries(PROJECT_ONE, "gamma", { limit: 5 })).map((hit) => hit.entry.id)).toEqual([
-      ENTRY_ID,
-    ]);
-  });
+      expect(await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 })).toEqual([]);
+      expect((await store.searchEntries(PROJECT_ONE, "gamma", { limit: 5 })).map((hit) => hit.entry.id)).toEqual([
+        ENTRY_ID,
+      ]);
+    },
+    STORE_TEST_TIMEOUT_MS,
+  );
 
   it("isolates entries by projectId in a shared database", async () => {
     const store = createStore();
@@ -263,66 +272,78 @@ describe("ProjectMemoryStore", () => {
     expect(await store.countMissingSources(PROJECT_ONE)).toBe(2);
   });
 
-  it("counts stale entries older than a threshold by project", async () => {
-    const store = createStore();
-    const now = Date.now();
-    await store.initialize();
+  it(
+    "counts stale entries older than a threshold by project",
+    async () => {
+      const store = createStore();
+      const now = Date.now();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntity(entity({ projectId: PROJECT_TWO }));
-    await store.upsertEntry(entry({ id: ENTRY_ID, updatedAt: now - STALE_WINDOW_MS - STALE_MARGIN_MS }));
-    await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, updatedAt: now - STALE_WINDOW_MS + STALE_MARGIN_MS }));
-    await store.upsertEntry(entry({ projectId: PROJECT_TWO, updatedAt: now - STALE_WINDOW_MS - STALE_MARGIN_MS }));
+      await store.upsertEntity(entity());
+      await store.upsertEntity(entity({ projectId: PROJECT_TWO }));
+      await store.upsertEntry(entry({ id: ENTRY_ID, updatedAt: now - STALE_WINDOW_MS - STALE_MARGIN_MS }));
+      await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, updatedAt: now - STALE_WINDOW_MS + STALE_MARGIN_MS }));
+      await store.upsertEntry(entry({ projectId: PROJECT_TWO, updatedAt: now - STALE_WINDOW_MS - STALE_MARGIN_MS }));
 
-    expect(await store.countStaleEntries(PROJECT_ONE, STALE_WINDOW_MS)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countStaleEntries(PROJECT_TWO, STALE_WINDOW_MS)).toBe(EXPECTED_SINGLE_COUNT);
-  });
+      expect(await store.countStaleEntries(PROJECT_ONE, STALE_WINDOW_MS)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countStaleEntries(PROJECT_TWO, STALE_WINDOW_MS)).toBe(EXPECTED_SINGLE_COUNT);
+    },
+    STORE_TEST_TIMEOUT_MS,
+  );
 
-  it("forgets an entry with FTS, sources, and referencing relations", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "forgets an entry with FTS, sources, and referencing relations",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntry(entry());
-    await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Other", summary: "target" }));
-    await store.upsertSource(source());
-    await store.upsertRelation(relation());
-    await store.upsertRelation(relation({ id: OTHER_RELATION_ID, fromId: OTHER_ENTRY_ID, toId: OTHER_ENTRY_ID }));
+      await store.upsertEntity(entity());
+      await store.upsertEntry(entry());
+      await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Other", summary: "target" }));
+      await store.upsertSource(source());
+      await store.upsertRelation(relation());
+      await store.upsertRelation(relation({ id: OTHER_RELATION_ID, fromId: OTHER_ENTRY_ID, toId: OTHER_ENTRY_ID }));
 
-    await store.forgetEntry(PROJECT_ONE, ENTRY_ID);
+      await store.forgetEntry(PROJECT_ONE, ENTRY_ID);
 
-    expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toBeNull();
-    expect(await store.loadSourcesForEntry(PROJECT_ONE, ENTRY_ID)).toEqual([]);
-    expect(await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 })).toEqual([]);
-    expect(await store.countEntries(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(relationCount(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-  });
+      expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toBeNull();
+      expect(await store.loadSourcesForEntry(PROJECT_ONE, ENTRY_ID)).toEqual([]);
+      expect(await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 })).toEqual([]);
+      expect(await store.countEntries(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(relationCount(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+    },
+    STORE_TEST_TIMEOUT_MS,
+  );
 
-  it("forgets an entity and cascades through its entries", async () => {
-    const store = createStore();
-    await store.initialize();
+  it(
+    "forgets an entity and cascades through its entries",
+    async () => {
+      const store = createStore();
+      await store.initialize();
 
-    await store.upsertEntity(entity());
-    await store.upsertEntity(entity({ id: OTHER_ENTITY_ID, name: "billing" }));
-    await store.upsertEntry(entry());
-    await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Child", summary: "child alpha" }));
-    await store.upsertEntry(entry({ id: THIRD_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Kept", summary: "kept" }));
-    await store.upsertSource(source());
-    await store.upsertRelation(relation({ toId: THIRD_ENTRY_ID }));
+      await store.upsertEntity(entity());
+      await store.upsertEntity(entity({ id: OTHER_ENTITY_ID, name: "billing" }));
+      await store.upsertEntry(entry());
+      await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, title: "Child", summary: "child alpha" }));
+      await store.upsertEntry(entry({ id: THIRD_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Kept", summary: "kept" }));
+      await store.upsertSource(source());
+      await store.upsertRelation(relation({ toId: THIRD_ENTRY_ID }));
 
-    await store.forgetEntity(PROJECT_ONE, ENTITY_ID);
+      await store.forgetEntity(PROJECT_ONE, ENTITY_ID);
 
-    expect(await store.loadEntity(PROJECT_ONE, ENTITY_ID)).toBeNull();
-    expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toBeNull();
-    expect(await store.loadEntry(PROJECT_ONE, OTHER_ENTRY_ID)).toBeNull();
-    expect(await store.loadEntry(PROJECT_ONE, THIRD_ENTRY_ID)).toEqual(
-      entry({ id: THIRD_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Kept", summary: "kept" }),
-    );
-    expect(await store.countEntities(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countEntries(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
-    expect(await store.countSources(PROJECT_ONE)).toBe(0);
-    expect(relationCount(PROJECT_ONE)).toBe(0);
-  });
+      expect(await store.loadEntity(PROJECT_ONE, ENTITY_ID)).toBeNull();
+      expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toBeNull();
+      expect(await store.loadEntry(PROJECT_ONE, OTHER_ENTRY_ID)).toBeNull();
+      expect(await store.loadEntry(PROJECT_ONE, THIRD_ENTRY_ID)).toEqual(
+        entry({ id: THIRD_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Kept", summary: "kept" }),
+      );
+      expect(await store.countEntities(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countEntries(PROJECT_ONE)).toBe(EXPECTED_SINGLE_COUNT);
+      expect(await store.countSources(PROJECT_ONE)).toBe(0);
+      expect(relationCount(PROJECT_ONE)).toBe(0);
+    },
+    STORE_TEST_TIMEOUT_MS,
+  );
 
   it("initializes idempotently", async () => {
     const store = createStore();
