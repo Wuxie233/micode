@@ -7,10 +7,16 @@ const SECTION_PATTERNS: ReadonlyArray<{ readonly entryType: EntryType; readonly 
   { entryType: "open_question", headers: [/^##\s+Open Questions?\b/im, /^##\s+Follow-?ups?\b/im] },
 ];
 
+const LIFECYCLE_REQUEST_HEADER = /^##\s+Request\b/im;
+const LIFECYCLE_GOALS_HEADER = /^##\s+Goals?\b/im;
+const LIFECYCLE_CONSTRAINTS_HEADER = /^##\s+Constraints?\b/im;
+const LIFECYCLE_BULLET_HEADERS: readonly RegExp[] = [LIFECYCLE_GOALS_HEADER, LIFECYCLE_CONSTRAINTS_HEADER];
 const BULLET_PATTERN = /^\s*[-*+]\s+(.+?)\s*$/gm;
 const NEXT_SECTION_PATTERN = /^##\s+/m;
+const HEADING_LINE_PATTERN = /^#+\s/;
 const TITLE_MAX_CHARS = 96;
 const NOTE_SUMMARY_MAX_CHARS = 1000;
+const ELLIPSIS = "…";
 
 export interface PromotionInput {
   readonly markdown: string;
@@ -32,10 +38,25 @@ export interface PromotionExtraction {
   readonly candidates: readonly PromotionCandidate[];
 }
 
-function deriveTitle(summary: string): string {
-  const firstLine = summary.split("\n", 1)[0]?.trim() ?? "";
-  if (firstLine.length <= TITLE_MAX_CHARS) return firstLine;
-  return `${firstLine.slice(0, TITLE_MAX_CHARS - 1)}…`;
+function capTitle(text: string): string {
+  if (text.length <= TITLE_MAX_CHARS) return text;
+  return `${text.slice(0, TITLE_MAX_CHARS - 1)}${ELLIPSIS}`;
+}
+
+function firstMeaningfulLine(text: string): string {
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0) continue;
+    if (HEADING_LINE_PATTERN.test(line)) continue;
+    return line;
+  }
+  return "";
+}
+
+function deriveTitleFromSummary(summary: string): string {
+  const candidate = firstMeaningfulLine(summary);
+  if (candidate.length > 0) return capTitle(candidate);
+  return capTitle(summary.split("\n", 1)[0]?.trim() ?? "");
 }
 
 function extractSection(markdown: string, headerPattern: RegExp): string | null {
@@ -65,36 +86,59 @@ function createCandidate(input: PromotionInput, entryType: EntryType, summary: s
   return {
     entityName: input.defaultEntityName,
     entryType,
-    title: deriveTitle(summary),
+    title: deriveTitleFromSummary(summary),
     summary,
     sourceKind: input.sourceKind,
     pointer: input.pointer,
   };
 }
 
-function extractSectionCandidates(
-  input: PromotionInput,
-  entryType: EntryType,
-  headers: readonly RegExp[],
-): readonly PromotionCandidate[] {
-  return headers.flatMap((header) => {
-    const section = extractSection(input.markdown, header);
-    if (!section) return [];
-    return extractBullets(section).map((summary) => createCandidate(input, entryType, summary));
-  });
+function extractStructuredCandidates(input: PromotionInput): readonly PromotionCandidate[] {
+  return SECTION_PATTERNS.flatMap(({ entryType, headers }) =>
+    headers.flatMap((header) => {
+      const section = extractSection(input.markdown, header);
+      if (!section) return [];
+      return extractBullets(section).map((summary) => createCandidate(input, entryType, summary));
+    }),
+  );
 }
 
-function extractFallbackCandidate(input: PromotionInput): PromotionCandidate | null {
-  const summary = input.markdown.trim().slice(0, NOTE_SUMMARY_MAX_CHARS);
+function extractRequestNote(input: PromotionInput): PromotionCandidate | null {
+  const section = extractSection(input.markdown, LIFECYCLE_REQUEST_HEADER);
+  if (!section) return null;
+  const summary = section.slice(0, NOTE_SUMMARY_MAX_CHARS);
   if (summary.length === 0) return null;
   return createCandidate(input, "note", summary);
 }
 
+function extractBulletNotes(input: PromotionInput, header: RegExp): readonly PromotionCandidate[] {
+  const section = extractSection(input.markdown, header);
+  if (!section) return [];
+  return extractBullets(section).map((summary) => createCandidate(input, "note", summary));
+}
+
+function extractLifecycleCandidates(input: PromotionInput): readonly PromotionCandidate[] {
+  const requestNote = extractRequestNote(input);
+  const bulletNotes = LIFECYCLE_BULLET_HEADERS.flatMap((header) => extractBulletNotes(input, header));
+  if (requestNote === null) return bulletNotes;
+  return [requestNote, ...bulletNotes];
+}
+
+function extractFallbackCandidate(input: PromotionInput): PromotionCandidate | null {
+  const trimmed = input.markdown.trim();
+  if (trimmed.length === 0) return null;
+  const meaningful = firstMeaningfulLine(trimmed);
+  if (meaningful.length === 0) return null;
+  const summary = trimmed.slice(0, NOTE_SUMMARY_MAX_CHARS);
+  return createCandidate(input, "note", summary);
+}
+
 export function extractCandidates(input: PromotionInput): PromotionExtraction {
-  const candidates = SECTION_PATTERNS.flatMap(({ entryType, headers }) =>
-    extractSectionCandidates(input, entryType, headers),
-  );
-  if (candidates.length > 0) return { candidates };
+  const structured = extractStructuredCandidates(input);
+  if (structured.length > 0) return { candidates: structured };
+
+  const lifecycle = extractLifecycleCandidates(input);
+  if (lifecycle.length > 0) return { candidates: lifecycle };
 
   const fallback = extractFallbackCandidate(input);
   return { candidates: fallback === null ? [] : [fallback] };
