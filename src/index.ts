@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 
-import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+import type { Plugin, PluginInput, ToolDefinition } from "@opencode-ai/plugin";
+import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
 import type { McpLocalConfig } from "@opencode-ai/sdk";
 
 import { agents, PRIMARY_AGENT_NAME } from "@/agents";
@@ -72,18 +73,27 @@ import {
   createPTYManager,
   createPtyTools,
   createSessionStore,
-  createSpawnAgentTool,
   loadBunPty,
   look_at,
   milestone_artifact_search,
 } from "@/tools";
 import { createLifecycleTools } from "@/tools/lifecycle";
 import { createResumeSubagentTool } from "@/tools/resume-subagent";
-import { createPreservedRegistry, type PreservedRegistry } from "@/tools/spawn-agent/registry";
+import {
+  createPreservedRegistryOver,
+  createSpawnAgentTool,
+  createSpawnSessionRegistry,
+  type PreservedRegistry,
+  type SpawnAgentToolOptions,
+  type SpawnSessionRegistry,
+} from "@/tools/spawn-agent";
+import { cleanupGeneration } from "@/tools/spawn-agent/cleanup";
+import { verifyMarker } from "@/tools/spawn-agent/verifier";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
+import { type ModelReference, parseModelReference } from "@/utils/model-selection";
 
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
@@ -159,6 +169,10 @@ const INTERNAL_SESSION_CREATE_NO_ID = "internal session create returned no id";
 const REVIEW_SKIPPED_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Review skipped"}';
 const REVIEW_EMPTY_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Empty response"}';
 const REVIEW_FAILED_RESPONSE = '{"status": "PASS", "violations": [], "summary": "Review failed"}';
+const SPAWN_VERIFIER_AGENT = "spawn-agent.verifier";
+const CLEANUP_PARENT_RUN_REASON = "superseded";
+const CLEANUP_GENERATION_MIN = 1;
+const CLEANUP_GENERATION_MAX = 10;
 
 interface OcttoListenerInput {
   readonly persistenceListener: PersistenceListener;
@@ -170,6 +184,20 @@ interface AutoResumeClientAdapter {
   readonly session: {
     readonly prompt: (request: ClientPromptRequest) => Promise<unknown>;
   };
+}
+
+interface MessagePart {
+  readonly type: string;
+  readonly text?: string;
+}
+
+interface SessionMessage {
+  readonly info?: { readonly role?: string };
+  readonly parts?: readonly MessagePart[];
+}
+
+interface SessionMessagesResponse {
+  readonly data?: readonly SessionMessage[];
 }
 
 interface ReleasableHandle {
@@ -239,6 +267,105 @@ function startResumeSweep(registry: PreservedRegistry): void {
     registry.sweep(Date.now());
   }, config.subagent.resumeSweepIntervalMs);
   releaseInterval(handle);
+}
+
+function readAssistantText(messages: readonly SessionMessage[]): string {
+  const assistant = messages.filter((message) => message.info?.role === "assistant").pop();
+  return (
+    assistant?.parts
+      ?.filter((part) => part.type === "text" && part.text)
+      .map((part) => part.text)
+      .join("\n") ?? ""
+  );
+}
+
+function buildVerifierPromptBody(prompt: string): {
+  readonly parts: { readonly type: "text"; readonly text: string }[];
+  readonly model?: ModelReference;
+} {
+  const model = parseModelReference(config.model.default);
+  const body = { parts: [{ type: "text" as const, text: prompt }] };
+  return model ? { ...body, model } : body;
+}
+
+async function runVerifierClassification(ctx: PluginInput, prompt: string): Promise<string> {
+  const session = await createInternalSession({ ctx, title: SPAWN_VERIFIER_AGENT });
+  try {
+    await ctx.client.session.prompt({
+      path: { id: session.sessionId },
+      body: buildVerifierPromptBody(prompt),
+      query: { directory: ctx.directory },
+    });
+    const response = (await ctx.client.session.messages({
+      path: { id: session.sessionId },
+      query: { directory: ctx.directory },
+    })) as SessionMessagesResponse;
+    return readAssistantText(response.data ?? []);
+  } finally {
+    await deleteInternalSession({ ctx, sessionId: session.sessionId, agent: SPAWN_VERIFIER_AGENT });
+  }
+}
+
+function buildRealVerifier(ctx: PluginInput): SpawnAgentToolOptions["verifier"] {
+  if (!config.subagent.markerVerification.enabled) return undefined;
+  const deps = {
+    timeoutMs: config.subagent.markerVerification.timeoutMs,
+    maxOutputChars: config.subagent.markerVerification.maxOutputChars,
+  };
+  return (input) =>
+    verifyMarker(input, { ...deps, runClassification: (prompt) => runVerifierClassification(ctx, prompt) });
+}
+
+function collectGenerations(registry: SpawnSessionRegistry, ownerSessionId: string, runId: string): readonly number[] {
+  const generations = new Set<number>();
+  for (const record of registry.listPreserved()) {
+    if (record.ownerSessionId !== ownerSessionId || record.runId !== runId) continue;
+    generations.add(record.generation);
+  }
+  for (let generation = CLEANUP_GENERATION_MIN; generation <= CLEANUP_GENERATION_MAX; generation += 1) {
+    generations.add(generation);
+  }
+  return [...generations].sort((left, right) => left - right);
+}
+
+function createCleanupParentRunTool(ctx: PluginInput, registry: SpawnSessionRegistry): ToolDefinition {
+  return tool({
+    description:
+      "Best-effort cleanup of orphaned subagent sessions from a prior executor generation. " +
+      "Call before re-dispatching after a confirmed executor crash.",
+    args: {
+      run_id: tool.schema.string().min(1).describe("The previous executor's run id (its session id)"),
+      reason: tool.schema.string().optional().describe("Free-form reason; defaults to 'superseded'"),
+    },
+    execute: async (args, toolCtx) => {
+      const ownerSessionId = ((toolCtx as ToolContext & { readonly sessionID?: string }).sessionID ?? "").trim();
+      const reason = args.reason && args.reason.length > 0 ? args.reason : CLEANUP_PARENT_RUN_REASON;
+      const generations = collectGenerations(registry, ownerSessionId, args.run_id);
+      const summary = { aborted: 0, deleted: 0, failures: [] as string[] };
+      for (const generation of generations) {
+        const result = await cleanupGeneration({
+          ctx,
+          registry,
+          ownerSessionId,
+          runId: args.run_id,
+          generation,
+          reason,
+        });
+        summary.aborted += result.aborted;
+        summary.deleted += result.deleted;
+        summary.failures.push(...result.failures.map((failure) => `${failure.sessionId}: ${failure.error}`));
+      }
+      return [
+        "## cleanup_parent_run Result",
+        "",
+        `**Run**: ${args.run_id}`,
+        `**Reason**: ${reason}`,
+        `**Aborted**: ${summary.aborted}`,
+        `**Deleted**: ${summary.deleted}`,
+        `**Failures**: ${summary.failures.length === 0 ? "none" : summary.failures.join("; ")}`,
+      ].join("\n");
+    },
+  });
 }
 
 function createAutoResumeClient(client: PluginInput["client"]): AutoResumeClientAdapter {
@@ -434,15 +561,26 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   }
   const ptyTools = ptyManager.available ? createPtyTools(ptyManager) : {};
 
-  const preservedRegistry = createPreservedRegistry({
+  const spawnRegistry: SpawnSessionRegistry = createSpawnSessionRegistry({
+    maxResumes: config.subagent.maxResumesPerSession,
+    ttlHours: config.subagent.failedSessionTtlHours,
+    runningTtlMs: config.subagent.spawnRegistryRunningTtlMs,
+  });
+  const preservedRegistry = createPreservedRegistryOver(spawnRegistry, {
     maxResumes: config.subagent.maxResumesPerSession,
     ttlHours: config.subagent.failedSessionTtlHours,
   });
   startResumeSweep(preservedRegistry);
 
   // Spawn agent tool (for subagents to spawn other subagents)
-  const spawn_agent = createSpawnAgentTool(ctx, { registry: preservedRegistry, availableModels });
+  const spawn_agent = createSpawnAgentTool(ctx, {
+    registry: preservedRegistry,
+    spawnRegistry,
+    availableModels,
+    verifier: buildRealVerifier(ctx),
+  });
   const resume_subagent = createResumeSubagentTool(ctx, { registry: preservedRegistry });
+  const cleanup_parent_run = createCleanupParentRunTool(ctx, spawnRegistry);
 
   // Batch read tool (for parallel file reads)
   const batch_read = createBatchReadTool(ctx);
@@ -544,6 +682,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       milestone_artifact_search,
       spawn_agent,
       resume_subagent,
+      cleanup_parent_run,
       batch_read,
       ...mindmodelLookupTool,
       ...projectMemoryTools,

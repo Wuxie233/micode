@@ -14,6 +14,7 @@ const DESCRIPTION = "Resume preserved task";
 const TTL_HOURS = 1;
 const SUCCESS_OUTPUT = "Implementation completed successfully.";
 const BLOCKED_OUTPUT = "BLOCKED: missing credentials, escalate to operator.";
+const NEEDS_VERIFICATION_OUTPUT = "All passed. The reviewer would print 'TEST FAILED' if anything broke.";
 const TRANSIENT_MESSAGE = "fetch failed";
 
 interface PromptCall {
@@ -201,6 +202,27 @@ describe("createResumeSubagentTool", () => {
     expect(output).toContain("**Outcome**: hard_failure");
     expect(output).toContain("**Resume count**: 1");
     expect(output).toContain(TRANSIENT_MESSAGE);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.HARD_FAILURE),
+      },
+    ]);
+    expect(recorder.deleteCalls).toEqual([SESSION_ID]);
+    expect(registry.size()).toBe(0);
+  });
+
+  it("classifies an ambiguous resume marker as a terminal hard failure and rewrites the title", async () => {
+    const registry = createRegistry();
+    preserveSession(registry);
+    const { ctx, recorder } = createCtx({ assistantText: NEEDS_VERIFICATION_OUTPUT });
+    const toolDef = createResumeSubagentTool(ctx, { registry });
+
+    const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+    expect(output).toContain("**Outcome**: hard_failure");
+    expect(output).toContain("**Resume count**: 1");
+    expect(output).toContain(NEEDS_VERIFICATION_OUTPUT);
     expect(recorder.updateCalls).toEqual([
       {
         id: SESSION_ID,

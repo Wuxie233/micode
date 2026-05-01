@@ -200,6 +200,19 @@ describe("config utility", () => {
         maxResumesPerSession: 3,
         failedSessionTtlHours: 24,
         resumeSweepIntervalMs: 600_000,
+        spawnRegistryRunningTtlMs: 3_600_000,
+        markerVerification: {
+          enabled: true,
+          timeoutMs: 15_000,
+          maxOutputChars: 4000,
+        },
+        generationFence: {
+          enabled: true,
+        },
+        diagnostics: {
+          logEvents: true,
+          includeInOutput: true,
+        },
       });
     });
   });
@@ -250,5 +263,33 @@ describe("config utility", () => {
     it("caps dedupe entries at 500 by default", () => {
       expect(config.notifications.dedupeMaxEntries).toBe(500);
     });
+  });
+});
+
+describe("subagent spawn-registry, verifier, fence config", () => {
+  it("defines spawnRegistryRunningTtlMs as a positive number", () => {
+    expect(typeof config.subagent.spawnRegistryRunningTtlMs).toBe("number");
+    expect(config.subagent.spawnRegistryRunningTtlMs).toBeGreaterThan(0);
+  });
+
+  it("defines markerVerification with enabled and timeout", () => {
+    expect(typeof config.subagent.markerVerification.enabled).toBe("boolean");
+    expect(config.subagent.markerVerification.timeoutMs).toBeGreaterThan(0);
+    expect(config.subagent.markerVerification.maxOutputChars).toBeGreaterThan(0);
+  });
+
+  it("defines generationFence as enabled by default", () => {
+    expect(config.subagent.generationFence.enabled).toBe(true);
+  });
+
+  it("defines diagnostics flags as boolean", () => {
+    expect(typeof config.subagent.diagnostics.logEvents).toBe("boolean");
+    expect(typeof config.subagent.diagnostics.includeInOutput).toBe("boolean");
+  });
+
+  it("preserves prior keys without modification", () => {
+    expect(config.subagent.maxResumesPerSession).toBe(3);
+    expect(config.subagent.failedSessionTtlHours).toBe(24);
+    expect(config.subagent.transientRetries).toBe(2);
   });
 });

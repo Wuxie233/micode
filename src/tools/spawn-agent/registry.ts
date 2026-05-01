@@ -1,3 +1,9 @@
+import {
+  createSpawnSessionRegistry,
+  SPAWN_RECORD_STATES,
+  type SpawnPreservedRecord,
+  type SpawnSessionRegistry,
+} from "./spawn-session-registry";
 import type { SPAWN_OUTCOMES } from "./types";
 
 export interface PreservedRecord {
@@ -25,57 +31,82 @@ export interface PreservedRegistry {
   readonly size: () => number;
 }
 
-const MINUTES_PER_HOUR = 60;
-const SECONDS_PER_MINUTE = 60;
-const MS_PER_SECOND = 1000;
-const RESUME_INCREMENT = 1;
-const REMOVED_NONE = 0;
-const INITIAL_RESUME_COUNT = 0;
+const DEFAULT_RUNNING_TTL_MS = 3_600_000;
+const FACADE_OWNER = "facade";
+const FACADE_RUN = "facade";
+const FACADE_GENERATION = 0;
+const registrySpawns = new WeakMap<PreservedRegistry, SpawnSessionRegistry>();
 
-const cloneRecord = (record: PreservedRecord): PreservedRecord => ({ ...record });
-
-const buildRecord = (record: PreserveInput): PreservedRecord => ({
-  ...record,
-  preservedAt: Date.now(),
-  resumeCount: INITIAL_RESUME_COUNT,
-});
-
-export function createPreservedRegistry(options: PreservedRegistryOptions): PreservedRegistry {
-  const records = new Map<string, PreservedRecord>();
-  const ttlMs = options.ttlHours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
-
+function toPreserved(record: SpawnPreservedRecord): PreservedRecord {
   return {
+    sessionId: record.sessionId,
+    agent: record.agent,
+    description: record.description,
+    outcome: record.outcome,
+    preservedAt: record.preservedAt,
+    resumeCount: record.resumeCount,
+  };
+}
+
+function registerFacadeRunning(spawn: SpawnSessionRegistry, record: PreserveInput): void {
+  spawn.registerRunning({
+    sessionId: record.sessionId,
+    agent: record.agent,
+    description: record.description,
+    ownerSessionId: FACADE_OWNER,
+    runId: FACADE_RUN,
+    generation: FACADE_GENERATION,
+    taskIdentity: record.sessionId,
+  });
+}
+
+export function createPreservedRegistryOver(
+  spawn: SpawnSessionRegistry,
+  _options: PreservedRegistryOptions,
+): PreservedRegistry {
+  const registry: PreservedRegistry = {
     preserve(record: PreserveInput): PreservedRecord {
-      const preserved = buildRecord(record);
-      records.set(record.sessionId, preserved);
-      return cloneRecord(preserved);
-    },
-    get(sessionId: string): PreservedRecord | null {
-      const record = records.get(sessionId);
-      if (!record) return null;
-      return cloneRecord(record);
-    },
-    remove(sessionId: string): void {
-      records.delete(sessionId);
-    },
-    incrementResume(sessionId: string): number {
-      const record = records.get(sessionId);
-      if (!record) return INITIAL_RESUME_COUNT;
-      const resumeCount = Math.min(options.maxResumes, record.resumeCount + RESUME_INCREMENT);
-      records.set(sessionId, { ...record, resumeCount });
-      return resumeCount;
-    },
-    sweep(now: number): number {
-      let removed = REMOVED_NONE;
-      for (const [sessionId, record] of records) {
-        if (now - record.preservedAt <= ttlMs) continue;
-        records.delete(sessionId);
-        removed += RESUME_INCREMENT;
+      const existing = spawn.get(record.sessionId);
+      // markPreserved only accepts running records, so stale terminal records must be renewed.
+      if (existing?.state !== SPAWN_RECORD_STATES.RUNNING) {
+        spawn.complete(record.sessionId);
+        registerFacadeRunning(spawn, record);
       }
-      return removed;
+      const preserved = spawn.markPreserved(record.sessionId, record.outcome);
+      if (!preserved) throw new Error(`failed to preserve session ${record.sessionId}`);
+      return toPreserved(preserved);
     },
-    size(): number {
-      return records.size;
+    get(sessionId) {
+      const found = spawn.get(sessionId);
+      if (!found || found.state !== "preserved") return null;
+      return toPreserved(found);
+    },
+    remove(sessionId) {
+      spawn.complete(sessionId);
+    },
+    incrementResume(sessionId) {
+      return spawn.incrementResume(sessionId);
+    },
+    sweep(now) {
+      return spawn.sweep(now);
+    },
+    size() {
+      return spawn.listPreserved().length;
     },
   };
+  registrySpawns.set(registry, spawn);
+  return registry;
+}
+
+export function getSpawnRegistryForPreservedRegistry(registry: PreservedRegistry): SpawnSessionRegistry | null {
+  return registrySpawns.get(registry) ?? null;
+}
+
+export function createPreservedRegistry(options: PreservedRegistryOptions): PreservedRegistry {
+  const spawn = createSpawnSessionRegistry({
+    maxResumes: options.maxResumes,
+    ttlHours: options.ttlHours,
+    runningTtlMs: DEFAULT_RUNNING_TTL_MS,
+  });
+  return createPreservedRegistryOver(spawn, options);
 }

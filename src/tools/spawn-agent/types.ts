@@ -13,6 +13,7 @@ export interface SpawnSuccess {
   readonly agent: string;
   readonly elapsedMs: number;
   readonly output: string;
+  readonly diagnostics?: string;
 }
 
 export interface SpawnPreserved {
@@ -23,6 +24,7 @@ export interface SpawnPreserved {
   readonly sessionId: string;
   readonly output: string;
   readonly resumeCount: number;
+  readonly diagnostics?: string;
 }
 
 export interface SpawnHardFailure {
@@ -31,6 +33,7 @@ export interface SpawnHardFailure {
   readonly agent: string;
   readonly elapsedMs: number;
   readonly error: string;
+  readonly diagnostics?: string;
 }
 
 export type SpawnResult = SpawnSuccess | SpawnPreserved | SpawnHardFailure;
