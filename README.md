@@ -216,6 +216,22 @@ Because `package.json` points `main` and `module` at `dist/index.js`, runtime fi
 Changing files under `/root/CODE/micode/src` alone will not affect live tools such as `create_brainstorm`.
 When debugging a "fix did not load" issue, check both the configured plugin path and the generated `/root/.micode/dist/index.js` bundle first.
 
+## Runtime deploy helper
+
+When you change runtime-sensitive plugin code in `/root/CODE/micode`, the live OpenCode plugin at `/root/.micode` does not pick it up automatically. Use the helper:
+
+```sh
+# Preview what would change
+bun run deploy:runtime -- --dry-run
+
+# Sync, install (if needed), build, and verify the live bundle
+bun run deploy:runtime
+```
+
+The helper does NOT restart OpenCode. After it prints `Runtime ready. Restart of OpenCode requires explicit user approval.`, ask the user before running any restart command.
+
+The helper preserves runtime-local state in `/root/.micode`: `node_modules`, `dist` (rebuilt by the helper), `.git`, `thoughts`, and environment files are never overwritten by the sync.
+
 ### Syncing with upstream
 
 This fork tracks `vtemian/micode` as the `upstream` remote. To pull upstream changes:
