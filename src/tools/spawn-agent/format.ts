@@ -64,44 +64,65 @@ function joinLines(lines: readonly string[]): string {
   return lines.join("\n");
 }
 
+function appendDiagnostics(lines: string[], result: SpawnResult): string[] {
+  if (!result.diagnostics || result.diagnostics.length === 0) return lines;
+  lines.push("", `**Diagnostics**: ${result.diagnostics}`);
+  return lines;
+}
+
 function formatSuccess(result: SpawnSuccess): string {
-  return joinLines([
-    `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
-    "",
-    `**Agent**: ${result.agent}`,
-    "",
-    "### Result",
-    "",
-    result.output,
-  ]);
+  return joinLines(
+    appendDiagnostics(
+      [
+        `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
+        "",
+        `**Agent**: ${result.agent}`,
+        "",
+        "### Result",
+        "",
+        result.output,
+      ],
+      result,
+    ),
+  );
 }
 
 function formatPreserved(result: SpawnPreserved): string {
-  return joinLines([
-    `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
-    "",
-    `**Agent**: ${result.agent}`,
-    `**Outcome**: ${result.outcome}`,
-    `**SessionID**: ${result.sessionId}`,
-    `**Resume count**: ${result.resumeCount}`,
-    "",
-    "### Result",
-    "",
-    result.output,
-  ]);
+  return joinLines(
+    appendDiagnostics(
+      [
+        `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
+        "",
+        `**Agent**: ${result.agent}`,
+        `**Outcome**: ${result.outcome}`,
+        `**SessionID**: ${result.sessionId}`,
+        `**Resume count**: ${result.resumeCount}`,
+        "",
+        "### Result",
+        "",
+        result.output,
+      ],
+      result,
+    ),
+  );
 }
 
 function formatHardFailure(result: SpawnHardFailure): string {
-  return joinLines([
-    `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
-    "",
-    `**Agent**: ${result.agent}`,
-    `**Outcome**: ${result.outcome}`,
-    "",
-    "### Error",
-    "",
-    result.error,
-  ]);
+  return joinLines(
+    appendDiagnostics(
+      [
+        `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
+        "",
+        `**Agent**: ${result.agent}`,
+        `**Outcome**: ${result.outcome}`,
+        "",
+        "### Error",
+        "",
+        result.error,
+      ],
+      result,
+    ),
+  );
 }
 
 function formatSection(result: SpawnResult): string {

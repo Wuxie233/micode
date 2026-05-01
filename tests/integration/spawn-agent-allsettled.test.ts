@@ -129,5 +129,15 @@ describe("spawn_agent allSettled integration", () => {
     expect(resumeOutput).toContain(RESUME_SUCCESS_OUTPUT);
     expect(recorder.deleteCalls).toContain(TASK_ERROR_SESSION);
     expect(registry.size()).toBe(0);
+
+    const secondSpawnOutput = await callSpawnExecute(spawnTool, { agents: [TASK_ERROR_TASK] });
+
+    expect(secondSpawnOutput).toContain("**Outcome**: task_error");
+    expect(secondSpawnOutput).not.toContain("Generation fence");
+    expect(registry.get(TASK_ERROR_SESSION)).toMatchObject({
+      sessionId: TASK_ERROR_SESSION,
+      outcome: SPAWN_OUTCOMES.TASK_ERROR,
+      resumeCount: 0,
+    });
   });
 });

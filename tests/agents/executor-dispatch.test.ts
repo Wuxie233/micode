@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { executorAgent } from "@/agents/executor";
+
 describe("executor domain dispatch", () => {
   it("lists the three domain-specific implementers as available subagents", async () => {
     const fs = await import("node:fs/promises");
@@ -43,6 +45,21 @@ describe("executor domain dispatch", () => {
     expect(source).toContain("<contract-propagation");
     expect(source).toContain("**Contract:**");
     expect(source).toContain("READ FIRST");
+  });
+
+  it("includes spawn identity and cleanup guidance", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/executor.ts", "utf-8");
+
+    expect(source).toContain("<spawn-meta");
+    expect(source).toContain("cleanup_parent_run");
+    expect(source).toContain("Generation fence");
+  });
+
+  it("prompt includes spawn-meta identity guidance", () => {
+    expect(executorAgent.prompt).toContain("<spawn-meta");
+    expect(executorAgent.prompt).toContain("cleanup_parent_run");
+    expect(executorAgent.prompt).toContain("Generation fence");
   });
 
   it("forbids editing the contract on behalf of implementers", async () => {

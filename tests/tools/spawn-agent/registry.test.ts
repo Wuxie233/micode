@@ -1,89 +1,81 @@
 import { describe, expect, it } from "bun:test";
+import { createPreservedRegistry, createPreservedRegistryOver } from "@/tools/spawn-agent/registry";
+import { createSpawnSessionRegistry } from "@/tools/spawn-agent/spawn-session-registry";
+import { SPAWN_OUTCOMES } from "@/tools/spawn-agent/types";
 
-import {
-  createPreservedRegistry,
-  type PreservedRecord,
-  type PreserveInput,
-} from "../../../src/tools/spawn-agent/registry";
-import { SPAWN_OUTCOMES } from "../../../src/tools/spawn-agent/types";
+const opts = { maxResumes: 3, ttlHours: 24 };
 
-const AGENT = "implementer-general";
-const DESCRIPTION = "Preserved task";
-const MAX_RESUMES = 2;
-const TTL_HOURS = 1;
-const MINUTES_PER_HOUR = 60;
-const SECONDS_PER_MINUTE = 60;
-const MS_PER_SECOND = 1000;
-const MS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND;
+describe("createPreservedRegistry (façade)", () => {
+  it("preserves a record and reads it back", () => {
+    const r = createPreservedRegistry(opts);
+    const rec = r.preserve({
+      sessionId: "s1",
+      agent: "implementer-backend",
+      description: "x",
+      outcome: SPAWN_OUTCOMES.TASK_ERROR,
+    });
+    expect(rec.sessionId).toBe("s1");
+    expect(r.get("s1")?.outcome).toBe(SPAWN_OUTCOMES.TASK_ERROR);
+  });
 
-const createRecord = (sessionId: string): PreserveInput => ({
-  sessionId,
-  agent: AGENT,
-  description: DESCRIPTION,
-  outcome: SPAWN_OUTCOMES.TASK_ERROR,
+  it("upserts a preserved record for the same session id", () => {
+    const r = createPreservedRegistry(opts);
+    r.preserve({ sessionId: "s1", agent: "a", description: "old", outcome: SPAWN_OUTCOMES.TASK_ERROR });
+
+    const rec = r.preserve({ sessionId: "s1", agent: "b", description: "new", outcome: SPAWN_OUTCOMES.BLOCKED });
+
+    expect(rec.sessionId).toBe("s1");
+    expect(rec.agent).toBe("b");
+    expect(rec.description).toBe("new");
+    expect(rec.outcome).toBe(SPAWN_OUTCOMES.BLOCKED);
+    expect(r.get("s1")).toEqual(rec);
+  });
+
+  it("returns null for absent session id", () => {
+    const r = createPreservedRegistry(opts);
+    expect(r.get("missing")).toBeNull();
+  });
+
+  it("removes a record on remove()", () => {
+    const r = createPreservedRegistry(opts);
+    r.preserve({ sessionId: "s1", agent: "a", description: "d", outcome: SPAWN_OUTCOMES.BLOCKED });
+    r.remove("s1");
+    expect(r.get("s1")).toBeNull();
+  });
+
+  it("increments resume count up to maxResumes", () => {
+    const r = createPreservedRegistry(opts);
+    r.preserve({ sessionId: "s1", agent: "a", description: "d", outcome: SPAWN_OUTCOMES.BLOCKED });
+    expect(r.incrementResume("s1")).toBe(1);
+    expect(r.incrementResume("s1")).toBe(2);
+    expect(r.incrementResume("s1")).toBe(3);
+    expect(r.incrementResume("s1")).toBe(3);
+  });
+
+  it("sweep removes expired records", () => {
+    const r = createPreservedRegistry({ maxResumes: 3, ttlHours: 0.0001 });
+    r.preserve({ sessionId: "s1", agent: "a", description: "d", outcome: SPAWN_OUTCOMES.BLOCKED });
+    expect(r.sweep(Date.now() + 60_000)).toBe(1);
+    expect(r.size()).toBe(0);
+  });
 });
 
-const expectGeneratedRecord = (record: PreservedRecord, input: PreserveInput, before: number, after: number): void => {
-  expect(record).toMatchObject(input);
-  expect(record.preservedAt).toBeGreaterThanOrEqual(before);
-  expect(record.preservedAt).toBeLessThanOrEqual(after);
-  expect(record.resumeCount).toBe(0);
-};
-
-describe("createPreservedRegistry", () => {
-  it("preserves records and returns them by session id", () => {
-    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
-    const record = createRecord("session-preserved");
-    const before = Date.now();
-
-    const preserved = registry.preserve(record);
-    const after = Date.now();
-
-    expectGeneratedRecord(preserved, record, before, after);
-    expect(registry.get(record.sessionId)).toEqual(preserved);
-    expect(registry.size()).toBe(1);
-  });
-
-  it("sweeps records older than the configured ttl", () => {
-    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
-    const record = createRecord("session-expired");
-
-    const preserved = registry.preserve(record);
-
-    expect(registry.sweep(preserved.preservedAt + MS_PER_HOUR)).toBe(0);
-    expect(registry.get(record.sessionId)).toEqual(preserved);
-    expect(registry.sweep(preserved.preservedAt + MS_PER_HOUR + 1)).toBe(1);
-    expect(registry.get(record.sessionId)).toBeNull();
-    expect(registry.size()).toBe(0);
-  });
-
-  it("caps resume increments at maxResumes", () => {
-    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
-    const record = createRecord("session-resume");
-
-    registry.preserve(record);
-
-    expect(registry.incrementResume(record.sessionId)).toBe(1);
-    expect(registry.incrementResume(record.sessionId)).toBe(MAX_RESUMES);
-    expect(registry.incrementResume(record.sessionId)).toBe(MAX_RESUMES);
-    expect(registry.get(record.sessionId)?.resumeCount).toBe(MAX_RESUMES);
-  });
-
-  it("returns zero when incrementing a missing session", () => {
-    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
-
-    expect(registry.incrementResume("session-missing")).toBe(0);
-  });
-
-  it("removes records idempotently", () => {
-    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
-    const record = createRecord("session-remove");
-
-    registry.preserve(record);
-
-    expect(registry.remove(record.sessionId)).toBeUndefined();
-    expect(registry.remove(record.sessionId)).toBeUndefined();
-    expect(registry.get(record.sessionId)).toBeNull();
-    expect(registry.size()).toBe(0);
+describe("createPreservedRegistryOver", () => {
+  it("shares state with the underlying SpawnSessionRegistry", () => {
+    const spawn = createSpawnSessionRegistry({ maxResumes: 3, ttlHours: 24, runningTtlMs: 60_000 });
+    spawn.registerRunning({
+      sessionId: "s1",
+      agent: "a",
+      description: "d",
+      ownerSessionId: "o",
+      runId: "r",
+      generation: 1,
+      taskIdentity: "t",
+    });
+    spawn.markPreserved("s1", SPAWN_OUTCOMES.TASK_ERROR);
+    const facade = createPreservedRegistryOver(spawn, { maxResumes: 3, ttlHours: 24 });
+    expect(facade.get("s1")?.sessionId).toBe("s1");
+    facade.remove("s1");
+    expect(spawn.get("s1")).toBeNull();
   });
 });

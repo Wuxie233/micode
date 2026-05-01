@@ -9,14 +9,31 @@ import { extractErrorMessage } from "@/utils/errors";
 import { createInternalSession, deleteInternalSession, updateInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
-import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./classify";
+import {
+  type AmbiguousKind,
+  type ClassifyResult,
+  classifySpawnError,
+  INTERNAL_CLASSES,
+  type InternalClass,
+} from "./classify";
+import { buildDiagnosticLine, type DiagnosticFields } from "./diagnostics";
 import { formatSpawnResults } from "./format";
+import { evaluateFence, FENCE_DECISIONS, type FenceResult } from "./generation-fence";
 import { buildSpawnCompletionTitle, buildSpawnRunningTitle } from "./naming";
 import type { PreservedRegistry } from "./registry";
 import { retryOnTransient } from "./retry";
+import {
+  createSpawnSessionRegistry,
+  type SpawnPreservedRecord,
+  type SpawnSessionRegistry,
+} from "./spawn-session-registry";
+import { deriveTaskIdentity, type TaskIdentity } from "./task-identity";
 import { SPAWN_OUTCOMES, type SpawnResult } from "./types";
+import type { VerifyMarkerInput } from "./verifier";
+import { VERIFIER_DECISIONS, type VerifierResult } from "./verifier-types";
 
 type ExtendedContext = ToolContext & {
+  sessionID?: string;
   metadata?: (input: { title?: string; metadata?: Record<string, unknown> }) => void;
 };
 
@@ -59,8 +76,15 @@ export type ExecuteAgentSession = (ctx: PluginInput, task: AgentTask) => Promise
 
 export interface SpawnAgentToolOptions {
   readonly registry: PreservedRegistry;
+  readonly spawnRegistry?: SpawnSessionRegistry;
+  readonly verifier?: (input: VerifyMarkerInput) => Promise<VerifierResult | null>;
   readonly executeAgentSession?: ExecuteAgentSession;
   readonly availableModels?: ReadonlySet<string>;
+}
+
+interface ResolvedSpawnAgentToolOptions extends SpawnAgentToolOptions {
+  readonly spawnRegistry: SpawnSessionRegistry;
+  readonly mirrorLegacyRegistry: boolean;
 }
 
 const EMPTY_MODELS: ReadonlySet<string> = new Set<string>();
@@ -77,6 +101,19 @@ function resolveTaskModel(task: AgentTask, available: ReadonlySet<string>): Reso
   return { ok: false, message: `${MODEL_UNAVAILABLE_PREFIX}: ${task.model}` };
 }
 
+function createDefaultSpawnRegistry(): SpawnSessionRegistry {
+  return createSpawnSessionRegistry({
+    maxResumes: config.subagent.maxResumesPerSession,
+    ttlHours: config.subagent.failedSessionTtlHours,
+    runningTtlMs: config.subagent.spawnRegistryRunningTtlMs,
+  });
+}
+
+function resolveOptions(options: SpawnAgentToolOptions): ResolvedSpawnAgentToolOptions {
+  if (options.spawnRegistry) return { ...options, spawnRegistry: options.spawnRegistry, mirrorLegacyRegistry: false };
+  return { ...options, spawnRegistry: createDefaultSpawnRegistry(), mirrorLegacyRegistry: true };
+}
+
 interface ProgressState {
   completed: number;
   readonly total: number;
@@ -87,13 +124,34 @@ interface AttemptValue {
   readonly sessionId: string | null;
   readonly output: string;
   readonly error: string | null;
+  readonly classification: ClassifyResult;
 }
+
+interface AttemptResult {
+  readonly class: InternalClass;
+  readonly value: AttemptValue;
+}
+
+interface SettledAttempt extends AttemptResult {
+  readonly retries: number;
+}
+
+const VERIFIER_VERDICTS = {
+  FINAL: "final",
+  NARRATIVE: "narrative",
+  FALLBACK: "fallback",
+} as const;
+
+type VerifierVerdict = (typeof VERIFIER_VERDICTS)[keyof typeof VERIFIER_VERDICTS];
 
 const MS_PER_SECOND = 1000;
 const FAILURE_HEADER = "## spawn_agent Failed";
 const TOOL_NAME = "spawn-agent";
 const MODEL_OVERRIDE_EVENT = "spawn_agent.model_override";
+const DIAGNOSTICS_EVENT = "spawn-agent.diagnostics";
 const UNKNOWN_CALLER = "unknown";
+const UNKNOWN_SESSION_ID = "unknown-session";
+const DEFAULT_PARENT_SESSION_ID = "";
 
 const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.allSettled.
@@ -231,6 +289,8 @@ async function executeAgentSessionWith(
   ctx: PluginInput,
   task: AgentTask,
   available: ReadonlySet<string>,
+  parentSessionId: string,
+  onCreated: (sessionId: string) => void,
 ): Promise<AgentSessionResult> {
   const resolved = resolveTaskModel(task, available);
   if (!resolved.ok) throw new Error(resolved.message);
@@ -241,8 +301,10 @@ async function executeAgentSessionWith(
     const session = await createInternalSession({
       ctx,
       title: buildSpawnRunningTitle({ agent: task.agent, description: task.description }),
+      parentSessionId,
     });
     sessionId = session.sessionId;
+    onCreated(sessionId);
 
     await ctx.client.session.prompt({
       path: { id: sessionId },
@@ -261,29 +323,47 @@ async function executeAgentSessionWith(
   }
 }
 
-function toPublicResult(task: AgentTask, elapsedMs: number, kind: InternalClass, value: AttemptValue): SpawnResult {
-  if (kind === INTERNAL_CLASSES.SUCCESS) {
-    return {
-      outcome: SPAWN_OUTCOMES.SUCCESS,
-      description: task.description,
-      agent: task.agent,
-      elapsedMs,
-      output: value.output,
-    };
+async function classifyThrown(
+  ctx: PluginInput,
+  error: unknown,
+  onTransientSession: (sessionId: string) => void,
+): Promise<AttemptResult> {
+  const sessionId = getSessionId(error);
+  const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error) });
+  if (classification.class === INTERNAL_CLASSES.TRANSIENT) {
+    await deleteInternalSession({ ctx, sessionId, agent: "spawn-agent.transient" });
+    if (sessionId !== null) onTransientSession(sessionId);
   }
+  return {
+    class: classification.class,
+    value: { sessionId, output: "", error: classification.reason, classification },
+  };
+}
 
-  if ((kind === INTERNAL_CLASSES.TASK_ERROR || kind === INTERNAL_CLASSES.BLOCKED) && value.sessionId !== null) {
-    return {
-      outcome: kind,
-      description: task.description,
-      agent: task.agent,
-      elapsedMs,
-      sessionId: value.sessionId,
-      output: value.output,
-      resumeCount: 0,
-    };
+async function runAttempt(
+  ctx: PluginInput,
+  task: AgentTask,
+  runSession: ExecuteAgentSession,
+  onTransientSession: (sessionId: string) => void,
+): Promise<AttemptResult> {
+  try {
+    const session = await runSession(ctx, task);
+    const classification = classifySpawnError({ assistantText: session.output });
+    return { class: classification.class, value: { ...session, error: classification.reason, classification } };
+  } catch (error) {
+    return classifyThrown(ctx, error, onTransientSession);
   }
+}
 
+function getParentSessionId(toolCtx: ExtendedContext): string {
+  return nonEmpty(toolCtx.sessionID) ?? DEFAULT_PARENT_SESSION_ID;
+}
+
+function createSuccessResult(task: AgentTask, elapsedMs: number, output: string): SpawnResult {
+  return { outcome: SPAWN_OUTCOMES.SUCCESS, description: task.description, agent: task.agent, elapsedMs, output };
+}
+
+function createHardFailureResult(task: AgentTask, elapsedMs: number, value: AttemptValue): SpawnResult {
   return {
     outcome: SPAWN_OUTCOMES.HARD_FAILURE,
     description: task.description,
@@ -293,71 +373,275 @@ function toPublicResult(task: AgentTask, elapsedMs: number, kind: InternalClass,
   };
 }
 
-async function classifyThrown(
-  ctx: PluginInput,
-  error: unknown,
-): Promise<{ readonly class: InternalClass; readonly value: AttemptValue }> {
-  const sessionId = getSessionId(error);
-  const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error) });
-  if (classification.class === INTERNAL_CLASSES.TRANSIENT) {
-    await deleteInternalSession({ ctx, sessionId, agent: "spawn-agent.transient" });
-  }
-  return { class: classification.class, value: { sessionId, output: "", error: classification.reason } };
-}
-
-async function runAttempt(
-  ctx: PluginInput,
+function createPreservedResult(
   task: AgentTask,
-  runSession: ExecuteAgentSession,
-): Promise<{ readonly class: InternalClass; readonly value: AttemptValue }> {
+  elapsedMs: number,
+  sessionId: string,
+  output: string,
+  outcome: AmbiguousKind,
+  record: SpawnPreservedRecord | null,
+): SpawnResult {
+  return {
+    outcome,
+    description: task.description,
+    agent: task.agent,
+    elapsedMs,
+    sessionId,
+    output,
+    resumeCount: record?.resumeCount ?? 0,
+  };
+}
+
+function buildIdentity(task: AgentTask, ownerSessionId: string): TaskIdentity {
+  return deriveTaskIdentity({
+    agent: task.agent,
+    description: task.description,
+    prompt: task.prompt,
+    ownerSessionId,
+  });
+}
+
+function buildClassifierField(settled: SettledAttempt): string {
+  const retries = settled.retries > 0 ? ` retries=${settled.retries}` : "";
+  return `${settled.class}: ${settled.value.classification.reason}${retries}`;
+}
+
+function buildFenceField(fence: FenceResult): string {
+  if (fence.conflictSessionId === null) return fence.decision;
+  return `${fence.decision}:${fence.conflictSessionId}`;
+}
+
+function attachDiagnostics(task: AgentTask, result: SpawnResult, fields: DiagnosticFields): SpawnResult {
+  const diagnostics = buildDiagnosticLine(fields);
+  const withDiagnostics: SpawnResult = diagnostics.length > 0 ? { ...result, diagnostics } : result;
+  logSpawnDiagnostics(task, withDiagnostics, fields, diagnostics);
+  return withDiagnostics;
+}
+
+function logSpawnDiagnostics(
+  task: AgentTask,
+  result: SpawnResult,
+  fields: DiagnosticFields,
+  diagnostics: string,
+): void {
   try {
-    const session = await runSession(ctx, task);
-    const classification = classifySpawnError({ assistantText: session.output });
-    return { class: classification.class, value: { ...session, error: classification.reason } };
-  } catch (error) {
-    return classifyThrown(ctx, error);
+    log.info(
+      DIAGNOSTICS_EVENT,
+      JSON.stringify({ task: task.description, agent: task.agent, ...fields, diagnostics, outcome: result.outcome }),
+    );
+  } catch {
+    // Diagnostics must never change spawn execution.
   }
 }
 
-function preserveIfNeeded(registry: PreservedRegistry, result: SpawnResult): SpawnResult {
-  if (result.outcome !== SPAWN_OUTCOMES.TASK_ERROR && result.outcome !== SPAWN_OUTCOMES.BLOCKED) return result;
-  const preserved = registry.preserve({
+function blockedFenceResult(task: AgentTask, fence: FenceResult, started: number): SpawnResult {
+  const conflictSessionId = fence.conflictSessionId ?? UNKNOWN_SESSION_ID;
+  return {
+    outcome: SPAWN_OUTCOMES.BLOCKED,
+    description: task.description,
+    agent: task.agent,
+    elapsedMs: Date.now() - started,
+    sessionId: conflictSessionId,
+    output: `Generation fence: ${fence.decision}; conflict session ${conflictSessionId}`,
+    resumeCount: 0,
+  };
+}
+
+function registerRunning(
+  registry: SpawnSessionRegistry,
+  task: AgentTask,
+  sessionId: string,
+  ownerSessionId: string,
+  identity: TaskIdentity,
+): void {
+  registry.registerRunning({
+    sessionId,
+    agent: task.agent,
+    description: task.description,
+    ownerSessionId,
+    runId: identity.runId,
+    generation: identity.generation,
+    taskIdentity: identity.taskIdentity,
+  });
+}
+
+function mirrorLegacyPreserve(options: ResolvedSpawnAgentToolOptions, result: SpawnResult): void {
+  if (!options.mirrorLegacyRegistry) return;
+  if (result.outcome !== SPAWN_OUTCOMES.TASK_ERROR && result.outcome !== SPAWN_OUTCOMES.BLOCKED) return;
+  options.registry.preserve({
     sessionId: result.sessionId,
     agent: result.agent,
     description: result.description,
     outcome: result.outcome,
   });
-  return { ...result, resumeCount: preserved.resumeCount };
+}
+
+async function runVerifier(
+  verifier: SpawnAgentToolOptions["verifier"],
+  settled: { readonly value: AttemptValue },
+  _ambiguousKind: AmbiguousKind,
+): Promise<VerifierVerdict> {
+  const marker = settled.value.classification.markerHit;
+  if (!verifier || !marker) return VERIFIER_VERDICTS.FALLBACK;
+  try {
+    const verdict = await verifier({ assistantText: settled.value.output, marker });
+    if (verdict === null) return VERIFIER_VERDICTS.FALLBACK;
+    if (verdict.decision === VERIFIER_DECISIONS.FINAL) return VERIFIER_VERDICTS.FINAL;
+    return VERIFIER_VERDICTS.NARRATIVE;
+  } catch {
+    return VERIFIER_VERDICTS.FALLBACK;
+  }
+}
+
+async function updatePreservedTitle(
+  ctx: PluginInput,
+  task: AgentTask,
+  sessionId: string,
+  outcome: AmbiguousKind,
+): Promise<void> {
+  await updateInternalSession({
+    ctx,
+    sessionId,
+    title: buildSpawnCompletionTitle({ agent: task.agent, description: task.description, outcome }),
+  });
+}
+
+async function preserveSession(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  elapsedMs: number,
+  value: AttemptValue,
+  outcome: AmbiguousKind,
+): Promise<SpawnResult> {
+  if (value.sessionId === null) return createHardFailureResult(task, elapsedMs, value);
+  const record = options.spawnRegistry.markPreserved(value.sessionId, outcome);
+  const result = createPreservedResult(task, elapsedMs, value.sessionId, value.output, outcome, record);
+  mirrorLegacyPreserve(options, result);
+  await updatePreservedTitle(ctx, task, value.sessionId, outcome);
+  return result;
+}
+
+async function handleVerification(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  settled: SettledAttempt,
+  elapsedMs: number,
+): Promise<{ readonly result: SpawnResult; readonly verifier: string }> {
+  const ambiguousKind = settled.value.classification.ambiguousKind;
+  if (!ambiguousKind) {
+    options.spawnRegistry.complete(settled.value.sessionId ?? UNKNOWN_SESSION_ID);
+    await deleteInternalSession({ ctx, sessionId: settled.value.sessionId, agent: task.agent });
+    return { result: createSuccessResult(task, elapsedMs, settled.value.output), verifier: "fallback" };
+  }
+  const verifier = await runVerifier(options.verifier, settled, ambiguousKind);
+  if (verifier === VERIFIER_VERDICTS.FINAL) {
+    const result = await preserveSession(ctx, task, options, elapsedMs, settled.value, ambiguousKind);
+    return { result, verifier };
+  }
+  options.spawnRegistry.complete(settled.value.sessionId ?? UNKNOWN_SESSION_ID);
+  await deleteInternalSession({ ctx, sessionId: settled.value.sessionId, agent: task.agent });
+  return { result: createSuccessResult(task, elapsedMs, settled.value.output), verifier };
+}
+
+function evaluateTaskFence(
+  options: ResolvedSpawnAgentToolOptions,
+  ownerSessionId: string,
+  identity: TaskIdentity,
+): FenceResult {
+  return evaluateFence(options.spawnRegistry, {
+    ownerSessionId,
+    runId: identity.runId,
+    generation: identity.generation,
+    taskIdentity: identity.taskIdentity,
+  });
+}
+
+async function runSpawnAttempt(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  ownerSessionId: string,
+  identity: TaskIdentity,
+): Promise<SettledAttempt> {
+  let registeredSessionId: string | null = null;
+  const onCreated = (sessionId: string): void => {
+    if (registeredSessionId === sessionId) return;
+    registerRunning(options.spawnRegistry, task, sessionId, ownerSessionId, identity);
+    registeredSessionId = sessionId;
+  };
+  const onTransientSession = (sessionId: string): void => {
+    options.spawnRegistry.complete(sessionId);
+    if (registeredSessionId === sessionId) registeredSessionId = null;
+  };
+  const available = options.availableModels ?? EMPTY_MODELS;
+  const runSession =
+    options.executeAgentSession ??
+    ((c: PluginInput, t: AgentTask) => executeAgentSessionWith(c, t, available, ownerSessionId, onCreated));
+  const settled = await retryOnTransient(() => runAttempt(ctx, task, runSession, onTransientSession), {
+    retries: config.subagent.transientRetries,
+    backoffMs: config.subagent.transientBackoffMs,
+  });
+  if (settled.value.sessionId !== null && registeredSessionId !== settled.value.sessionId)
+    onCreated(settled.value.sessionId);
+  return settled;
+}
+
+async function cleanupSession(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  sessionId: string | null,
+): Promise<void> {
+  options.spawnRegistry.complete(sessionId ?? UNKNOWN_SESSION_ID);
+  await deleteInternalSession({ ctx, sessionId, agent: task.agent });
+}
+
+async function finalizeSettled(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  settled: SettledAttempt,
+  elapsedMs: number,
+  fields: DiagnosticFields,
+): Promise<SpawnResult> {
+  if (settled.class === INTERNAL_CLASSES.NEEDS_VERIFICATION) {
+    const verified = await handleVerification(ctx, task, options, settled, elapsedMs);
+    return attachDiagnostics(task, verified.result, { ...fields, verifier: verified.verifier });
+  }
+  if (settled.class === INTERNAL_CLASSES.SUCCESS) {
+    await cleanupSession(ctx, task, options, settled.value.sessionId);
+    return attachDiagnostics(task, createSuccessResult(task, elapsedMs, settled.value.output), fields);
+  }
+  if (settled.class === INTERNAL_CLASSES.TASK_ERROR || settled.class === INTERNAL_CLASSES.BLOCKED) {
+    const result = await preserveSession(ctx, task, options, elapsedMs, settled.value, settled.class);
+    return attachDiagnostics(task, result, fields);
+  }
+  await cleanupSession(ctx, task, options, settled.value.sessionId);
+  return attachDiagnostics(task, createHardFailureResult(task, elapsedMs, settled.value), fields);
 }
 
 async function runAgent(
   ctx: PluginInput,
   task: AgentTask,
   toolCtx: ExtendedContext,
-  options: SpawnAgentToolOptions,
+  options: ResolvedSpawnAgentToolOptions,
   progress?: ProgressState,
 ): Promise<SpawnResult> {
   const started = Date.now();
   updateProgress(toolCtx, progress, `Running ${task.agent}...`);
-  const available = options.availableModels ?? EMPTY_MODELS;
-  const runSession =
-    options.executeAgentSession ?? ((c: PluginInput, t: AgentTask) => executeAgentSessionWith(c, t, available));
-  const settled = await retryOnTransient(() => runAttempt(ctx, task, runSession), {
-    retries: config.subagent.transientRetries,
-    backoffMs: config.subagent.transientBackoffMs,
-  });
-  const elapsedMs = Date.now() - started;
-  const result = toPublicResult(task, elapsedMs, settled.class, settled.value);
-  if (result.outcome === SPAWN_OUTCOMES.SUCCESS || result.outcome === SPAWN_OUTCOMES.HARD_FAILURE) {
-    await deleteInternalSession({ ctx, sessionId: settled.value.sessionId, agent: task.agent });
-    return result;
+  const parentSessionId = getParentSessionId(toolCtx);
+  const identity = buildIdentity(task, parentSessionId);
+  const fence = evaluateTaskFence(options, parentSessionId, identity);
+  if (fence.decision !== FENCE_DECISIONS.LAUNCH) {
+    const result = blockedFenceResult(task, fence, started);
+    return attachDiagnostics(task, result, { fence: buildFenceField(fence) });
   }
-  await updateInternalSession({
-    ctx,
-    sessionId: settled.value.sessionId,
-    title: buildSpawnCompletionTitle({ agent: task.agent, description: task.description, outcome: result.outcome }),
-  });
-  return preserveIfNeeded(options.registry, result);
+  const settled = await runSpawnAttempt(ctx, task, options, parentSessionId, identity);
+  const elapsedMs = Date.now() - started;
+  const fields: DiagnosticFields = { classifier: buildClassifierField(settled), fence: buildFenceField(fence) };
+  return finalizeSettled(ctx, task, options, settled, elapsedMs, fields);
 }
 
 function createRejectedResult(task: AgentTask, started: number, error: unknown): SpawnResult {
@@ -374,7 +658,7 @@ async function runParallelAgents(
   ctx: PluginInput,
   agents: readonly AgentTask[],
   extCtx: ExtendedContext,
-  options: SpawnAgentToolOptions,
+  options: ResolvedSpawnAgentToolOptions,
 ): Promise<string> {
   const started = Date.now();
   const progress: ProgressState = { completed: 0, total: agents.length, startTime: started };
@@ -406,7 +690,7 @@ const dispatchTasks = async (
   ctx: PluginInput,
   tasks: readonly AgentTask[],
   extCtx: ExtendedContext,
-  options: SpawnAgentToolOptions,
+  options: ResolvedSpawnAgentToolOptions,
 ): Promise<string> => {
   if (tasks.length === 1) {
     const onlyTask = tasks[0];
@@ -432,6 +716,7 @@ export function buildArgsShape(): { agents: AgentsSchema } {
 }
 
 export function createSpawnAgentTool(ctx: PluginInput, options: SpawnAgentToolOptions): ToolDefinition {
+  const resolvedOptions = resolveOptions(options);
   return tool({
     description: TOOL_DESCRIPTION,
     args: { agents: buildAgentsSchema() },
@@ -443,7 +728,7 @@ export function createSpawnAgentTool(ctx: PluginInput, options: SpawnAgentToolOp
         const dumped = dumpRawArgs(TOOL_NAME, args);
         return `${FAILURE_HEADER}\n\n${outcome.message}${logDumpPath(dumped)}`;
       }
-      return dispatchTasks(ctx, outcome.tasks, extCtx, options);
+      return dispatchTasks(ctx, outcome.tasks, extCtx, resolvedOptions);
     },
   });
 }
