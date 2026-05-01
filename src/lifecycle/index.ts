@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import * as v from "valibot";
 
+import { type CompletionNotifier, NOTIFICATION_STATUSES, type NotificationStatus } from "@/notifications";
 import { getDefaultStore, type ProjectMemoryStore, type PromoteOutcome, promoteMarkdown } from "@/project-memory";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
@@ -56,6 +57,7 @@ export interface LifecycleHandle {
   readonly setState: (issueNumber: number, state: LifecycleState) => Promise<LifecycleRecord>;
   readonly recordExecutorEvent: (input: ExecutorEventInput) => Promise<void>;
   readonly decideRecovery: (issueNumber: number, currentOwner: string) => Promise<RecoveryDecision>;
+  readonly notifyBlocked: (issueNumber: number, summary: string) => Promise<void>;
 }
 
 export interface ProgressEmitter {
@@ -85,6 +87,7 @@ export interface LifecycleStoreInput {
   readonly progress?: ProgressEmitter;
   readonly journal?: JournalStore;
   readonly lease?: LeaseStore;
+  readonly notifier?: CompletionNotifier;
 }
 
 interface IssueIdentity {
@@ -100,6 +103,7 @@ interface LifecycleContext {
   readonly progress?: ProgressEmitter;
   readonly journal: JournalStore;
   readonly lease: LeaseStore;
+  readonly notifier?: CompletionNotifier;
 }
 
 type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
@@ -394,6 +398,26 @@ const safeEmit = async (
   }
 };
 
+const safeNotify = async (
+  context: LifecycleContext,
+  status: NotificationStatus,
+  record: LifecycleRecord,
+  summary: string,
+): Promise<void> => {
+  if (!context.notifier) return;
+  try {
+    await context.notifier.notify({
+      status,
+      issueNumber: record.issueNumber,
+      title: record.branch,
+      summary,
+      reference: record.issueUrl.length > 0 ? record.issueUrl : null,
+    });
+  } catch (error) {
+    log.warn("lifecycle.notify", `notify failed: ${extractErrorMessage(error)}`);
+  }
+};
+
 const saveAndSync = async (context: LifecycleContext, record: LifecycleRecord): Promise<LifecycleRecord> => {
   await context.store.save(record);
   await syncIssueBody(context.runner, record, context.cwd);
@@ -437,6 +461,7 @@ const abortStart = async (
     ABORTED_SENTINEL_NOTE,
   ]);
   await context.store.save(record);
+  await safeNotify(context, NOTIFICATION_STATUSES.FAILED_STOP, record, note);
   return record;
 };
 
@@ -446,7 +471,9 @@ const abortRecord = async (
   note: string,
 ): Promise<LifecycleRecord> => {
   const aborted = touch({ ...record, state: LIFECYCLE_STATES.ABORTED, notes: [...record.notes, note] });
-  return saveAndSync(context, aborted);
+  const saved = await saveAndSync(context, aborted);
+  await safeNotify(context, NOTIFICATION_STATUSES.FAILED_STOP, saved, note);
+  return saved;
 };
 
 const applyCommitOutcome = (record: LifecycleRecord, outcome: CommitOutcome): LifecycleRecord => {
@@ -633,9 +660,35 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
     const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
     const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
     const promoted = await promoteFinishedRecord(merging, outcome, context);
-    await saveAndSync(context, applyFinishOutcome(promoted, outcome));
+    const final = await saveAndSync(context, applyFinishOutcome(promoted, outcome));
     await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
+    if (outcome.merged) {
+      await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
+    }
     return outcome;
+  };
+};
+
+const createBlockedNotifier = (context: LifecycleContext): LifecycleHandle["notifyBlocked"] => {
+  return async (issueNumber, summary) => {
+    const record = await context.store.load(issueNumber);
+    if (record) {
+      await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, record, summary);
+      return;
+    }
+
+    if (!context.notifier) return;
+    try {
+      await context.notifier.notify({
+        status: NOTIFICATION_STATUSES.BLOCKED,
+        issueNumber,
+        title: `issue-${issueNumber}`,
+        summary,
+        reference: null,
+      });
+    } catch (error) {
+      log.warn("lifecycle.notify", `notify failed: ${extractErrorMessage(error)}`);
+    }
   };
 };
 
@@ -745,6 +798,7 @@ export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandl
     progress: input.progress,
     journal,
     lease,
+    notifier: input.notifier,
   };
 
   return {
@@ -756,5 +810,6 @@ export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandl
     setState: createStateSetter(context),
     recordExecutorEvent: createExecutorEventRecorder(context),
     decideRecovery: createRecoveryDecider(context),
+    notifyBlocked: createBlockedNotifier(context),
   };
 }

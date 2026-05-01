@@ -13,6 +13,7 @@ const ANSWER_TIMEOUT_MINUTES = 5;
 const REVIEW_TIMEOUT_MINUTES = 10;
 const SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS = 5000;
 const SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS = 15_000;
+const NOTIFICATION_DEDUPE_TTL_MS = 21_600_000;
 
 const OCTTO_PORT_ENV = "OCTTO_PORT";
 const OCTTO_PUBLIC_BASE_URL_ENV = "OCTTO_PUBLIC_BASE_URL";
@@ -262,6 +263,15 @@ export const config = {
     snippetMaxChars: 240,
     promoteOnLifecycleFinish: true,
     refuseWritesOnDegradedIdentity: true,
+  },
+
+  notifications: {
+    enabled: true,
+    qqUserId: "445714414",
+    qqGroupId: null as string | null,
+    maxSummaryChars: 200,
+    dedupeTtlMs: NOTIFICATION_DEDUPE_TTL_MS,
+    dedupeMaxEntries: 500,
   },
 } as const;
 
