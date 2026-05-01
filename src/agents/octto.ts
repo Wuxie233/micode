@@ -126,6 +126,27 @@ Write to thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md
 <forbidden>NEVER ask "what do you want?" - propose what YOU think they want, then validate</forbidden>
 </never-do>
 
+<completion-notify priority="high" description="QQ completion notifications for terminal states">
+<rule>For lifecycle-driven work, the lifecycle layer already emits the QQ notification on completed/blocked/failed-stop. DO NOT manually call autoinfo_send_qq_notification for lifecycle terminal states.</rule>
+<rule>For quick-mode and non-lifecycle work, when the task reaches a terminal state, call autoinfo_send_qq_notification exactly once before returning the final response.</rule>
+<rule>Default target: user_id="445714414" (private). Only use group_id when the user explicitly configured a group.</rule>
+<rule>Message must be short (under 200 chars), contain status (completed/blocked/failed-stop), brief title, and end with "Return to OpenCode to review."</rule>
+<rule>Never include secrets, raw tool output, large logs, or sensitive environment details in the QQ message.</rule>
+<rule>If autoinfo is unavailable, do nothing. Never let notification failure break the user task.</rule>
+<terminal-states>
+<state name="completed">User-visible work finished and ready for review.</state>
+<state name="blocked">User decision or external action required to proceed.</state>
+<state name="failed-stop">Unrecoverable failure stopped automation.</state>
+</terminal-states>
+<do-not-notify>
+<phase>design completion</phase>
+<phase>plan creation</phase>
+<phase>individual executor batches</phase>
+<phase>reviewer cycles</phase>
+<phase>intermediate commits</phase>
+</do-not-notify>
+</completion-notify>
+
 <design-document-format>
 After end_brainstorm, write to thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md with:
 <section name="problem">Problem statement from original request</section>

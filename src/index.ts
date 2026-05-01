@@ -31,6 +31,15 @@ import { createResolver } from "@/lifecycle/resolver";
 import { createLifecycleRunner } from "@/lifecycle/runner";
 import { createLifecycleStore as createLifecycleJsonStore } from "@/lifecycle/store";
 import {
+  type CompletionNotifier,
+  createCourierSink,
+  createDedupeStore,
+  createNoopSink,
+  createNotifier,
+  createPolicy,
+  type NotificationTarget,
+} from "@/notifications";
+import {
   type AutoResumeDispatcher,
   type ClientPromptRequest,
   createAutoResumeDispatcher,
@@ -246,6 +255,63 @@ function createAutoResumeClient(client: PluginInput["client"]): AutoResumeClient
   };
 }
 
+const NOTIFICATION_COURIER_AGENT = "notification-courier";
+const NOTIFICATION_COURIER_TITLE = "notification-courier";
+
+function buildCourierPrompt(target: NotificationTarget, message: string): string {
+  if (target.kind === "group") {
+    return `Call autoinfo_send_qq_notification with group_id="${target.groupId}" and the following message exactly:\n\n${message}`;
+  }
+  return `Call autoinfo_send_qq_notification with user_id="${target.userId}" and the following message exactly:\n\n${message}`;
+}
+
+function buildCourierInvoke(ctx: PluginInput): (target: NotificationTarget, message: string) => Promise<void> {
+  return async (target, message) => {
+    let sessionId: string | undefined;
+    try {
+      const created = await createInternalSession({ ctx, title: NOTIFICATION_COURIER_TITLE });
+      sessionId = created.sessionId;
+      await ctx.client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          agent: NOTIFICATION_COURIER_AGENT,
+          tools: {},
+          parts: [{ type: "text", text: buildCourierPrompt(target, message) }],
+        },
+      });
+    } catch (error) {
+      log.warn("notifications", `courier session failed: ${extractErrorMessage(error)}`);
+    } finally {
+      if (sessionId) {
+        await deleteInternalSession({ ctx, sessionId, agent: NOTIFICATION_COURIER_AGENT }).catch((error: unknown) => {
+          log.warn("notifications", `courier session delete failed: ${extractErrorMessage(error)}`);
+        });
+      }
+    }
+  };
+}
+
+function buildCompletionNotifier(ctx: PluginInput): CompletionNotifier {
+  const policyConfig = {
+    enabled: config.notifications.enabled,
+    qqUserId: config.notifications.qqUserId,
+    qqGroupId: config.notifications.qqGroupId,
+    maxSummaryChars: config.notifications.maxSummaryChars,
+    dedupeTtlMs: config.notifications.dedupeTtlMs,
+    dedupeMaxEntries: config.notifications.dedupeMaxEntries,
+  };
+  const dedupe = createDedupeStore({
+    ttlMs: policyConfig.dedupeTtlMs,
+    maxEntries: policyConfig.dedupeMaxEntries,
+  });
+  const sink = config.notifications.enabled ? createCourierSink({ invoke: buildCourierInvoke(ctx) }) : createNoopSink();
+  return createNotifier({
+    config: policyConfig,
+    sink,
+    policy: createPolicy({ config: policyConfig, dedupe }),
+  });
+}
+
 // eslint-disable-next-line max-lines-per-function
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Validate external tool dependencies at startup
@@ -394,6 +460,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     resolver: lifecycleResolver,
     cwd: ctx.directory,
   });
+  const completionNotifier = buildCompletionNotifier(ctx);
   const lifecycleHandle = createLifecycleStore({
     runner: createLifecycleRunner(),
     worktreesRoot: dirname(ctx.directory),
@@ -401,6 +468,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     progress: lifecycleProgress,
     journal: lifecycleJournal,
     lease: lifecycleLease,
+    notifier: completionNotifier,
   });
   const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver, lifecycleProgress);
 

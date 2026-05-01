@@ -26,6 +26,7 @@ import {
   mindmodelPatternDiscovererAgent,
   stackDetectorAgent,
 } from "./mindmodel";
+import { notificationCourierAgent } from "./notification-courier";
 import { octtoAgent } from "./octto";
 import { patternFinderAgent } from "./pattern-finder";
 import { plannerAgent } from "./planner";
@@ -48,6 +49,7 @@ export const agents: Record<string, AgentConfig> = {
   executor: { ...executorAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
   "artifact-searcher": { ...artifactSearcherAgent, model: DEFAULT_MODEL },
+  "notification-courier": { ...notificationCourierAgent, model: DEFAULT_MODEL },
   "project-initializer": { ...projectInitializerAgent, model: DEFAULT_MODEL },
   octto: { ...octtoAgent, model: DEFAULT_MODEL },
   probe: { ...probeAgent, model: DEFAULT_MODEL },
@@ -86,3 +88,5 @@ export {
   octtoAgent,
   probeAgent,
 };
+
+export { notificationCourierAgent } from "./notification-courier";
