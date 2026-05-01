@@ -95,6 +95,16 @@ describe("buildSpawnCompletionTitle", () => {
     ).toBe("失败: 修复后端权限校验");
   });
 
+  it("maps review_changes_requested outcome to 需修改 status", () => {
+    expect(
+      buildSpawnCompletionTitle({
+        agent: "reviewer",
+        description: "审查 PR #42",
+        outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+      }),
+    ).toBe("需修改: 审查 PR #42");
+  });
+
   it("falls back to Chinese role label when description is missing", () => {
     expect(
       buildSpawnCompletionTitle({
@@ -103,5 +113,25 @@ describe("buildSpawnCompletionTitle", () => {
         outcome: SPAWN_OUTCOMES.SUCCESS,
       }),
     ).toBe("已完成: 代码审查");
+  });
+
+  it("falls back to reviewer label when review_changes_requested description is missing", () => {
+    expect(
+      buildSpawnCompletionTitle({
+        agent: "reviewer",
+        description: "",
+        outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+      }),
+    ).toBe("需修改: 代码审查");
+  });
+
+  it("does not use 失败 status for review_changes_requested", () => {
+    const title = buildSpawnCompletionTitle({
+      agent: "reviewer",
+      description: "审查 PR #42",
+      outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+    });
+
+    expect(title.startsWith("失败")).toBe(false);
   });
 });

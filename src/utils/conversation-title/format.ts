@@ -7,6 +7,7 @@ export const TITLE_STATUS = {
   DONE: "已完成",
   FAILED: "失败",
   BLOCKED: "阻塞",
+  REVIEW_CHANGES_REQUESTED: "需修改",
 } as const;
 
 export type TitleStatus = (typeof TITLE_STATUS)[keyof typeof TITLE_STATUS];
@@ -15,6 +16,7 @@ export const CONCLUSIVE_STATUSES: readonly TitleStatus[] = [
   TITLE_STATUS.DONE,
   TITLE_STATUS.FAILED,
   TITLE_STATUS.BLOCKED,
+  TITLE_STATUS.REVIEW_CHANGES_REQUESTED,
 ];
 
 export interface TitleParts {
