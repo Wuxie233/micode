@@ -221,4 +221,34 @@ describe("config utility", () => {
       expect(config.projectMemory.defaultLookupLimit).toBe(10);
     });
   });
+
+  describe("config.notifications", () => {
+    it("enables completion notifications by default", () => {
+      expect(config.notifications.enabled).toBe(true);
+    });
+
+    it("defaults to private QQ user 445714414", () => {
+      expect(config.notifications.qqUserId).toBe("445714414");
+    });
+
+    it("leaves group routing unset by default", () => {
+      expect(config.notifications.qqGroupId).toBeNull();
+    });
+
+    it("caps the sanitized summary at 200 characters by default", () => {
+      expect(config.notifications.maxSummaryChars).toBe(200);
+    });
+
+    it("retains a non-zero dedupe TTL so repeats are suppressed within a session", () => {
+      expect(config.notifications.dedupeTtlMs).toBeGreaterThan(0);
+    });
+
+    it("defaults the dedupe TTL to 6 hours", () => {
+      expect(config.notifications.dedupeTtlMs).toBe(21_600_000);
+    });
+
+    it("caps dedupe entries at 500 by default", () => {
+      expect(config.notifications.dedupeMaxEntries).toBe(500);
+    });
+  });
 });

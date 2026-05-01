@@ -111,6 +111,7 @@ describe("lifecycle handle", () => {
       "decideRecovery",
       "finish",
       "load",
+      "notifyBlocked",
       "recordArtifact",
       "recordExecutorEvent",
       "setState",
