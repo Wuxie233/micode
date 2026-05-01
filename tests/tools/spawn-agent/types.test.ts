@@ -5,6 +5,7 @@ import {
   type ResumeSubagentResult,
   SPAWN_OUTCOMES,
   type SpawnResult,
+  type SpawnReviewChanges,
 } from "../../../src/tools/spawn-agent/types";
 
 const AGENT = "implementer-general";
@@ -22,6 +23,8 @@ const summarize = (spawn: SpawnResult): string => {
       return `${spawn.sessionId}:${spawn.resumeCount}`;
     case SPAWN_OUTCOMES.HARD_FAILURE:
       return spawn.error;
+    case SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED:
+      return spawn.output;
     default:
       return assertNever(spawn);
   }
@@ -33,6 +36,7 @@ describe("spawn-agent result types", () => {
     expect(SPAWN_OUTCOMES.TASK_ERROR).toBe("task_error");
     expect(SPAWN_OUTCOMES.BLOCKED).toBe("blocked");
     expect(SPAWN_OUTCOMES.HARD_FAILURE).toBe("hard_failure");
+    expect(SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED).toBe("review_changes_requested");
   });
 
   it("supports exhaustive spawn result handling", () => {
@@ -93,5 +97,24 @@ describe("spawn-agent result types", () => {
 
     expect(input.session_id).toBe(resumed.sessionId);
     expect(resumed.outcome).toBe(SPAWN_OUTCOMES.TASK_ERROR);
+  });
+
+  it("narrows review changes under the spawn result union", () => {
+    const result: SpawnResult = {
+      outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+      description: "Review 2.3",
+      agent: "reviewer",
+      elapsedMs: 1234,
+      output: "CHANGES REQUESTED: rename foo to bar",
+    };
+
+    if (result.outcome !== SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED) {
+      throw new Error("expected review_changes_requested branch");
+    }
+
+    const narrowed: SpawnReviewChanges = result;
+    expect(narrowed.output).toContain("CHANGES REQUESTED");
+    expect(narrowed.agent).toBe("reviewer");
+    expect("sessionId" in narrowed).toBe(false);
   });
 });

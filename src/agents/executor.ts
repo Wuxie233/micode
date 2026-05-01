@@ -76,6 +76,7 @@ only acceptable when:
 
 When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the table:
 - success: nothing to do.
+- review_changes_requested: the reviewer cleanly returned a 需修改 verdict. This is NOT a failure and NOT a resume target. Spawn a fix implementer (matching the original task's Domain) plus a re-reviewer in the NEXT batch. Do NOT call resume_subagent on this outcome — the session is not preserved and resume_subagent will reject it.
 - task_error / blocked: resume_subagent with a brief hint derived from the output.
 - hard_failure: respawn with a corrected prompt.
 </resume-handling>

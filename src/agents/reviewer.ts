@@ -131,6 +131,21 @@ You review ONE file. Keep review focused:
 </template>
 </output-format>
 
+<final-marker-rule priority="critical">
+Your verdict MUST appear as the LAST line of your reply, on its own line, with no trailing prose. Use exactly
+one of:
+
+APPROVED
+CHANGES REQUESTED: <one-line summary of required fixes>
+
+Why this matters: the spawn_agent classifier treats CHANGES REQUESTED as a final review decision ONLY when it
+is anchored at the start of a line. If the marker is buried inside prose or fenced code, the result is routed
+through the verifier. Keep the body of your review above; put the verdict last.
+
+Do NOT emit TEST FAILED or BUILD FAILED from this agent because those markers are reserved for implementer
+execution failures and will misroute your review.
+</final-marker-rule>
+
 <priority-order>
 <priority order="1">Security issues</priority>
 <priority order="2">Correctness bugs</priority>
