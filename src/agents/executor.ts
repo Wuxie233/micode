@@ -10,6 +10,41 @@ You are a SUBAGENT - use spawn_agent tool (not Task tool) to spawn other subagen
 Available micode agents: implementer-frontend, implementer-backend, implementer-general, reviewer, codebase-locator, codebase-analyzer, pattern-finder.
 </environment>
 
+<spawn-identity priority="critical">
+Every spawn_agent call MUST start the prompt with a <spawn-meta> identity block:
+
+  <spawn-meta task-id="<plan>:<batch>:<task>:<role>:<file>" run-id="<your-session-id>" generation="<n>" />
+
+- task-id: stable string derived from plan path + batch + task id + role (implementer or reviewer) + target file when known.
+- run-id: your own session id; the same value for every spawn within this executor invocation.
+- generation: 1 by default; increment only when the main agent explicitly tells you to re-dispatch.
+
+The plugin uses these to fence duplicate work after an executor crash. Without this metadata
+the plugin falls back to hashing agent + description, which works but produces a noisier diagnostic.
+</spawn-identity>
+
+<fence-handling priority="critical">
+A spawn_agent result with outcome "blocked" and output starting with "Generation fence:" means
+an older generation already has a session for this logical task. DO NOT respawn the same task.
+
+- conflict "duplicate_running": wait for the older session, then read its result. Report to the
+  user that older work is still in flight.
+- conflict "duplicate_preserved": call resume_subagent({ session_id: <conflict-id> }) instead of
+  spawning a new task.
+
+When the user explicitly tells you to override the fence (rare), you may pass a different
+generation value in the new spawn-meta block.
+</fence-handling>
+
+<parent-cleanup priority="high">
+After confirming an executor restart (typically because the main agent told you "previous
+executor crashed, re-dispatch"), call cleanup_parent_run before any spawn_agent call:
+
+  cleanup_parent_run({ run_id: "<previous-run-id>", reason: "superseded" })
+
+This best-effort deletes orphaned children. Failures are logged but do not block your work.
+</parent-cleanup>
+
 <purpose>
 Execute MICRO-TASK plans with BATCH-FIRST parallelism.
 Plans already define batches with 5-15 micro-tasks each.
@@ -171,21 +206,21 @@ Example: 3 independent tasks
     Frontend-domain implementer: React/Vue/Svelte, CSS, UI components, client-side state.
     Use when task Domain is "frontend".
     <invocation>
-      spawn_agent(agent="implementer-frontend", prompt="Implement task 2.3: Create src/components/UserCard.tsx with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.3")
+      spawn_agent(agent="implementer-frontend", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:implementer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\nImplement task 2.3: Create src/components/UserCard.tsx with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.3")
     </invocation>
   </subagent>
   <subagent name="implementer-backend">
     Backend-domain implementer: APIs, DB, middleware, services, infrastructure.
     Use when task Domain is "backend".
     <invocation>
-      spawn_agent(agent="implementer-backend", prompt="Implement task 2.1: Create src/api/users.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.1")
+      spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.1:implementer:src/api/users.ts" run-id="<your-session-id>" generation="1" />\nImplement task 2.1: Create src/api/users.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.1")
     </invocation>
   </subagent>
   <subagent name="implementer-general">
     General-domain implementer: configs, scripts, shared types, test infrastructure.
     Use when task Domain is "general", absent, or unrecognized.
     <invocation>
-      spawn_agent(agent="implementer-general", prompt="Implement task 1.1: Create vitest.config.ts. [code]", description="Task 1.1")
+      spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nImplement task 1.1: Create vitest.config.ts. [code]", description="Task 1.1")
     </invocation>
   </subagent>
   <subagent name="reviewer">
@@ -193,7 +228,7 @@ Example: 3 independent tasks
     Input: File path, expected behavior, test results, and contract path if one exists.
     Output: APPROVED or CHANGES REQUESTED with specific fix instructions.
     <invocation>
-      spawn_agent(agent="reviewer", prompt="Review task 2.3: src/components/UserCard.tsx **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 2.3")
+      spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:reviewer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\nReview task 2.3: src/components/UserCard.tsx **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 2.3")
     </invocation>
   </subagent>
 </available-subagents>
@@ -265,32 +300,32 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 ## Step 1: Parse each task's Domain line, pick the matching implementer, fire ALL 8 in ONE message
 
 # Tasks 1.1-1.4 marked Domain: general (configs, test infra)
-spawn_agent(agent="implementer-general", prompt="Task 1.1: Create vitest.config.ts [code]", description="1.1")
-spawn_agent(agent="implementer-general", prompt="Task 1.2: Create tests/setup.ts [code]", description="1.2")
-spawn_agent(agent="implementer-general", prompt="Task 1.3: Create tailwind.config.ts [code]", description="1.3")
-spawn_agent(agent="implementer-general", prompt="Task 1.4: Create postcss.config.js [code]", description="1.4")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nTask 1.1: Create vitest.config.ts [code]", description="1.1")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:implementer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\nTask 1.2: Create tests/setup.ts [code]", description="1.2")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:implementer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\nTask 1.3: Create tailwind.config.ts [code]", description="1.3")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:implementer:postcss.config.js" run-id="<your-session-id>" generation="1" />\nTask 1.4: Create postcss.config.js [code]", description="1.4")
 
 # Task 1.5 marked Domain: general (shared contract types, imported by both sides)
-spawn_agent(agent="implementer-general", prompt="Task 1.5: Create src/shared/contracts.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.5")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:implementer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\nTask 1.5: Create src/shared/contracts.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.5")
 
 # Tasks 1.6-1.7 marked Domain: backend (types and schemas used by API handlers)
-spawn_agent(agent="implementer-backend", prompt="Task 1.6: Create src/api/schema.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.6")
-spawn_agent(agent="implementer-backend", prompt="Task 1.7: Create src/api/utils.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.7")
+spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:implementer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\nTask 1.6: Create src/api/schema.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.6")
+spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:implementer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\nTask 1.7: Create src/api/utils.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.7")
 
 # Task 1.8 marked Domain: frontend (global styles)
-spawn_agent(agent="implementer-frontend", prompt="Task 1.8: Create src/app/globals.css [code]", description="1.8")
+spawn_agent(agent="implementer-frontend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:implementer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\nTask 1.8: Create src/app/globals.css [code]", description="1.8")
 // All 8 run in parallel, results available when message completes
 
 ## Step 2: Fire ALL 8 reviewers in ONE message (reviewer is shared, not domain-specific)
 
-spawn_agent(agent="reviewer", prompt="Review 1.1: vitest.config.ts", description="Review 1.1")
-spawn_agent(agent="reviewer", prompt="Review 1.2: tests/setup.ts", description="Review 1.2")
-spawn_agent(agent="reviewer", prompt="Review 1.3: tailwind.config.ts", description="Review 1.3")
-spawn_agent(agent="reviewer", prompt="Review 1.4: postcss.config.js", description="Review 1.4")
-spawn_agent(agent="reviewer", prompt="Review 1.5: src/shared/contracts.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.5")
-spawn_agent(agent="reviewer", prompt="Review 1.6: src/api/schema.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.6")
-spawn_agent(agent="reviewer", prompt="Review 1.7: src/api/utils.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.7")
-spawn_agent(agent="reviewer", prompt="Review 1.8: src/app/globals.css", description="Review 1.8")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:reviewer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nReview 1.1: vitest.config.ts", description="Review 1.1")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:reviewer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\nReview 1.2: tests/setup.ts", description="Review 1.2")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:reviewer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\nReview 1.3: tailwind.config.ts", description="Review 1.3")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:reviewer:postcss.config.js" run-id="<your-session-id>" generation="1" />\nReview 1.4: postcss.config.js", description="Review 1.4")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:reviewer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\nReview 1.5: src/shared/contracts.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.5")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:reviewer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\nReview 1.6: src/api/schema.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.6")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:reviewer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\nReview 1.7: src/api/utils.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.7")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:reviewer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\nReview 1.8: src/app/globals.css", description="Review 1.8")
 // All 8 run in parallel
 
 ## Step 3: Handle any CHANGES REQUESTED, then proceed to Batch 2

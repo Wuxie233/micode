@@ -208,6 +208,19 @@ export const config = {
     maxResumesPerSession: 3,
     failedSessionTtlHours: 24,
     resumeSweepIntervalMs: 600_000,
+    spawnRegistryRunningTtlMs: 3_600_000,
+    markerVerification: {
+      enabled: true,
+      timeoutMs: 15_000,
+      maxOutputChars: 4000,
+    },
+    generationFence: {
+      enabled: true,
+    },
+    diagnostics: {
+      logEvents: true,
+      includeInOutput: true,
+    },
   },
 
   /**
