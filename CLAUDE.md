@@ -105,7 +105,7 @@
 - `bun run check` runs the full quality gate: `biome check . && eslint . && bun run typecheck && bun test`
 - Pre-commit hook (lefthook) runs Biome check + ESLint fix on staged files
 - CI runs full `bun run check` on every PR
-- Run `bun run check` after substantive changes. If build/runtime-sensitive code changed, also run `bun run build`
+- Run `bun run check` after substantive changes. If runtime-sensitive code changed, run `bun run deploy:runtime` (which calls `bun run build` in the live runtime) instead of `bun run build` on the dev checkout.
 
 ## Project Memory
 
@@ -123,5 +123,5 @@ micode is the host project for the Project Memory Core feature. We follow the sa
 - On this server, `~/.config/opencode/opencode.json` loads the live micode plugin from `/root/.micode`.
 - `/root/CODE/micode` is a separate working copy. Editing, committing, or pushing it does not update the running plugin by itself.
 - `package.json` points both `module` and `main` to `dist/index.js`, so OpenCode loads the built bundle, not raw `src` files.
-- For runtime-sensitive fixes, sync the change into `/root/.micode`, run `bun run build` there, then restart OpenCode only after explicit user approval.
+- For runtime-sensitive fixes, follow the three-step rule: (1) run `bun run deploy:runtime` to sync `/root/CODE/micode -> /root/.micode` and rebuild; (2) verify the helper printed `Runtime ready. Restart of OpenCode requires explicit user approval.`; (3) ask the user before any restart. The helper handles preflight, selective sync (preserving `node_modules`, `thoughts`, `.git`, and env files in `/root/.micode`), install, build, and bundle verification. Do NOT call `bun run build` ad hoc on the dev checkout for runtime fixes: the dev checkout's `dist/` is not what OpenCode loads.
 - If a live smoke test still shows old behavior after a restart, first verify the loaded path and that `/root/.micode/dist/index.js` contains the change.

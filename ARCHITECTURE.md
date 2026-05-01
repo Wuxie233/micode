@@ -204,3 +204,7 @@ Model resolution order is documented in `README.md`: per-agent `micode.json` ove
 | `npm version patch` | `README.md` | Release version bump before pushing tags |
 
 Local development plugin usage is described in `README.md`: clone, `bun install`, `bun run build`, then point OpenCode plugin config at the local path.
+
+### Local runtime path note
+
+The repo ships a deployment helper at `scripts/deploy-runtime.ts`, exposed as `bun run deploy:runtime`. The helper performs preflight checks (clean source, clean runtime, required tools), an `rsync` with the runtime-local exclusion list (`node_modules`, `dist`, `.git`, `thoughts`, env files, etc.), `bun install --frozen-lockfile` when the lockfile changed, `bun run build`, and a sanity check on `/root/.micode/dist/index.js`. The helper never restarts OpenCode: its successful end state is the printed line `Runtime ready. Restart of OpenCode requires explicit user approval.` See `docs/runtime-deploy.md` for the full operational rule.
