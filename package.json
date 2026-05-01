@@ -23,7 +23,8 @@
     "lint:biome": "biome lint .",
     "lint:eslint": "eslint .",
     "check": "biome check . && eslint . && bun run typecheck && bun test",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage",
+    "deploy:runtime": "bun scripts/deploy-runtime.ts"
   },
   "keywords": [
     "opencode",
