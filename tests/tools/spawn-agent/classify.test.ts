@@ -58,3 +58,69 @@ describe("classifySpawnError", () => {
     expect(result.markerHit).toBe("BUILD FAILED");
   });
 });
+
+describe("classifySpawnError review-vs-execution split", () => {
+  it("returns REVIEW_CHANGES_REQUESTED when reviewer emits a final CHANGES REQUESTED marker", () => {
+    const result = classifySpawnError({
+      assistantText: "Reviewed task 2.3.\nCHANGES REQUESTED: rename foo to bar.",
+      agent: "reviewer",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.REVIEW_CHANGES_REQUESTED);
+    expect(result.markerHit).toBe("CHANGES REQUESTED");
+  });
+
+  it("returns REVIEW_CHANGES_REQUESTED when agent name is namespaced (spawn-agent.reviewer)", () => {
+    const result = classifySpawnError({
+      assistantText: "CHANGES REQUESTED: missing tests",
+      agent: "spawn-agent.reviewer",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.REVIEW_CHANGES_REQUESTED);
+  });
+
+  it("still returns TASK_ERROR for implementer agents emitting CHANGES REQUESTED (legacy safety net)", () => {
+    const result = classifySpawnError({
+      assistantText: "CHANGES REQUESTED: cannot find file",
+      agent: "implementer-backend",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.TASK_ERROR);
+  });
+
+  it("still returns TASK_ERROR for reviewer emitting TEST FAILED (execution failure stays separate)", () => {
+    const result = classifySpawnError({
+      assistantText: "TEST FAILED",
+      agent: "reviewer",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.TASK_ERROR);
+  });
+
+  it("still returns BLOCKED for reviewer emitting a blocker", () => {
+    const result = classifySpawnError({
+      assistantText: "BLOCKED: missing fixture",
+      agent: "reviewer",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.BLOCKED);
+  });
+
+  it("narrative CHANGES REQUESTED still goes to NEEDS_VERIFICATION even for reviewer", () => {
+    const result = classifySpawnError({
+      assistantText: "All passed. The reviewer would print 'CHANGES REQUESTED' if anything broke.",
+      agent: "reviewer",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.NEEDS_VERIFICATION);
+    expect(result.ambiguousKind).toBe(INTERNAL_CLASSES.TASK_ERROR);
+  });
+
+  it("falls back to legacy TASK_ERROR mapping when agent is omitted", () => {
+    const result = classifySpawnError({
+      assistantText: "CHANGES REQUESTED",
+    });
+
+    expect(result.class).toBe(INTERNAL_CLASSES.TASK_ERROR);
+  });
+});

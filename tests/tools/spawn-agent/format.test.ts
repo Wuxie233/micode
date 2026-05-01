@@ -112,3 +112,41 @@ TEST FAILED: expected pass.`);
     expect(output).toContain("### Error\n\nFailed to create session");
   });
 });
+
+describe("formatSpawnResults review_changes_requested", () => {
+  const reviewResult: SpawnResult = {
+    outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+    description: "Review task",
+    agent: "reviewer",
+    elapsedMs: 1200,
+    output: "CHANGES REQUESTED: rename foo to bar",
+  };
+
+  it("renders a single review_changes_requested result as a non-failure section", () => {
+    const output = formatSpawnResults([reviewResult]);
+
+    expect(output).toContain("review_changes_requested");
+    expect(output).toContain("CHANGES REQUESTED: rename foo to bar");
+    expect(output).toContain("Review task");
+    expect(output).not.toContain("**Outcome**: task_error");
+    expect(output).not.toContain("**Outcome**: hard_failure");
+  });
+
+  it("emits missing session ids for duplicate review_changes_requested table rows", () => {
+    const output = formatSpawnResults([reviewResult, reviewResult]);
+    const rows = output.split("\n").filter((line) => line.startsWith("| Review task"));
+
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.split("|")[5].trim()).toBe("-");
+    }
+  });
+
+  it("includes review_changes_requested in table rows", () => {
+    const output = formatSpawnResults([reviewResult, reviewResult]);
+    const row = output.split("\n").find((line) => line.startsWith("| Review task"));
+
+    expect(row).toBeDefined();
+    expect(row).toContain("review_changes_requested");
+  });
+});

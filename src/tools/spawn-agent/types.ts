@@ -3,6 +3,7 @@ export const SPAWN_OUTCOMES = {
   TASK_ERROR: "task_error",
   BLOCKED: "blocked",
   HARD_FAILURE: "hard_failure",
+  REVIEW_CHANGES_REQUESTED: "review_changes_requested",
 } as const;
 
 export type SpawnOutcome = (typeof SPAWN_OUTCOMES)[keyof typeof SPAWN_OUTCOMES];
@@ -36,7 +37,16 @@ export interface SpawnHardFailure {
   readonly diagnostics?: string;
 }
 
-export type SpawnResult = SpawnSuccess | SpawnPreserved | SpawnHardFailure;
+export interface SpawnReviewChanges {
+  readonly outcome: typeof SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED;
+  readonly description: string;
+  readonly agent: string;
+  readonly elapsedMs: number;
+  readonly output: string;
+  readonly diagnostics?: string;
+}
+
+export type SpawnResult = SpawnSuccess | SpawnPreserved | SpawnHardFailure | SpawnReviewChanges;
 
 export interface ResumeSubagentInput {
   readonly session_id: string;

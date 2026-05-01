@@ -17,9 +17,14 @@ const SUCCESS_OUTPUT = "all done";
 const NARRATIVE_OUTPUT = "The string TEST FAILED appears in docs, but the task completed.";
 const NARRATIVE_MARKER_OUTPUT = "All passed. Reviewer would print 'TEST FAILED' if anything broke.";
 const FINAL_MARKER_OUTPUT = "Logs:\nTEST FAILED\n";
+const REVIEW_CHANGES_OUTPUT = "Reviewed task 2.3.\nCHANGES REQUESTED: rename foo to bar.";
 const HARD_FAILURE_MESSAGE = "provider rejected session";
 const PARENT_SESSION_ID = "parent-session";
 const CONFLICT_SESSION_ID = "session_conflict";
+const REVIEWER_AGENT = "reviewer";
+const REVIEW_DESCRIPTION = "审查 2.3";
+const IMPLEMENTER_AGENT = "implementer-backend";
+const IMPLEMENT_DESCRIPTION = "实现 2.3";
 const RUN_ID = "executor-issue-18";
 const TASK_ID = "task-3.1";
 const MAX_RESUMES = 2;
@@ -126,6 +131,69 @@ describe("spawn-agent tool internal sessions", () => {
       outcome: SPAWN_OUTCOMES.TASK_ERROR,
       resumeCount: 0,
     });
+  });
+
+  it("emits review_changes_requested for reviewer CHANGES REQUESTED without failure outcomes", async () => {
+    const deleteSession = mock(async () => ({}));
+    const ctx = createCtx(REVIEW_CHANGES_OUTPUT, deleteSession);
+    const registry = createRegistry();
+    const spawnRegistry = createSpawnRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry, spawnRegistry });
+
+    const output = await tool.execute(
+      { agents: [{ agent: REVIEWER_AGENT, prompt: "review 2.3", description: REVIEW_DESCRIPTION }] },
+      { metadata: () => {}, sessionID: PARENT_SESSION_ID } as never,
+    );
+
+    expect(output).toContain(SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED);
+    expect(output).toContain("CHANGES REQUESTED");
+    expect(output).not.toContain("**Outcome**: task_error");
+    expect(output).not.toContain("**Outcome**: hard_failure");
+    expect(registry.size()).toBe(0);
+  });
+
+  it("retitles reviewer CHANGES REQUESTED sessions without preserving or deleting them", async () => {
+    const deleteSession = mock(async () => ({}));
+    const ctx = createCtx(REVIEW_CHANGES_OUTPUT, deleteSession);
+    const registry = createRegistry();
+    const spawnRegistry = createSpawnRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry, spawnRegistry });
+
+    await tool.execute({ agents: [{ agent: REVIEWER_AGENT, prompt: "review 2.3", description: REVIEW_DESCRIPTION }] }, {
+      metadata: () => {},
+      sessionID: PARENT_SESSION_ID,
+    } as never);
+
+    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
+    expect(updateCall?.path.id).toBe(SESSION_ID);
+    expect(updateCall?.body.title).toBe("需修改: 审查 2.3");
+    expect(spawnRegistry.size()).toBe(0);
+    expect(spawnRegistry.get(SESSION_ID)).toBeNull();
+    expect(deleteSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps implementer CHANGES REQUESTED on the legacy task_error preserve path", async () => {
+    const deleteSession = mock(async () => ({}));
+    const ctx = createCtx(REVIEW_CHANGES_OUTPUT, deleteSession);
+    const registry = createRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry });
+
+    await tool.execute(
+      { agents: [{ agent: IMPLEMENTER_AGENT, prompt: "do task", description: IMPLEMENT_DESCRIPTION }] },
+      { metadata: () => {} } as never,
+    );
+
+    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
+    expect(updateCall?.path.id).toBe(SESSION_ID);
+    expect(updateCall?.body.title).toBe("失败: 实现 2.3");
+    expect(registry.get(SESSION_ID)).toMatchObject({
+      sessionId: SESSION_ID,
+      agent: IMPLEMENTER_AGENT,
+      description: IMPLEMENT_DESCRIPTION,
+      outcome: SPAWN_OUTCOMES.TASK_ERROR,
+      resumeCount: 0,
+    });
+    expect(deleteSession).not.toHaveBeenCalled();
   });
 
   it("blocks duplicate generations before creating a session", async () => {

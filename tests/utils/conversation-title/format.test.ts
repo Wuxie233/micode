@@ -3,12 +3,22 @@ import { describe, expect, it } from "bun:test";
 import {
   buildIssueAwareTitle,
   buildTitle,
+  buildTopicTitle,
+  CONCLUSIVE_STATUSES,
   summaryFromPlanPath,
   summaryFromUserMessage,
   TITLE_STATUS,
 } from "@/utils/conversation-title";
 
 describe("buildTitle", () => {
+  it("formats review changes requested as a conclusive status", () => {
+    expect(TITLE_STATUS.REVIEW_CHANGES_REQUESTED).toBe("需修改");
+    expect(CONCLUSIVE_STATUSES).toContain(TITLE_STATUS.REVIEW_CHANGES_REQUESTED);
+    expect(buildTitle({ status: TITLE_STATUS.REVIEW_CHANGES_REQUESTED, summary: "审查 PR #42" })).toBe(
+      "需修改: 审查 PR #42",
+    );
+  });
+
   it("joins status and summary with a colon and ascii space", () => {
     expect(buildTitle({ status: TITLE_STATUS.EXECUTING, summary: "自动重命名" })).toBe("执行中: 自动重命名");
   });
@@ -32,6 +42,14 @@ describe("buildTitle", () => {
   it("falls back to truncated status when even the prefix overflows maxLength", () => {
     const title = buildTitle({ status: TITLE_STATUS.EXECUTING, summary: "anything" }, 1);
     expect(title.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("buildTopicTitle", () => {
+  it("adds review changes requested as a conclusive suffix", () => {
+    expect(buildTopicTitle({ topic: "users module", status: TITLE_STATUS.REVIEW_CHANGES_REQUESTED })).toBe(
+      "users module · 需修改",
+    );
   });
 });
 
