@@ -325,11 +325,12 @@ async function executeAgentSessionWith(
 
 async function classifyThrown(
   ctx: PluginInput,
+  task: AgentTask,
   error: unknown,
   onTransientSession: (sessionId: string) => void,
 ): Promise<AttemptResult> {
   const sessionId = getSessionId(error);
-  const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error) });
+  const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error), agent: task.agent });
   if (classification.class === INTERNAL_CLASSES.TRANSIENT) {
     await deleteInternalSession({ ctx, sessionId, agent: "spawn-agent.transient" });
     if (sessionId !== null) onTransientSession(sessionId);
@@ -348,10 +349,10 @@ async function runAttempt(
 ): Promise<AttemptResult> {
   try {
     const session = await runSession(ctx, task);
-    const classification = classifySpawnError({ assistantText: session.output });
+    const classification = classifySpawnError({ assistantText: session.output, agent: task.agent });
     return { class: classification.class, value: { ...session, error: classification.reason, classification } };
   } catch (error) {
-    return classifyThrown(ctx, error, onTransientSession);
+    return classifyThrown(ctx, task, error, onTransientSession);
   }
 }
 
@@ -370,6 +371,16 @@ function createHardFailureResult(task: AgentTask, elapsedMs: number, value: Atte
     agent: task.agent,
     elapsedMs,
     error: value.error ?? value.output,
+  };
+}
+
+function createReviewChangesResult(task: AgentTask, elapsedMs: number, output: string): SpawnResult {
+  return {
+    outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+    description: task.description,
+    agent: task.agent,
+    elapsedMs,
+    output,
   };
 }
 
@@ -598,6 +609,24 @@ async function cleanupSession(
   await deleteInternalSession({ ctx, sessionId, agent: task.agent });
 }
 
+async function finalizeReviewChanges(
+  ctx: PluginInput,
+  task: AgentTask,
+  options: ResolvedSpawnAgentToolOptions,
+  value: AttemptValue,
+): Promise<void> {
+  options.spawnRegistry.complete(value.sessionId ?? UNKNOWN_SESSION_ID);
+  await updateInternalSession({
+    ctx,
+    sessionId: value.sessionId,
+    title: buildSpawnCompletionTitle({
+      agent: task.agent,
+      description: task.description,
+      outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
+    }),
+  });
+}
+
 async function finalizeSettled(
   ctx: PluginInput,
   task: AgentTask,
@@ -609,6 +638,10 @@ async function finalizeSettled(
   if (settled.class === INTERNAL_CLASSES.NEEDS_VERIFICATION) {
     const verified = await handleVerification(ctx, task, options, settled, elapsedMs);
     return attachDiagnostics(task, verified.result, { ...fields, verifier: verified.verifier });
+  }
+  if (settled.class === INTERNAL_CLASSES.REVIEW_CHANGES_REQUESTED) {
+    await finalizeReviewChanges(ctx, task, options, settled.value);
+    return attachDiagnostics(task, createReviewChangesResult(task, elapsedMs, settled.value.output), fields);
   }
   if (settled.class === INTERNAL_CLASSES.SUCCESS) {
     await cleanupSession(ctx, task, options, settled.value.sessionId);

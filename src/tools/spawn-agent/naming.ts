@@ -30,6 +30,8 @@ function outcomeToStatus(outcome: SpawnOutcome): TitleStatus {
       return TITLE_STATUS.DONE;
     case SPAWN_OUTCOMES.BLOCKED:
       return TITLE_STATUS.BLOCKED;
+    case SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED:
+      return TITLE_STATUS.REVIEW_CHANGES_REQUESTED;
     case SPAWN_OUTCOMES.TASK_ERROR:
     case SPAWN_OUTCOMES.HARD_FAILURE:
       return TITLE_STATUS.FAILED;

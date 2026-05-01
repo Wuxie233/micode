@@ -18,7 +18,9 @@ export const TRANSIENT_HTTP_STATUSES: readonly number[] = [
   HTTP_SERVICE_UNAVAILABLE,
   HTTP_GATEWAY_TIMEOUT,
 ];
-export const TASK_ERROR_MARKERS: readonly string[] = ["TEST FAILED", "BUILD FAILED", "CHANGES REQUESTED"];
+
+export const TASK_ERROR_MARKERS: readonly string[] = ["TEST FAILED", "BUILD FAILED"];
+export const REVIEW_DECISION_MARKERS: readonly string[] = ["CHANGES REQUESTED"];
 export const BLOCKED_MARKERS: readonly string[] = ["BLOCKED:", "ESCALATE:"];
 
 export function matchesAnyPattern(value: string, patterns: readonly RegExp[]): boolean {

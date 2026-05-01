@@ -3,6 +3,7 @@ import {
   type SpawnHardFailure,
   type SpawnPreserved,
   type SpawnResult,
+  type SpawnReviewChanges,
   type SpawnSuccess,
 } from "./types";
 
@@ -125,6 +126,24 @@ function formatHardFailure(result: SpawnHardFailure): string {
   );
 }
 
+function formatReviewChanges(result: SpawnReviewChanges): string {
+  return joinLines(
+    appendDiagnostics(
+      [
+        `## ${result.description} (${formatElapsed(result.elapsedMs)})`,
+        "",
+        `**Agent**: ${result.agent}`,
+        `**Outcome**: ${result.outcome}`,
+        "",
+        "### Review",
+        "",
+        result.output,
+      ],
+      result,
+    ),
+  );
+}
+
 function formatSection(result: SpawnResult): string {
   switch (result.outcome) {
     case SPAWN_OUTCOMES.SUCCESS:
@@ -134,6 +153,8 @@ function formatSection(result: SpawnResult): string {
       return formatPreserved(result);
     case SPAWN_OUTCOMES.HARD_FAILURE:
       return formatHardFailure(result);
+    case SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED:
+      return formatReviewChanges(result);
     default:
       return assertNever(result);
   }
