@@ -82,8 +82,10 @@ function toPublicOutcome(kind: InternalClass): SpawnOutcome {
       return SPAWN_OUTCOMES.BLOCKED;
     case INTERNAL_CLASSES.HARD_FAILURE:
     case INTERNAL_CLASSES.TRANSIENT:
+    case INTERNAL_CLASSES.NEEDS_VERIFICATION:
       return SPAWN_OUTCOMES.HARD_FAILURE;
   }
+  return SPAWN_OUTCOMES.HARD_FAILURE;
 }
 
 function formatResumeResult(result: ResumeSubagentResult): string {

@@ -1,77 +1,60 @@
 import { describe, expect, it } from "bun:test";
+import { classifySpawnError, INTERNAL_CLASSES } from "@/tools/spawn-agent/classify";
 
-import {
-  type ClassifyInput,
-  classifySpawnError,
-  INTERNAL_CLASSES,
-  type InternalClass,
-} from "../../../src/tools/spawn-agent/classify";
-import {
-  BLOCKED_MARKERS,
-  TASK_ERROR_MARKERS,
-  TRANSIENT_HTTP_STATUSES,
-} from "../../../src/tools/spawn-agent/classify-tokens";
-
-const NETWORK_MESSAGE = "fetch failed while contacting provider";
-const HARD_MESSAGE = "session create failed before the agent started";
-const SUCCESS_OUTPUT = "All checks passed and the task is done.";
-const EMPTY_RESPONSE_REASON = "empty response";
-
-const classify = (input: ClassifyInput): { readonly class: InternalClass; readonly reason: string } =>
-  classifySpawnError(input);
-
-describe("spawn-agent failure classifier", () => {
-  it("classifies transient thrown network failures before assistant markers", () => {
-    const outcome = classify({
-      thrown: new Error(NETWORK_MESSAGE),
-      assistantText: `${BLOCKED_MARKERS[0]} credentials missing`,
-    });
-
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.TRANSIENT, reason: NETWORK_MESSAGE });
+describe("classifySpawnError", () => {
+  it("returns success for plain assistant output", () => {
+    expect(classifySpawnError({ assistantText: "Done." }).class).toBe(INTERNAL_CLASSES.SUCCESS);
   });
 
-  it("classifies transient HTTP statuses before assistant markers", () => {
-    const status = TRANSIENT_HTTP_STATUSES[0];
-    const outcome = classify({
-      httpStatus: status,
-      assistantText: `${TASK_ERROR_MARKERS[0]} from previous output`,
-    });
-
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.TRANSIENT, reason: `transient HTTP status ${status}` });
+  it("returns task_error when TEST FAILED is on its own line (final marker)", () => {
+    expect(classifySpawnError({ assistantText: "Logs:\nTEST FAILED\n" }).class).toBe(INTERNAL_CLASSES.TASK_ERROR);
   });
 
-  it("classifies blocked assistant output before task errors", () => {
-    const outcome = classify({
-      assistantText: `${BLOCKED_MARKERS[0]} missing approval and ${TASK_ERROR_MARKERS[0]}`,
-    });
-
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.BLOCKED, reason: `assistant marker ${BLOCKED_MARKERS[0]}` });
+  it("returns blocked when BLOCKED: is the entire output (final marker)", () => {
+    expect(classifySpawnError({ assistantText: "BLOCKED:" }).class).toBe(INTERNAL_CLASSES.BLOCKED);
   });
 
-  it("classifies task-error assistant output", () => {
-    const outcome = classify({ assistantText: `${TASK_ERROR_MARKERS[0]} after bun test` });
+  it("returns needs_verification when TEST FAILED is quoted mid-sentence", () => {
+    const text = "All passed. The reviewer would print 'TEST FAILED' if anything broke.";
+    const result = classifySpawnError({ assistantText: text });
 
-    expect(outcome).toEqual({
-      class: INTERNAL_CLASSES.TASK_ERROR,
-      reason: `assistant marker ${TASK_ERROR_MARKERS[0]}`,
-    });
+    expect(result.class).toBe(INTERNAL_CLASSES.NEEDS_VERIFICATION);
+    expect(result.ambiguousKind).toBe(INTERNAL_CLASSES.TASK_ERROR);
   });
 
-  it("classifies non-transient unknown thrown failures without assistant text as hard failures", () => {
-    const outcome = classify({ thrown: HARD_MESSAGE });
+  it("returns needs_verification with blocked ambiguousKind for narrative blocked marker", () => {
+    const text = "The handoff says to print 'BLOCKED:' only when credentials are missing.";
+    const result = classifySpawnError({ assistantText: text });
 
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.HARD_FAILURE, reason: HARD_MESSAGE });
+    expect(result.class).toBe(INTERNAL_CLASSES.NEEDS_VERIFICATION);
+    expect(result.ambiguousKind).toBe(INTERNAL_CLASSES.BLOCKED);
   });
 
-  it("classifies non-empty assistant output as success", () => {
-    const outcome = classify({ assistantText: SUCCESS_OUTPUT });
-
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.SUCCESS, reason: "assistant output present" });
+  it("returns needs_verification when CHANGES REQUESTED appears inside fenced code", () => {
+    const text = "Approval flow:\n```\nCHANGES REQUESTED\n```\nReviewer approved.";
+    expect(classifySpawnError({ assistantText: text }).class).toBe(INTERNAL_CLASSES.NEEDS_VERIFICATION);
   });
 
-  it("classifies missing output as an empty-response hard failure", () => {
-    const outcome = classify({ thrown: null, assistantText: "" });
+  it("returns hard_failure when thrown error and no assistant text", () => {
+    expect(classifySpawnError({ thrown: new Error("boom") }).class).toBe(INTERNAL_CLASSES.HARD_FAILURE);
+  });
 
-    expect(outcome).toEqual({ class: INTERNAL_CLASSES.HARD_FAILURE, reason: EMPTY_RESPONSE_REASON });
+  it("returns transient on ECONNRESET", () => {
+    expect(classifySpawnError({ thrown: new Error("ECONNRESET") }).class).toBe(INTERNAL_CLASSES.TRANSIENT);
+  });
+
+  it("returns transient on HTTP 503", () => {
+    expect(classifySpawnError({ httpStatus: 503 }).class).toBe(INTERNAL_CLASSES.TRANSIENT);
+  });
+
+  it("returns hard_failure on empty output and no thrown error", () => {
+    expect(classifySpawnError({ assistantText: "   " }).class).toBe(INTERNAL_CLASSES.HARD_FAILURE);
+  });
+
+  it("includes the marker in the reason for needs_verification", () => {
+    const result = classifySpawnError({ assistantText: "all good but said 'BUILD FAILED' in passing." });
+    expect(result.class).toBe(INTERNAL_CLASSES.NEEDS_VERIFICATION);
+    expect(result.reason).toContain("BUILD FAILED");
+    expect(result.markerHit).toBe("BUILD FAILED");
   });
 });
