@@ -5,6 +5,9 @@ export const ISSUE_BODY_MARKERS = {
   ARTIFACTS_END: "<!-- micode:lifecycle:artifacts:end -->",
   CHECKLIST_BEGIN: "<!-- micode:lifecycle:checklist:begin -->",
   CHECKLIST_END: "<!-- micode:lifecycle:checklist:end -->",
+  AI_REVIEW_BEGIN: "<!-- micode:lifecycle:ai-review:begin -->",
+  AI_REVIEW_END: "<!-- micode:lifecycle:ai-review:end -->",
+  AI_REVIEW_COMMENT: "<!-- micode:lifecycle:ai-review-comment -->",
 } as const;
 
 export function extractBetween(body: string, begin: string, end: string): string | null {

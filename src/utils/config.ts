@@ -192,6 +192,7 @@ export const config = {
     failedSessionTtlHours: 24,
     pushRetryBackoffMs: 5000,
     prCheckTimeoutMs: 600_000,
+    postPrSummaryComment: false,
     lifecycleDir: "thoughts/lifecycle",
     journalSuffix: ".journal.jsonl",
     leaseSuffix: ".lease.json",
