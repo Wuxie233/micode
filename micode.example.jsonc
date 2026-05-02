@@ -20,6 +20,12 @@
 //     and general-purpose programming. Also a reasonable default for shared
 //     tooling and config tasks.
 //
+//   <YOUR_DIAGNOSTIC_MODEL>
+//     A model tuned for fast evidence correlation across files, configs, logs,
+//     and prior facts. The recommended choice is Claude Sonnet 4.6: fast enough
+//     for read-only investigation and strong enough to build evidence chains.
+//     Used by the investigator agent.
+//
 // Model string format: "provider_id/model_id". The provider_id must already be
 // registered in your opencode.json under the `provider` object.
 //
@@ -41,7 +47,10 @@
     // --- Domain-specialist implementers (the point of this fork) ---
     "implementer-frontend": { "model": "<YOUR_FRONTEND_MODEL>" },
     "implementer-backend": { "model": "<YOUR_BACKEND_MODEL>" },
-    "implementer-general": { "model": "<YOUR_BACKEND_MODEL>" }
+    "implementer-general": { "model": "<YOUR_BACKEND_MODEL>" },
+
+    // --- Diagnostic read-only investigator ---
+    "investigator": { "model": "<YOUR_DIAGNOSTIC_MODEL>" }
   }
 
   // Other top-level keys you MAY add:
