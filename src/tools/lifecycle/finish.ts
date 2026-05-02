@@ -18,7 +18,9 @@ Args:
 - wait_for_checks: Optional PR check wait override. Defaults to true.`;
 const SUCCESS_HEADER = "## Lifecycle finished";
 const FAILURE_HEADER = "## Lifecycle finish failed";
+const BLOCKED_HEADER = "## Lifecycle blocked";
 const CHECKS_FAILED_HEADER = "## PR checks failed";
+const EXECUTOR_BLOCKED_NOTE = "executor_blocked";
 const PR_CHECKS_FAILED_NOTE = "pr_checks_failed";
 const TABLE_HEADER = "| Issue # | PR URL | Closed At |";
 const TABLE_SEPARATOR = "| --- | --- | --- |";
@@ -57,8 +59,13 @@ const hasFailedChecks = (outcome: FinishOutcome): boolean => {
   return !outcome.merged && outcome.note?.startsWith(PR_CHECKS_FAILED_NOTE) === true;
 };
 
+const hasExecutorBlocked = (outcome: FinishOutcome): boolean => {
+  return !outcome.merged && outcome.note?.startsWith(EXECUTOR_BLOCKED_NOTE) === true;
+};
+
 const formatOutcome = (issueNumber: number, outcome: FinishOutcome): string => {
   const table = formatTable(issueNumber, outcome);
+  if (hasExecutorBlocked(outcome)) return formatReport(BLOCKED_HEADER, table, outcome.note);
   if (hasFailedChecks(outcome)) return formatReport(CHECKS_FAILED_HEADER, table, outcome.note);
   if (!outcome.merged) return formatReport(FAILURE_HEADER, table, outcome.note);
   return formatReport(SUCCESS_HEADER, table, outcome.note);

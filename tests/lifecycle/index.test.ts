@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ARTIFACT_KINDS, createLifecycleStore, LIFECYCLE_STATES } from "@/lifecycle";
+import { ISSUE_BODY_MARKERS } from "@/lifecycle/issue-body-markers";
+import { JOURNAL_EVENT_KINDS } from "@/lifecycle/journal/types";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
+import { config } from "@/utils/config";
 
 const PREFIX = "micode-lifecycle-index-";
 const OWNER = "Wuxie233";
@@ -22,6 +25,10 @@ const MAIN_HEAD = "origin/main\n";
 const MASTER_HEAD = "origin/master\n";
 const DEVELOP_HEAD = "origin/develop\n";
 const PR_CREATE_FAILED = "cannot create pr";
+const PR_URL = "https://github.com/Wuxie233/micode/pull/1";
+const PR_NUMBER = 1;
+const APPROVED_TASK = "task-approved";
+const BLOCKED_TASK = "task-blocked";
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -37,6 +44,8 @@ interface FakeRunner extends LifecycleRunner {
 interface RunnerOptions {
   readonly originHead?: string;
   readonly prCreate?: RunResult;
+  readonly prView?: RunResult;
+  readonly prComments?: RunResult;
 }
 
 const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE, stderr = EMPTY_OUTPUT): RunResult => ({
@@ -81,22 +90,31 @@ const createRunner = (repoView = createRepoView(), options: RunnerOptions = {}):
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}\n`);
       if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));
       if (isArgs(args, ["issue", "edit"])) edits.push(args.at(-1) ?? EMPTY_OUTPUT);
+      if (isArgs(args, ["pr", "view"]) && args.includes("number,url,body") && options.prView) return options.prView;
+      if (isArgs(args, ["pr", "view"]) && args.includes("comments") && options.prComments) return options.prComments;
       if (isArgs(args, ["pr", "create"]) && options.prCreate) return options.prCreate;
       return createRun();
     },
   };
 };
 
+const createPrView = (body = "Pull request body"): RunResult => {
+  return createRun(JSON.stringify({ number: PR_NUMBER, url: PR_URL, body }));
+};
+
 describe("lifecycle handle", () => {
   let baseDir: string;
   let worktreesRoot: string;
+  let postPrSummaryComment: boolean;
 
   beforeEach(() => {
     baseDir = mkdtempSync(join(tmpdir(), PREFIX));
     worktreesRoot = mkdtempSync(join(tmpdir(), `${PREFIX}worktrees-`));
+    postPrSummaryComment = config.lifecycle.postPrSummaryComment;
   });
 
   afterEach(() => {
+    config.lifecycle.postPrSummaryComment = postPrSummaryComment;
     rmSync(baseDir, { recursive: true, force: true });
     rmSync(worktreesRoot, { recursive: true, force: true });
   });
@@ -177,6 +195,75 @@ describe("lifecycle handle", () => {
     expect(outcome.merged).toBe(false);
     expect(outcome.note).toContain("resolved-base=develop(origin-head)");
     expect(outcome.note).toContain("gh_pr_create: cannot create pr");
+  });
+
+  it("short-circuits lifecycle finish when executor review tasks are blocked", async () => {
+    const runner = createRunner();
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    await handle.recordExecutorEvent({
+      issueNumber: started.issueNumber,
+      kind: JOURNAL_EVENT_KINDS.REVIEW_COMPLETED,
+      batchId: "batch-1",
+      taskId: BLOCKED_TASK,
+      attempt: 1,
+      summary: "blocked by reviewer",
+      reviewOutcome: "blocked",
+    });
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("executor_blocked");
+    expect(outcome.note).toContain(BLOCKED_TASK);
+    expect(runner.calls.some((call) => isArgs(call.args, ["pr", "create"]))).toBe(false);
+    expect(runner.calls.some((call) => isArgs(call.args, ["pr", "merge"]))).toBe(false);
+  });
+
+  it("writes approved AI review summaries into lifecycle finish PR bodies", async () => {
+    const runner = createRunner(createRepoView(), { prView: createPrView() });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    await handle.recordExecutorEvent({
+      issueNumber: started.issueNumber,
+      kind: JOURNAL_EVENT_KINDS.REVIEW_COMPLETED,
+      batchId: "batch-1",
+      taskId: APPROVED_TASK,
+      attempt: 1,
+      summary: "approved by reviewer",
+      reviewOutcome: "approved",
+    });
+
+    await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    const edit = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["pr", "edit"]));
+    const body = edit?.args.at(-1) ?? EMPTY_OUTPUT;
+    expect(body).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_BEGIN);
+    expect(body).toContain("AI Review Summary");
+    expect(body).toContain("Verdict: approved");
+  });
+
+  it("posts approved AI review summaries as PR comments when configured", async () => {
+    config.lifecycle.postPrSummaryComment = true;
+    const runner = createRunner(createRepoView(), { prView: createPrView(), prComments: createRun("[]") });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    await handle.recordExecutorEvent({
+      issueNumber: started.issueNumber,
+      kind: JOURNAL_EVENT_KINDS.REVIEW_COMPLETED,
+      batchId: "batch-1",
+      taskId: APPROVED_TASK,
+      attempt: 1,
+      summary: "approved by reviewer",
+      reviewOutcome: "approved",
+    });
+
+    await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    const comment = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["pr", "comment"]));
+    const body = comment?.args.at(-1) ?? EMPTY_OUTPUT;
+    expect(body).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_COMMENT);
+    expect(body).toContain("Verdict: approved");
   });
 
   it("enables issues on owned forks before opening issue", async () => {

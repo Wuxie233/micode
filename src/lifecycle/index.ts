@@ -10,6 +10,7 @@ import { log } from "@/utils/logger";
 import { resolveProjectId } from "@/utils/project-id";
 import { commitAndPush } from "./commits";
 import { resolveDefaultBranch } from "./default-branch";
+import { detectBlockedTasks } from "./finish-guards";
 import { renderIssueBody } from "./issue-body";
 import { createJournalStore, type JournalStore } from "./journal/store";
 import { JOURNAL_EVENT_KINDS, type JournalEvent, type JournalEventInput } from "./journal/types";
@@ -20,6 +21,7 @@ import { classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
 import { probeRuntimeIdentity } from "./recovery/identity";
 import { inspectRecovery } from "./recovery/inspect";
 import type { RecoveryDecision } from "./recovery/types";
+import { collectReviewSummary, renderReviewSummarySection } from "./review-summary";
 import type { LifecycleRunner, RunResult } from "./runner";
 import { createLifecycleStore as createJsonLifecycleStore, type LifecycleStore } from "./store";
 import { recordArtifact as addArtifact, appendNote, transitionTo } from "./transitions";
@@ -131,6 +133,7 @@ const CONSTRAINTS_TITLE = "## Constraints";
 const ISSUE_CREATE_FAILED = "issue_create_failed";
 const WORKTREE_CONFLICT = "worktree_conflict";
 const PRE_FLIGHT_FAILED = "pre_flight_failed";
+const EXECUTOR_BLOCKED = "executor_blocked";
 const ISSUES_DISABLED_UPSTREAM = "issues_disabled_upstream";
 const GITHUB_REPO_BASE_URL = "https://github.com";
 const MEMORY_PROMOTION_FAILED = "memory_promotion_failed";
@@ -383,6 +386,8 @@ const annotateWithResolvedBranch = (
   if (outcome.merged || outcome.note === null) return outcome;
   return { ...outcome, note: `${RESOLVED_BASE_PREFIX}=${resolved.branch}(${resolved.source}); ${outcome.note}` };
 };
+
+const buildExecutorBlockedNote = (blocked: readonly string[]): string => `${EXECUTOR_BLOCKED}: ${blocked.join(",")}`;
 
 const safeEmit = async (
   context: LifecycleContext,
@@ -647,7 +652,19 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
 const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] => {
   return async (issueNumber, finishInput) => {
     const record = await requireRecord(context.store, issueNumber);
+    const events = await context.journal.list(issueNumber);
+    const blocked = detectBlockedTasks(events);
+    if (blocked.length > 0) {
+      const note = buildExecutorBlockedNote(blocked);
+      const outcome = { merged: false, prUrl: null, closedAt: null, worktreeRemoved: false, note };
+      const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
+      await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
+      return outcome;
+    }
+
     const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
+    const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
+    const reviewSummarySection = renderReviewSummarySection(summary);
     const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
     const finished = await finishLifecycle(context.runner, {
       cwd: context.cwd,
@@ -656,6 +673,8 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
       mergeStrategy: finishInput.mergeStrategy,
       waitForChecks: finishInput.waitForChecks,
       baseBranch: resolvedBranch.branch,
+      reviewSummarySection,
+      postSummaryComment: config.lifecycle.postPrSummaryComment,
     });
     const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
     const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
