@@ -12,6 +12,7 @@ import { implementerAgent } from "./implementer";
 import { implementerBackendAgent } from "./implementer-backend";
 import { implementerFrontendAgent } from "./implementer-frontend";
 import { implementerGeneralAgent } from "./implementer-general";
+import { investigatorAgent } from "./investigator";
 import { ledgerCreatorAgent } from "./ledger-creator";
 import {
   antiPatternDetectorAgent,
@@ -46,6 +47,7 @@ export const agents: Record<string, AgentConfig> = {
   "implementer-backend": { ...implementerBackendAgent, model: DEFAULT_MODEL },
   "implementer-general": { ...implementerGeneralAgent, model: DEFAULT_MODEL },
   reviewer: { ...reviewerAgent, model: DEFAULT_MODEL },
+  investigator: { ...investigatorAgent, model: DEFAULT_MODEL },
   executor: { ...executorAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
   "artifact-searcher": { ...artifactSearcherAgent, model: DEFAULT_MODEL },
@@ -82,6 +84,7 @@ export {
   implementerBackendAgent,
   implementerGeneralAgent,
   reviewerAgent,
+  investigatorAgent,
   executorAgent,
   ledgerCreatorAgent,
   artifactSearcherAgent,
