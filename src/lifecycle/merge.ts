@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import { config } from "@/utils/config";
 
+import { postOnceSummaryComment, upsertPullRequest, writeReviewSummaryToPrBody } from "./pr";
 import type { LifecycleRunner, RunResult } from "./runner";
 import type { FinishInput, FinishOutcome } from "./types";
 
@@ -15,6 +16,8 @@ export interface FinishLifecycleInput {
   readonly waitForChecks: boolean;
   readonly baseBranch?: string;
   readonly sleep?: (ms: number) => Promise<void>;
+  readonly reviewSummarySection?: string;
+  readonly postSummaryComment?: boolean;
 }
 
 const MERGE_STRATEGY = {
@@ -42,19 +45,16 @@ const CHECK_STATE = {
 const OK_EXIT_CODE = 0;
 const BASE_BRANCH_REQUIRED = "base branch not resolved";
 const PR_CHECKS_FAILED = "pr_checks_failed";
+const PR_BODY_DISAPPEARED_NOTE = "pr_body_update_failed: pr disappeared";
 const CHECK_TIMEOUT_DETAIL = "timeout";
 const OUTPUT_SEPARATOR = " ";
 const DETAIL_SEPARATOR = ": ";
 const CHECK_SEPARATOR = ", ";
-const PR_URL_PATTERN = /https:\/\/github\.com\/\S+\/pull\/\d+/;
+const NOTE_SEPARATOR = "; ";
 
 const GH_PR = "pr";
-const GH_CREATE = "create";
 const GH_CHECKS = "checks";
 const GH_MERGE = "merge";
-const GH_FILL_FLAG = "--fill";
-const GH_BASE_FLAG = "--base";
-const GH_HEAD_FLAG = "--head";
 const GH_REQUIRED_FLAG = "--required";
 const GH_JSON_FLAG = "--json";
 const GH_CHECK_FIELDS = "state,name";
@@ -88,6 +88,12 @@ interface CleanupOutcome {
   readonly note: string | null;
 }
 
+interface InjectOutcome {
+  readonly ok: boolean;
+  readonly prUrl: string;
+  readonly note: string | null;
+}
+
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
 
 const getBaseBranch = (input: FinishLifecycleInput): string => {
@@ -109,6 +115,12 @@ const createOutcome = (
   worktreeRemoved,
   note,
 });
+
+const mergeNotes = (...notes: readonly (string | null | undefined)[]): string | null => {
+  const present = notes.filter((note): note is string => note !== undefined && note !== null && note.length > 0);
+  if (present.length === 0) return null;
+  return present.join(NOTE_SEPARATOR);
+};
 
 const createPrChecksNote = (detail: string): string => `${PR_CHECKS_FAILED}${DETAIL_SEPARATOR}${detail}`;
 
@@ -168,8 +180,6 @@ const evaluateChecks = (run: RunResult): CheckOutcome => {
   return { status: CHECK_OUTCOME.PENDING };
 };
 
-const extractPrUrl = (stdout: string): string | null => PR_URL_PATTERN.exec(stdout)?.[0] ?? null;
-
 const sleepFor = async (ms: number): Promise<void> => {
   await Bun.sleep(ms);
 };
@@ -220,22 +230,56 @@ const cleanupLocal = async (runner: LifecycleRunner, input: FinishLifecycleInput
   return { worktreeRemoved: true, note: null };
 };
 
+const injectAndCommentIfNeeded = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  prUrl: string,
+): Promise<InjectOutcome> => {
+  if (input.reviewSummarySection === undefined) return { ok: true, prUrl, note: null };
+
+  const updated = await writeReviewSummaryToPrBody(runner, {
+    cwd: input.cwd,
+    branch: input.branch,
+    section: input.reviewSummarySection,
+  });
+  if (updated.kind === "failed") return { ok: false, prUrl, note: updated.note };
+  if (updated.kind === "no_pr") return { ok: false, prUrl, note: PR_BODY_DISAPPEARED_NOTE };
+  if (input.postSummaryComment !== true) return { ok: true, prUrl, note: null };
+
+  const posted = await postOnceSummaryComment(runner, {
+    cwd: input.cwd,
+    branch: input.branch,
+    section: input.reviewSummarySection,
+  });
+  if (posted.kind === "failed") return { ok: true, prUrl, note: posted.note };
+  return { ok: true, prUrl, note: null };
+};
+
 const finishViaPr = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
-  const opened = await runner.gh(
-    [GH_PR, GH_CREATE, GH_FILL_FLAG, GH_BASE_FLAG, getBaseBranch(input), GH_HEAD_FLAG, input.branch],
-    { cwd: input.cwd },
-  );
-  const prUrl = extractPrUrl(opened.stdout);
-  if (!completed(opened)) return createOutcome(false, prUrl, false, formatCommandFailure("gh_pr_create", opened));
+  const upserted = await upsertPullRequest(runner, {
+    cwd: input.cwd,
+    branch: input.branch,
+    baseBranch: getBaseBranch(input),
+  });
+  if (upserted.kind === "failed") return createOutcome(false, null, false, upserted.note);
+
+  const injected = await injectAndCommentIfNeeded(runner, input, upserted.url);
+  if (!injected.ok) return createOutcome(false, injected.prUrl, false, injected.note);
 
   const checksNote = input.waitForChecks ? await waitForPrChecks(runner, input) : null;
-  if (checksNote) return createOutcome(false, prUrl, false, checksNote);
+  if (checksNote) return createOutcome(false, injected.prUrl, false, mergeNotes(injected.note, checksNote));
 
   const merged = await runner.gh([GH_PR, GH_MERGE, input.branch, GH_SQUASH_FLAG], { cwd: input.cwd });
-  if (!completed(merged)) return createOutcome(false, prUrl, false, formatCommandFailure("gh_pr_merge", merged));
+  if (!completed(merged))
+    return createOutcome(
+      false,
+      injected.prUrl,
+      false,
+      mergeNotes(injected.note, formatCommandFailure("gh_pr_merge", merged)),
+    );
 
   const cleanup = await cleanupPr(runner, input);
-  return createOutcome(true, prUrl, cleanup.worktreeRemoved, cleanup.note);
+  return createOutcome(true, injected.prUrl, cleanup.worktreeRemoved, mergeNotes(injected.note, cleanup.note));
 };
 
 const runGitStep = async (
