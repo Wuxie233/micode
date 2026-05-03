@@ -6,12 +6,23 @@ import { ARTIFACT_KINDS, LIFECYCLE_STATES } from "@/lifecycle";
 import { createLifecycleStartRequestTool } from "@/tools/lifecycle/start-request";
 
 const ISSUE_NUMBER = 12;
+const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
 const ISSUE_URL = "https://github.com/Wuxie233/micode/issues/12";
 const BRANCH = "issue/12-add-lifecycle-start";
+const ABORTED_BRANCH = `issue/${ABORTED_ISSUE_NUMBER}-aborted`;
 const WORKTREE = "/tmp/micode-issue-12";
+const ABORTED_WORKTREE = `/tmp/micode-issue-${ABORTED_ISSUE_NUMBER}-aborted`;
 const UPDATED_AT = 1_777_222_400_000;
 const SUMMARY = "Add lifecycle start";
 const PREFLIGHT_NOTE = "pre_flight_failed: origin points to upstream";
+const INVALID_REQUEST_HEADER = "## Invalid lifecycle start request";
+const ITEMS_MAP_ERROR = "items.map is not a function";
+
+const START_ARGS = {
+  summary: SUMMARY,
+  goals: ["Open an issue", "Create a worktree"],
+  constraints: ["Do not touch contract"],
+};
 
 interface FakeHandle {
   readonly handle: LifecycleHandle;
@@ -43,11 +54,15 @@ const createArtifacts = (): LifecycleRecord["artifacts"] => ({
   [ARTIFACT_KINDS.WORKTREE]: [],
 });
 
-const createRecord = (state = LIFECYCLE_STATES.BRANCH_READY, notes: readonly string[] = []): LifecycleRecord => ({
-  issueNumber: ISSUE_NUMBER,
-  issueUrl: ISSUE_URL,
-  branch: BRANCH,
-  worktree: WORKTREE,
+const createRecord = (
+  state = LIFECYCLE_STATES.BRANCH_READY,
+  notes: readonly string[] = [],
+  overrides: Partial<Pick<LifecycleRecord, "branch" | "issueNumber" | "issueUrl" | "worktree">> = {},
+): LifecycleRecord => ({
+  issueNumber: overrides.issueNumber ?? ISSUE_NUMBER,
+  issueUrl: overrides.issueUrl ?? ISSUE_URL,
+  branch: overrides.branch ?? BRANCH,
+  worktree: overrides.worktree ?? WORKTREE,
   state,
   artifacts: createArtifacts(),
   notes,
@@ -78,16 +93,9 @@ const stringify = (outcome: ToolResult): string => {
   return outcome.output;
 };
 
-const executeStart = async (handle: LifecycleHandle): Promise<string> => {
+const executeStart = async (handle: LifecycleHandle, args: Record<string, unknown> = START_ARGS): Promise<string> => {
   const lifecycleStartRequest = createLifecycleStartRequestTool(handle);
-  const output = await lifecycleStartRequest.execute(
-    {
-      summary: SUMMARY,
-      goals: ["Open an issue", "Create a worktree"],
-      constraints: ["Do not touch contract"],
-    },
-    {} as unknown as ToolContext,
-  );
+  const output = await lifecycleStartRequest.execute(args, {} as unknown as ToolContext);
 
   return stringify(output);
 };
@@ -117,6 +125,77 @@ describe("lifecycle_start_request tool", () => {
     expect(output.startsWith("## Lifecycle pre-flight failed")).toBe(true);
     expect(output).toContain(PREFLIGHT_NOTE);
     expect(output).toContain("| Issue # | Branch | Worktree | State |");
+  });
+
+  it("does not expose the aborted sentinel issue number in pre-flight output", async () => {
+    const fake = createHandle(
+      createRecord(LIFECYCLE_STATES.ABORTED, [PREFLIGHT_NOTE], {
+        issueNumber: ABORTED_ISSUE_NUMBER,
+        issueUrl: `https://github.com/Wuxie233/micode/issues/${ABORTED_ISSUE_NUMBER}`,
+        branch: ABORTED_BRANCH,
+        worktree: ABORTED_WORKTREE,
+      }),
+    );
+
+    const output = await executeStart(fake.handle);
+
+    expect(output).toContain("| (aborted) |");
+    expect(output).not.toContain(String(ABORTED_ISSUE_NUMBER));
+    expect(output).not.toContain(`#${ABORTED_ISSUE_NUMBER}`);
+  });
+
+  it("normalizes string and indexed request fields before starting", async () => {
+    const fake = createHandle(createRecord());
+
+    await executeStart(fake.handle, {
+      summary: SUMMARY,
+      goals: "Open an issue",
+      constraints: { "1": "Keep scope minimal", "0": "Do not touch contract" },
+    });
+
+    expect(fake.calls).toEqual([
+      {
+        summary: SUMMARY,
+        goals: ["Open an issue"],
+        constraints: ["Do not touch contract", "Keep scope minimal"],
+      },
+    ]);
+  });
+
+  it("normalizes stringified JSON arrays and indexed records before starting", async () => {
+    const fake = createHandle(createRecord());
+
+    await executeStart(fake.handle, {
+      summary: SUMMARY,
+      goals: JSON.stringify(["Open an issue", "Create a worktree"]),
+      constraints: JSON.stringify({ "0": "Do not touch contract" }),
+    });
+
+    expect(fake.calls).toEqual([
+      {
+        summary: SUMMARY,
+        goals: ["Open an issue", "Create a worktree"],
+        constraints: ["Do not touch contract"],
+      },
+    ]);
+  });
+
+  it("returns a clear validation message without starting on invalid request fields", async () => {
+    const fake = createHandle(createRecord());
+    const invalidRequests: readonly Record<string, unknown>[] = [
+      { summary: SUMMARY, goals: { foo: "bar" }, constraints: [] },
+      { summary: SUMMARY, goals: '["Open an issue"', constraints: [] },
+      { summary: SUMMARY, goals: ["Open an issue", 42], constraints: [] },
+      { summary: SUMMARY, goals: [], constraints: { "0": 42 } },
+    ];
+
+    for (const request of invalidRequests) {
+      const output = await executeStart(fake.handle, request);
+
+      expect(output).toContain(INVALID_REQUEST_HEADER);
+      expect(output).not.toContain(ITEMS_MAP_ERROR);
+    }
+    expect(fake.calls).toHaveLength(0);
   });
 
   it("forwards exactly summary, goals, and constraints with no extra fields", async () => {
