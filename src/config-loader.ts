@@ -138,7 +138,7 @@ export interface AgentOverride {
 export interface MicodeFeatures {
   readonly mindmodelInjection?: boolean;
   readonly conversationTitleChatFallback?: boolean;
-  readonly skillEvolution?: boolean;
+  readonly skillAutopilot?: boolean;
 }
 
 export interface MicodeConfig {
