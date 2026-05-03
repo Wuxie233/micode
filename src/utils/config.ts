@@ -279,6 +279,37 @@ export const config = {
     refuseWritesOnDegradedIdentity: true,
   },
 
+  skillAutopilot: {
+    skillsDir: ".opencode/skills",
+    indexFile: ".opencode/skills/INDEX.md",
+    rejectionsJournal: ".opencode/skills/.rejections.jsonl",
+    tombstoneFile: ".tombstone",
+    managedMarker: "x-micode-managed",
+    frozenMarker: "x-micode-frozen",
+    // agentskills.io spec
+    nameMaxChars: 64,
+    nameRegex: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    descriptionMaxBytes: 1024,
+    bodyMaxBytes: 8192,
+    maxStepsPerSkill: 16,
+    maxSkillsPerProject: 200,
+    // discovery / injection
+    maxIndexBytes: 16_384,
+    injectionCharBudget: 1200,
+    snippetMaxChars: 320,
+    injectionSensitivityCeiling: "internal" as "public" | "internal",
+    defaultAgentScope: ["implementer-frontend", "implementer-backend", "implementer-general"] as readonly string[],
+    // conservative write
+    recurrenceMinHits: 2,
+    recurrenceMinDistinctIssues: 2,
+    maxWritesPerLifecycle: 2,
+    triggerOverlapThreshold: 0.6,
+    // platform
+    runtimeInstallPath: "/root/.micode",
+    // code-verbatim guard
+    maxFenceLines: 3,
+  },
+
   skillEvolution: {
     /** Max procedures injected per chat (strict ceiling so context stays small) */
     maxInjectedProcedures: 3,
