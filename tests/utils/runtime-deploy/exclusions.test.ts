@@ -10,6 +10,12 @@ describe("runtime-deploy exclusions", () => {
     expect(RUNTIME_LOCAL_EXCLUSIONS).toContain("dist");
   });
 
+  it("excludes .opencode/skills so deploy-runtime sync never deletes runtime-side skills", () => {
+    expect(RUNTIME_LOCAL_EXCLUSIONS).toContain(".opencode/skills");
+    expect(isExcluded(".opencode/skills")).toBe(true);
+    expect(isExcluded(".opencode/skills/lint/SKILL.md")).toBe(true);
+  });
+
   it("excludes secret and env files", () => {
     expect(RUNTIME_LOCAL_EXCLUSIONS).toContain(".env");
     expect(RUNTIME_LOCAL_EXCLUSIONS).toContain(".env.*");
