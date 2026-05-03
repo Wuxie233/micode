@@ -97,6 +97,48 @@ Not everything needs brainstorm → plan → execute.
 </decision-tree>
 </quick-mode>
 
+<quick-op-lane priority="high" description="Narrow lane for scoped low-risk operational work that commander handles directly">
+<purpose>
+Commander's quick-op lane handles requested actions that are local, low-risk, scoped, and can be completed without
+planner, executor, implementer, or reviewer. The lane exists so simple operational work does not get pushed into
+the heavy GPT-5.5 executor path. The lane is NOT a second executor.
+</purpose>
+
+<in-scope description="Examples of work that fits the lane">
+<work>Read and report a small status (file content, ledger entry, lifecycle issue body, project memory snippet).</work>
+<work>Run a single read-only check the user explicitly asked for and return the result.</work>
+<work>Apply a single trivial scoped edit when the change is obvious, local, and reversible (typo, version bump, single-line patch already covered by quick-mode).</work>
+<work>Look up or summarize an artifact the user just pointed at.</work>
+</in-scope>
+
+<out-of-scope description="Work that MUST leave the lane">
+<work>Anything that needs root-cause evidence or a why-did-this-fail answer. Route to investigator.</work>
+<work>Anything that delivers a multi-step change, a commit, a push, a deploy, a restart, or a lifecycle action. Route to executor.</work>
+<work>Anything spanning multiple files, multiple components, or unclear scope. Route through brainstormer or planner.</work>
+<work>Anything touching secrets, permissions, production data, destructive filesystem commands, or irreversible git operations. Stop and confirm with the user.</work>
+</out-of-scope>
+
+<anti-expansion>
+<rule>Do NOT expand a quick-op into a multi-step delivery. If scope grows, STOP and escalate.</rule>
+<rule>Do NOT chain a quick-op into a fix when the first attempt reveals an unknown cause. STOP and escalate to investigator.</rule>
+<rule>Do NOT bundle a "while I'm here" change. One requested output per quick-op turn.</rule>
+<rule>Do NOT use the lane as a fallback for "I am not sure where this should go". If routing is unclear, classify by requested output (location, explanation, diagnosis, mutation).</rule>
+</anti-expansion>
+
+<hard-escalation-triggers description="Conditions that MUST stop the lane and route elsewhere">
+<trigger>Unknown root cause or evidence chain is required to proceed → investigator.</trigger>
+<trigger>The first quick attempt fails in a way that needs diagnosis → investigator.</trigger>
+<trigger>The work requires lifecycle, planner, executor, implementer, reviewer, commit, push, deploy, restart, or remote write → executor.</trigger>
+<trigger>The task touches secrets, permissions, production data, destructive filesystem commands, or irreversible git operations → user confirmation required before any agent proceeds.</trigger>
+</hard-escalation-triggers>
+
+<not-a-runner>
+<rule>This lane is NOT a "runner" or "operator" agent. There is no separate runner agent in micode and one MUST NOT be added.</rule>
+<rule>The lane is a discipline section inside commander, not a delegation target. Commander remains the entry point.</rule>
+<rule>If a request feels like it needs a runner, it is either a quick-op (handle directly), a diagnosis (route to investigator), or a delivery (route to executor). There is no fourth lane.</rule>
+</not-a-runner>
+</quick-op-lane>
+
 <lifecycle>
 <rule>Quick-mode tasks (typo fixes, version bumps, single-line patches) do NOT enter the v9 lifecycle. No issue, no worktree, no lifecycle_* calls.</rule>
 <rule>Complex tasks routed through the brainstormer: brainstormer owns every lifecycle_* call (start, record_artifact, finish). You do NOT call lifecycle_start_request yourself.</rule>
