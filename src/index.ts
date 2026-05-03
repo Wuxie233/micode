@@ -24,6 +24,7 @@ import {
   getFileOps,
   warnUnknownAgents,
 } from "@/hooks";
+import { createProcedureInjectorHook } from "@/hooks/procedure-injector";
 import { createLifecycleStore } from "@/lifecycle";
 import { createJournalStore } from "@/lifecycle/journal/store";
 import { createLeaseStore } from "@/lifecycle/lease/store";
@@ -56,6 +57,8 @@ import {
 } from "@/octto/persistence";
 import { type SessionListeners, safelyInvoke } from "@/octto/session/listeners";
 import type { Session } from "@/octto/session/types";
+import { runMiner } from "@/skill-evolution/miner-runner";
+import { createCandidateStore } from "@/skill-evolution/store";
 import {
   artifact_search,
   ast_grep_replace,
@@ -79,6 +82,7 @@ import {
 } from "@/tools";
 import { createLifecycleTools } from "@/tools/lifecycle";
 import { createResumeSubagentTool } from "@/tools/resume-subagent";
+import { createSkillsTools } from "@/tools/skills";
 import {
   createPreservedRegistryOver,
   createSpawnAgentTool,
@@ -94,6 +98,7 @@ import { extractErrorMessage } from "@/utils/errors";
 import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 import { type ModelReference, parseModelReference } from "@/utils/model-selection";
+import { resolveProjectId } from "@/utils/project-id";
 
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
@@ -156,6 +161,12 @@ const PLUGIN_COMMANDS = {
     agent: PRIMARY_AGENT_NAME,
     template:
       "Use the project_memory_* tools to handle this request. Default behaviour: if no arguments are given, run project_memory_health and report a concise summary; if arguments are given, run project_memory_lookup with the arguments as the query. $ARGUMENTS",
+  },
+  skills: {
+    description: "Review pending skill candidates (list/approve/reject)",
+    agent: PRIMARY_AGENT_NAME,
+    template:
+      "Use skills_list to show pending skill candidates. If arguments include 'approve <id>' or 'reject <id> <reason>' run skills_approve or skills_reject. $ARGUMENTS",
   },
 };
 
@@ -461,6 +472,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
+  const lastUserTextBySession = new Map<string, string>();
 
   // Hooks
   const autoCompactHook = createAutoCompactHook(ctx, {
@@ -511,6 +523,15 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     ...createProjectMemoryHealthTool(ctx),
     ...createProjectMemoryForgetTool(ctx),
   };
+  const candidateStore = createCandidateStore();
+  const skillsTools = createSkillsTools(ctx, { candidateStore });
+  const skillEvolutionEnabled = userConfig?.features?.skillEvolution === true;
+  const procedureInjectorHook = skillEvolutionEnabled
+    ? createProcedureInjectorHook(ctx, {
+        enabled: true,
+        lastUserText: (sessionID) => lastUserTextBySession.get(sessionID) ?? "",
+      })
+    : null;
 
   // Constraint reviewer hook - reviews generated code against .mindmodel/ constraints
   const constraintReviewerHook = createConstraintReviewerHook(ctx, async (reviewPrompt) => {
@@ -655,6 +676,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
     const sessionId = props.info.id;
     thinkModeState.delete(sessionId);
+    lastUserTextBySession.delete(sessionId);
     ptyManager.cleanupBySession(sessionId);
     constraintReviewerHook.cleanupSession(sessionId);
     fetchTrackerHook.cleanupSession(sessionId);
@@ -669,6 +691,24 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       }
       octtoSessions.delete(sessionId);
     }
+  }
+
+  async function runSkillEvolutionMiner(): Promise<void> {
+    const resolved = await lifecycleResolver.current();
+    if (resolved.kind !== "resolved") return;
+
+    const identity = await resolveProjectId(ctx.directory);
+    const summary = await runMiner({
+      cwd: ctx.directory,
+      projectId: identity.projectId,
+      issueNumber: resolved.record.issueNumber,
+      now: Date.now(),
+      candidateStore,
+    });
+    log.info(
+      "skill-evolution",
+      `miner ran: added=${summary.candidatesAdded} skipped=${summary.candidatesSkipped} rejected=${summary.rejected}`,
+    );
   }
 
   return {
@@ -686,6 +726,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       batch_read,
       ...mindmodelLookupTool,
       ...projectMemoryTools,
+      ...skillsTools,
       ...ptyTools,
       ...octtoTools,
       ...lifecycleTools,
@@ -733,6 +774,10 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         .map((p) => (p as { text: string }).text)
         .join(" ");
 
+      if (skillEvolutionEnabled && text.trim().length > 0) {
+        lastUserTextBySession.set(input.sessionID, text);
+      }
+
       // Track if think mode was requested
       thinkModeState.set(input.sessionID, detectThinkKeyword(text));
 
@@ -755,6 +800,10 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Inject context window status
       await contextWindowMonitorHook["chat.params"](input, output);
+
+      if (procedureInjectorHook) {
+        await procedureInjectorHook["chat.params"](input, output);
+      }
 
       // If think mode was requested, increase thinking budget
       if (thinkModeState.get(input.sessionID)) {
@@ -903,6 +952,11 @@ IMPORTANT:
       // Session cleanup (think mode + PTY + octto + constraint reviewer)
       if (event.type === "session.deleted") {
         await cleanupDeletedSession(event);
+        if (skillEvolutionEnabled) {
+          void runSkillEvolutionMiner().catch((error: unknown) => {
+            log.warn("skill-evolution", `miner trigger skipped: ${extractErrorMessage(error)}`);
+          });
+        }
       }
 
       // Run all event hooks

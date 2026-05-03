@@ -33,7 +33,7 @@ export interface PromoteOutcome {
   readonly refusedReason: string | null;
 }
 
-const TENTATIVE_KINDS: ReadonlySet<SourceKind> = new Set(["design", "plan"]);
+const TENTATIVE_KINDS: ReadonlySet<SourceKind> = new Set(["design", "plan", "skill"]);
 const ID_HASH_CHARS = 12;
 const ENTITY_ID_PREFIX = "ent";
 const ENTRY_ID_PREFIX = "entry";
