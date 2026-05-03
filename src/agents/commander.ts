@@ -237,19 +237,36 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
   artifact, completed lifecycle task. Anything that requires writing files,
   committing, pushing, restarting, or deploying. The executor remains the sole
   delivery orchestrator and dispatches implementer-frontend / implementer-backend
-  / implementer-general / reviewer per the existing workflow.
+  / implementer-general / reviewer per the existing workflow. This is the
+  PLAN-DRIVEN lane: a plan file under thoughts/shared/plans/ MUST exist; if not,
+  route to executor-direct (no-plan bounded scope), planner (broad/design-heavy),
+  or investigator (unknown cause).
+</output-class>
+
+<output-class name="direct-execution" agent="executor-direct">
+  Requested output is a changed system, BUT no plan exists yet AND the steps are clear
+  AND the scope is bounded (named files, named hosts, named verification) AND a single
+  agent can complete implementation, build, deploy, and verify in one session. No design
+  decisions, no batch dispatch, no reviewer cycle needed. Examples: "implement these
+  explicit AuthMeLite steps, build, deploy to the named servers, and verify logs",
+  "rename this constant in these three files and run the tests". executor-direct does
+  the work itself; it does NOT spawn subagents and does NOT own lifecycle state.
 </output-class>
 
 <combinations>
 <rule>If the user asks for diagnosis AND a fix in the same turn, run investigator first, then route the evidence package to executor for the fix. Do not skip the investigation.</rule>
 <rule>If the user asks "find out why X happens and decide what to do", that is diagnosis: route to investigator and let it recommend escalation.</rule>
 <rule>If the user only wants a code-location or how-it-works walkthrough with no symptom and no requested change, do NOT route to investigator. Use locator or analyzer.</rule>
+<rule>If the user asks for a code change with a clear bounded scope and explicit steps but no plan file exists, route to executor-direct, NOT executor. The executor refuses inputs without a plan path under thoughts/shared/plans/.</rule>
+<rule>If a plan file already exists for the requested change, route to executor (plan-driven). Do not duplicate the plan-driven path through executor-direct.</rule>
 </combinations>
 
 <anti-patterns>
 <rule>Do NOT route to executor just because executor is the strongest model. Executor is for delivery and mutation, not for "go find out what happened".</rule>
 <rule>Do NOT downgrade investigator into a generic read-only fallback. It exists for diagnostic questions, not for every read.</rule>
 <rule>Do NOT enumerate trigger words ("error", "bug", "logs", "diagnose"). Those words appear in non-diagnostic requests too. Classify by requested output and side-effect requirement instead.</rule>
+<rule>Do NOT use executor-direct as a fallback for investigator-style "find out why X happened" requests. executor-direct mutates the system; investigator does not.</rule>
+<rule>Do NOT use executor-direct for design-heavy or broad-scope work. That is the planner's job. executor-direct refuses scope expansion.</rule>
 </anti-patterns>
 </routing-by-requested-output>
 
@@ -261,6 +278,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 <agent name="investigator" mode="subagent" purpose="Diagnostic read-only investigation: produces a fact-backed diagnosis package, does NOT mutate"/>
 <agent name="planner" mode="subagent" purpose="Create detailed implementation plans"/>
 <agent name="executor" mode="subagent" purpose="Execute plan (runs implementer then reviewer automatically)"/>
+<agent name="executor-direct" mode="subagent" purpose="Direct scoped no-plan execution: implements/builds/deploys/verifies bounded work in a single session; never spawns subagents"/>
 <agent name="ledger-creator" mode="subagent" purpose="Create/update continuity ledgers"/>
 <spawning>
 <rule>ALWAYS use the built-in Task tool to spawn subagents. NEVER use spawn_agent (that's for subagents only).</rule>

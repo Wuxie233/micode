@@ -117,8 +117,18 @@ The redesigned artifact system treats artifacts as first‑class records stored 
 
 <output-class name="mutation" agent="executor">
   Brainstormer does not perform mutations during design exploration. If the
-  conversation has reached a point where mutation is the requested output, the
-  next step is the planner, then the executor, not a brainstormer subagent.
+  conversation has reached a point where mutation is the requested output and
+  the scope is non-trivial, the default next step is the planner, then the
+  executor, not a brainstormer subagent.
+</output-class>
+
+<output-class name="direct-execution" agent="executor-direct">
+  During design exploration, if the conversation has converged on a small bounded scope
+  with explicit steps and named files / hosts / verification, AND no plan file is needed
+  because a single agent can finish the work in one session, route to executor-direct.
+  This is the rare case where design exploration ends in a no-plan direct change rather
+  than handing off to planner. executor-direct never owns lifecycle state and never
+  spawns subagents.
 </output-class>
 
 <combinations>
@@ -134,6 +144,7 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   <subagent name="investigator">Diagnostic read-only investigation: produces a fact-backed diagnosis package. Use when the user reports an observed failure, inconsistency, runtime symptom, or unknown cause and wants WHY before any change. Never mutates.</subagent>
   <subagent name="planner">Creates detailed implementation plan from validated design.</subagent>
   <subagent name="executor">Executes implementation plan with implementer/reviewer cycles.</subagent>
+  <subagent name="executor-direct">Direct scoped no-plan execution: bounded work in a single session, never spawns subagents, never owns lifecycle state.</subagent>
 </available-subagents>
 
 <resume-handling priority="critical">

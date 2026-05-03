@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { primaryAgent } from "../../src/agents/commander";
+
+const COMMANDER_SOURCE = readFileSync(join(__dirname, "..", "..", "src", "agents", "commander.ts"), "utf-8");
 
 describe("commander agent", () => {
   it("should not reference handoff agents in prompt", () => {
@@ -64,5 +69,41 @@ describe("commander agent", () => {
 
     // executor must still own delivery/mutation/commits per the design constraints.
     expect(source).toMatch(/executor[\s\S]{0,200}(delivery|mutation|commit)/i);
+  });
+});
+
+describe("commander routing: direct-execution output class", () => {
+  it("declares an output-class for direct-execution mapped to executor-direct", () => {
+    const match = COMMANDER_SOURCE.match(/<output-class name="direct-execution" agent="([^"]+)">/);
+    expect(match).not.toBeNull();
+    expect(match?.[1]).toBe("executor-direct");
+  });
+
+  it("describes direct-execution as no-plan, bounded scope, single-agent", () => {
+    const match = COMMANDER_SOURCE.match(
+      /<output-class name="direct-execution" agent="executor-direct">([\s\S]*?)<\/output-class>/,
+    );
+    expect(match).not.toBeNull();
+    const body = (match?.[1] ?? "").toLowerCase();
+    expect(body).toContain("no plan");
+    expect(body).toMatch(/bounded|scoped/);
+    expect(body).toContain("single");
+  });
+
+  it("clarifies that the mutation class requires a plan and routes to executor", () => {
+    const match = COMMANDER_SOURCE.match(/<output-class name="mutation" agent="executor">([\s\S]*?)<\/output-class>/);
+    expect(match).not.toBeNull();
+    const body = (match?.[1] ?? "").toLowerCase();
+    expect(body).toContain("plan");
+  });
+
+  it("registers executor-direct in the agents table", () => {
+    expect(COMMANDER_SOURCE).toMatch(/<agent\s+name="executor-direct"[^>]*mode="subagent"/);
+  });
+
+  it("anti-patterns warn against routing investigator/planner work to executor-direct", () => {
+    const lower = COMMANDER_SOURCE.toLowerCase();
+    expect(lower).toContain("executor-direct");
+    expect(lower).toMatch(/executor-direct.*not.*investigat|not.*investigator.*executor-direct/);
   });
 });
