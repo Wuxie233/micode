@@ -12,6 +12,8 @@ interface SkillAutopilotConfig {
 const SENSITIVITY_VALUES = ["public", "internal", "secret"] as const;
 const REQUIRED_SECTIONS = ["When to Use", "Procedure", "Pitfalls", "Verification"] as const;
 const FRONTMATTER_DELIM = "---";
+const YAML_STRING_ARRAY_FIELDS = ["x-micode-agent-scope"] as const;
+const YAML_STRING_RECORD_FIELDS = ["x-micode-source-file-hashes"] as const;
 const FALLBACK_SKILL_AUTOPILOT_CONFIG: SkillAutopilotConfig = {
   nameMaxChars: 64,
   nameRegex: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
@@ -94,14 +96,99 @@ function parseYamlScalar(line: string): [string, unknown] | null {
   return [key, raw.replace(/^["']|["']$/g, "")];
 }
 
-function parseFrontmatterText(fm: string): unknown {
-  const obj: Record<string, unknown> = {};
-  for (const line of fm.split(/\r?\n/)) {
-    if (!line.trim() || line.trim().startsWith("#")) continue;
-    const kv = parseYamlScalar(line);
-    if (kv) obj[kv[0]] = kv[1];
+function parseYamlListItem(line: string): string | null {
+  const m = /^\s+-\s*(.*)$/.exec(line);
+  if (!m) return null;
+  return m[1].trim().replace(/^["']|["']$/g, "");
+}
+
+function isYamlStringArrayField(key: string): boolean {
+  return YAML_STRING_ARRAY_FIELDS.includes(key as (typeof YAML_STRING_ARRAY_FIELDS)[number]);
+}
+
+function parseYamlRecordItem(line: string): readonly [string, string] | null {
+  const m = /^\s+(.+?):\s*(.*)$/.exec(line);
+  if (!m) return null;
+  return [m[1].trim(), m[2].trim().replace(/^["']|["']$/g, "")];
+}
+
+function isYamlStringRecordField(key: string): boolean {
+  return YAML_STRING_RECORD_FIELDS.includes(key as (typeof YAML_STRING_RECORD_FIELDS)[number]);
+}
+
+function isYamlStringRecord(value: unknown): value is Record<string, string> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function appendYamlListItem(obj: Record<string, unknown>, key: string, item: string): void {
+  const values = obj[key];
+  if (!Array.isArray(values)) return;
+  values.push(item);
+}
+
+function appendYamlRecordItem(obj: Record<string, unknown>, key: string, item: readonly [string, string]): void {
+  const values = obj[key];
+  if (!isYamlStringRecord(values)) return;
+  values[item[0]] = item[1];
+}
+
+interface YamlParseState {
+  readonly obj: Record<string, unknown>;
+  arrayKey: string | null;
+  recordKey: string | null;
+}
+
+function consumeYamlCollectionItem(state: YamlParseState, line: string): boolean {
+  const item = parseYamlListItem(line);
+  if (state.arrayKey && item !== null) {
+    appendYamlListItem(state.obj, state.arrayKey, item);
+    return true;
   }
-  return obj;
+
+  const recordItem = parseYamlRecordItem(line);
+  if (state.recordKey && recordItem !== null) {
+    appendYamlRecordItem(state.obj, state.recordKey, recordItem);
+    return true;
+  }
+
+  return false;
+}
+
+function startYamlCollection(state: YamlParseState, key: string, value: unknown): boolean {
+  if (value === "" && isYamlStringArrayField(key)) {
+    state.arrayKey = key;
+    state.obj[key] = [];
+    return true;
+  }
+
+  if (value === "" && isYamlStringRecordField(key)) {
+    state.recordKey = key;
+    state.obj[key] = {};
+    return true;
+  }
+
+  return false;
+}
+
+function parseFrontmatterLine(state: YamlParseState, line: string): void {
+  if (!line.trim() || line.trim().startsWith("#")) return;
+  if (consumeYamlCollectionItem(state, line)) return;
+  state.arrayKey = null;
+  state.recordKey = null;
+
+  const pair = parseYamlScalar(line);
+  if (!pair) return;
+  const [key, value] = pair;
+  if (startYamlCollection(state, key, value)) return;
+  state.obj[key] = value;
+}
+
+function parseFrontmatterText(fm: string): unknown {
+  const state: YamlParseState = { obj: {}, arrayKey: null, recordKey: null };
+  for (const line of fm.split(/\r?\n/)) {
+    parseFrontmatterLine(state, line);
+  }
+  return state.obj;
 }
 
 function extractSections(body: string): Readonly<Record<string, string>> {
