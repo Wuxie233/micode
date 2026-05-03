@@ -10,6 +10,7 @@ export interface LookupInput {
   readonly type?: EntryType;
   readonly status?: Status;
   readonly entityId?: string;
+  readonly sensitivityCeiling?: "public" | "internal";
   readonly limit?: number;
 }
 
@@ -66,6 +67,7 @@ export async function lookup(input: LookupInput): Promise<readonly LookupHit[]> 
     type: input.type,
     status: input.status,
     entityId: input.entityId,
+    sensitivityCeiling: input.sensitivityCeiling,
     limit,
   });
   const loaded = await Promise.all(hits.map((hit) => loadHit(input.store, input.identity.projectId, hit)));

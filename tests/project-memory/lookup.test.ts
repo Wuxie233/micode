@@ -107,6 +107,10 @@ function hitIds(hits: readonly { readonly entry: Entry }[]): string[] {
   return hits.map((hit) => hit.entry.id);
 }
 
+function sensitivities(hits: readonly { readonly entry: Entry }[]): Entry["sensitivity"][] {
+  return hits.map((hit) => hit.entry.sensitivity).sort();
+}
+
 describe("lookup", () => {
   it(
     "applies type, status, and entity filters before ranking through the store",
@@ -137,6 +141,27 @@ describe("lookup", () => {
     },
     LOOKUP_TEST_TIMEOUT_MS,
   );
+
+  it("applies sensitivity ceiling while leaving uncapped lookup unrestricted", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await seedMemory(store, { entry: { id: "entry-public", sensitivity: "public" } });
+    await seedMemory(store, { entry: { id: "entry-internal", sensitivity: "internal" } });
+    await seedMemory(store, { entry: { id: "entry-secret", sensitivity: "secret" } });
+
+    const uncapped = await lookup({ store, identity: IDENTITY, query: "alpha", limit: LIMIT });
+    const capped = await lookup({
+      store,
+      identity: IDENTITY,
+      query: "alpha",
+      sensitivityCeiling: "internal",
+      limit: LIMIT,
+    });
+
+    expect(sensitivities(uncapped)).toEqual(["internal", "public", "secret"]);
+    expect(sensitivities(capped)).toEqual(["internal", "public"]);
+  });
 
   it("sorts hits by status rank before score and recency", async () => {
     const store = createStore();

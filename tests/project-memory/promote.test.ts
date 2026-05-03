@@ -12,11 +12,15 @@ const PROJECT_ID = "p1";
 const IDENTITY_SOURCE = "origin://repo";
 const AUTH_ENTITY = "auth";
 const BILLING_ENTITY = "billing";
+const SKILL_ENTITY = "skill-2026-05-03";
 const LIFECYCLE_POINTER = "thoughts/lifecycle/1.md";
 const DESIGN_POINTER = "thoughts/shared/designs/auth.md";
 const PLAN_POINTER = "thoughts/shared/plans/auth.md";
+const SKILL_POINTER = "skill-candidate://abc123";
 const CACHE_DECISION = "Cache for 30s";
 const CACHE_MARKDOWN = `## Decisions\n- ${CACHE_DECISION}\n`;
+const SKILL_PROCEDURE = "Trigger A; Steps 1-2-3";
+const SKILL_MARKDOWN = `## Procedure\n- ${SKILL_PROCEDURE}\n`;
 const STRIPE_PREFIX = "sk_live_";
 const STRIPE_SUFFIX = "abcdefghijklmnopqrstuvwx";
 const SECRET_MARKDOWN = `## Decisions\n- Use API key ${STRIPE_PREFIX}${STRIPE_SUFFIX} for billing\n`;
@@ -99,6 +103,7 @@ describe("promoteMarkdown", () => {
       lifecycle: LIFECYCLE_POINTER,
       mindmodel: "mindmodel.md",
       manual: "manual.md",
+      skill: SKILL_POINTER,
     };
 
     for (const sourceKind of sourceKinds) {
@@ -106,6 +111,27 @@ describe("promoteMarkdown", () => {
       expect(result.accepted[0]?.status).toBe("tentative");
       expect(result.rejected).toEqual([]);
     }
+  });
+
+  it("creates a tentative procedure entry from a skill markdown body", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    const result = await promoteMarkdown(
+      input(store, {
+        markdown: SKILL_MARKDOWN,
+        defaultEntityName: SKILL_ENTITY,
+        sourceKind: "skill",
+        pointer: SKILL_POINTER,
+      }),
+    );
+    const entry = await store.loadEntry(PROJECT_ID, result.accepted[0]?.entryId ?? "");
+
+    expect(result.refusedReason).toBeNull();
+    expect(result.rejected).toEqual([]);
+    expect(result.accepted).toHaveLength(EXPECTED_ONE);
+    expect(result.accepted[0]?.status).toBe("tentative");
+    expect(entry).toMatchObject({ type: "procedure", status: "tentative", summary: SKILL_PROCEDURE });
   });
 
   it("marks lifecycle promotions as active", async () => {
