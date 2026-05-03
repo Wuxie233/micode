@@ -20,6 +20,20 @@ describe("agents index", () => {
     expect(module.agents.commander).toBeDefined();
   });
 
+  it("registers investigator agent at default model", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect(module.agents.investigator).toBeDefined();
+    expect(module.agents.investigator.mode).toBe("subagent");
+    expect(module.agents.investigator.model).toBe(DEFAULT_MODEL);
+  });
+
+  it("re-exports investigatorAgent from the agents barrel", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect(module.investigatorAgent).toBeDefined();
+  });
+
   it("should register mindmodel v2 analysis agents", async () => {
     const module = await import("../../src/agents/index");
 

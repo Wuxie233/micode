@@ -18,6 +18,7 @@ describe("config-loader integration", () => {
       "implementer-backend",
       "implementer-general",
       "reviewer",
+      "investigator",
       "executor",
       "ledger-creator",
       "artifact-searcher",
@@ -69,5 +70,26 @@ describe("config-loader integration", () => {
     expect(mo.temperature).toBe(0.5);
     expect(mo.mode).toBe("subagent"); // Original
     expect(mo.prompt).toContain("mindmodel"); // Original
+  });
+
+  it("merges a user override that pins investigator to a Sonnet-class model", () => {
+    const model = "anthropic/claude-sonnet-4-6";
+    const userConfig = {
+      agents: {
+        investigator: { model },
+      },
+    };
+
+    const availableModels = new Set([model, DEFAULT_MODEL]);
+
+    const merged = mergeAgentConfigs(agents, userConfig, availableModels);
+    const investigator = merged.investigator;
+
+    expect(investigator).toBeDefined();
+    expect(investigator.model).toBe(model);
+    expect(investigator.mode).toBe("subagent");
+    expect(investigator.prompt).toBeDefined();
+    expect(investigator.tools?.write).toBe(false);
+    expect(investigator.tools?.edit).toBe(false);
   });
 });

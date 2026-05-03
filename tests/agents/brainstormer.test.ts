@@ -52,4 +52,37 @@ describe("brainstormer agent", () => {
     expect(getSpawnAgentOverride(commanderAgent)).toBe(false);
     expect(hasSpawnAgentOverride(octtoAgent)).toBe(false);
   });
+
+  it("references investigator as a subagent for diagnostic read-only work", () => {
+    const source = require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "brainstormer.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain('name="investigator"');
+    expect(source.toLowerCase()).toContain("diagnostic");
+    expect(source.toLowerCase()).toContain("read-only");
+  });
+
+  it("documents the same four-class routing rule as the commander", () => {
+    const source = require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "brainstormer.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("routing-by-requested-output");
+    expect(source.toLowerCase()).toContain("location");
+    expect(source.toLowerCase()).toContain("explanation");
+    expect(source.toLowerCase()).toContain("diagnosis");
+    expect(source.toLowerCase()).toContain("mutation");
+  });
+
+  it("does not introduce keyword trigger lists", () => {
+    const source = require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "brainstormer.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toMatch(/trigger\s+keywords?\s*:/i);
+  });
 });
