@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { sanitizeFeatures } from "@/config-schemas";
 import {
   loadAvailableModels,
   loadDefaultModel,
@@ -14,6 +15,28 @@ import {
   validateAgentModels,
 } from "../src/config-loader";
 import { DEFAULT_MODEL } from "../src/utils/config";
+
+describe("sanitizeFeatures: skillEvolution flag", () => {
+  it("accepts skillEvolution=true", () => {
+    const out = sanitizeFeatures({ skillEvolution: true });
+    expect(out.skillEvolution).toBe(true);
+  });
+
+  it("accepts skillEvolution=false", () => {
+    const out = sanitizeFeatures({ skillEvolution: false });
+    expect(out.skillEvolution).toBe(false);
+  });
+
+  it("omits skillEvolution when missing", () => {
+    const out = sanitizeFeatures({ mindmodelInjection: true });
+    expect(out.skillEvolution).toBeUndefined();
+  });
+
+  it("rejects non-boolean skillEvolution by dropping the field", () => {
+    const out = sanitizeFeatures({ skillEvolution: "yes" } as Record<string, unknown>);
+    expect(out.skillEvolution).toBeUndefined();
+  });
+});
 
 describe("config-loader", () => {
   let testConfigDir: string;

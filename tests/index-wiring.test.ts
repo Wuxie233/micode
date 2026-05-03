@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
 
+import { PRIMARY_AGENT_NAME } from "@/agents";
 import { createJournalStore } from "@/lifecycle/journal/store";
 import { createLeaseStore } from "@/lifecycle/lease/store";
 import { OpenCodeConfigPlugin } from "../src/index";
@@ -35,7 +36,8 @@ const PROJECT_MEMORY_TOOLS = [
   "project_memory_health",
   "project_memory_forget",
 ] as const;
-const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS] as const;
+const SKILL_TOOLS = ["skills_list", "skills_approve", "skills_reject"] as const;
+const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS, ...SKILL_TOOLS] as const;
 const TRACKED_KEYS = {
   PERSISTED_SESSIONS_DIR: "persistedSessionsDir",
   LIFECYCLE_DIR: "lifecycleDir",
@@ -51,6 +53,7 @@ const TRACKED_KEYS = {
 } as const;
 
 const originals = {
+  envHome: process.env.HOME,
   envPortalToken: process.env.OCTTO_PORTAL_TOKEN,
   portalToken: config.octto.portalToken,
   persistedSessionsDir: config.octto.persistedSessionsDir,
@@ -110,6 +113,12 @@ function restoreConfig(): void {
 }
 
 function restoreEnv(): void {
+  if (originals.envHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originals.envHome;
+  }
+
   if (originals.envPortalToken === undefined) {
     delete process.env.OCTTO_PORTAL_TOKEN;
     return;
@@ -141,6 +150,7 @@ function trackWiringConfig(reads: string[]): void {
   const sessionsDir = join(tempRoot ?? tmpdir(), "sessions");
   const lifecycleDir = join(tempRoot ?? tmpdir(), "lifecycle");
 
+  process.env.HOME = tempRoot ?? tmpdir();
   process.env.OCTTO_PORTAL_TOKEN = EMPTY_PORTAL_TOKEN;
   restoreField(config.octto, "portalToken", EMPTY_PORTAL_TOKEN);
   trackRead(config.octto, TRACKED_KEYS.PERSISTED_SESSIONS_DIR, sessionsDir, reads);
@@ -164,6 +174,30 @@ function trackWiringConfig(reads: string[]): void {
     originals.notificationsDedupeMaxEntries,
     reads,
   );
+}
+
+function writeMicodeConfig(directory: string, content: string): void {
+  const configDir = join(directory, ".config", "opencode");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, "micode.json"), content);
+}
+
+interface PluginCommand {
+  readonly agent?: string;
+  readonly template?: string;
+}
+
+interface PluginConfigStub {
+  permission?: Record<string, unknown>;
+  agent?: Record<string, unknown>;
+  mcp?: Record<string, unknown>;
+  command?: Record<string, PluginCommand>;
+}
+
+async function applyPluginConfig(plugin: Awaited<ReturnType<typeof OpenCodeConfigPlugin>>): Promise<PluginConfigStub> {
+  const pluginConfig: PluginConfigStub = { permission: {}, agent: {}, mcp: {}, command: {} };
+  await plugin.config?.(pluginConfig as Parameters<NonNullable<typeof plugin.config>>[0]);
+  return pluginConfig;
 }
 
 describe("OpenCodeConfigPlugin issue workflow wiring", () => {
@@ -203,6 +237,71 @@ describe("OpenCodeConfigPlugin issue workflow wiring", () => {
       expect(reads).toContain(TRACKED_KEYS.NOTIFICATIONS_MAX_SUMMARY_CHARS);
       expect(reads).toContain(TRACKED_KEYS.NOTIFICATIONS_DEDUPE_TTL_MS);
       expect(reads).toContain(TRACKED_KEYS.NOTIFICATIONS_DEDUPE_MAX_ENTRIES);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("registers the /skills plugin command with the primary agent", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const reads: string[] = [];
+    trackWiringConfig(reads);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const pluginConfig = await applyPluginConfig(plugin);
+      const skillsCommand = pluginConfig.command?.skills;
+
+      expect(skillsCommand?.agent).toBe(PRIMARY_AGENT_NAME);
+      expect(skillsCommand?.template).toContain("skills_list");
+      expect(skillsCommand?.template).toContain("skills_approve");
+      expect(skillsCommand?.template).toContain("skills_reject");
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not inject procedure context when skill evolution is not enabled", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const reads: string[] = [];
+    trackWiringConfig(reads);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const output = { system: "" };
+
+      await plugin["chat.params"]?.({ sessionID: SESSION_ID }, output);
+
+      expect(output.system).not.toContain("procedure-context");
+      expect(output.system).toBe("");
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not inject procedure context when skill evolution is explicitly disabled", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const reads: string[] = [];
+    trackWiringConfig(reads);
+    writeMicodeConfig(tempRoot, '{ "features": { "skillEvolution": false } }');
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const output = { system: "" };
+
+      await plugin["chat.params"]?.({ sessionID: SESSION_ID }, output);
+
+      expect(output.system).not.toContain("procedure-context");
+      expect(output.system).toBe("");
     } finally {
       logSpy.mockRestore();
       warnSpy.mockRestore();

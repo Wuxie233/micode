@@ -5,6 +5,7 @@ const SECTION_PATTERNS: ReadonlyArray<{ readonly entryType: EntryType; readonly 
   { entryType: "risk", headers: [/^##\s+Risks?\b/im] },
   { entryType: "lesson", headers: [/^##\s+Lessons?(?:\s+Learned)?\b/im] },
   { entryType: "open_question", headers: [/^##\s+Open Questions?\b/im, /^##\s+Follow-?ups?\b/im] },
+  { entryType: "procedure", headers: [/^##\s+Procedures?\b/im] },
 ];
 
 const LIFECYCLE_REQUEST_HEADER = /^##\s+Request\b/im;
