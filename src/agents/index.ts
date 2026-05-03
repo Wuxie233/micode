@@ -8,6 +8,7 @@ import { codebaseAnalyzerAgent } from "./codebase-analyzer";
 import { codebaseLocatorAgent } from "./codebase-locator";
 import { PRIMARY_AGENT_NAME, primaryAgent } from "./commander";
 import { executorAgent } from "./executor";
+import { executorDirectAgent } from "./executor-direct";
 import { implementerAgent } from "./implementer";
 import { implementerBackendAgent } from "./implementer-backend";
 import { implementerFrontendAgent } from "./implementer-frontend";
@@ -49,6 +50,7 @@ export const agents: Record<string, AgentConfig> = {
   reviewer: { ...reviewerAgent, model: DEFAULT_MODEL },
   investigator: { ...investigatorAgent, model: DEFAULT_MODEL },
   executor: { ...executorAgent, model: DEFAULT_MODEL },
+  "executor-direct": { ...executorDirectAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
   "artifact-searcher": { ...artifactSearcherAgent, model: DEFAULT_MODEL },
   "notification-courier": { ...notificationCourierAgent, model: DEFAULT_MODEL },
@@ -86,6 +88,7 @@ export {
   reviewerAgent,
   investigatorAgent,
   executorAgent,
+  executorDirectAgent,
   ledgerCreatorAgent,
   artifactSearcherAgent,
   octtoAgent,
