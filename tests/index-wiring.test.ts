@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { PRIMARY_AGENT_NAME } from "@/agents";
 import { createJournalStore } from "@/lifecycle/journal/store";
 import { createLeaseStore } from "@/lifecycle/lease/store";
 import { OpenCodeConfigPlugin } from "../src/index";
@@ -36,8 +35,7 @@ const PROJECT_MEMORY_TOOLS = [
   "project_memory_health",
   "project_memory_forget",
 ] as const;
-const SKILL_TOOLS = ["skills_list", "skills_approve", "skills_reject"] as const;
-const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS, ...SKILL_TOOLS] as const;
+const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS] as const;
 const TRACKED_KEYS = {
   PERSISTED_SESSIONS_DIR: "persistedSessionsDir",
   LIFECYCLE_DIR: "lifecycleDir",
@@ -243,7 +241,7 @@ describe("OpenCodeConfigPlugin issue workflow wiring", () => {
     }
   });
 
-  it("registers the /skills plugin command with the primary agent", async () => {
+  it("does not register the legacy /skills plugin command", async () => {
     tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
     const reads: string[] = [];
     trackWiringConfig(reads);
@@ -253,12 +251,8 @@ describe("OpenCodeConfigPlugin issue workflow wiring", () => {
     try {
       const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
       const pluginConfig = await applyPluginConfig(plugin);
-      const skillsCommand = pluginConfig.command?.skills;
 
-      expect(skillsCommand?.agent).toBe(PRIMARY_AGENT_NAME);
-      expect(skillsCommand?.template).toContain("skills_list");
-      expect(skillsCommand?.template).toContain("skills_approve");
-      expect(skillsCommand?.template).toContain("skills_reject");
+      expect(pluginConfig.command?.skills).toBeUndefined();
     } finally {
       logSpy.mockRestore();
       warnSpy.mockRestore();

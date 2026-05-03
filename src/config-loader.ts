@@ -139,7 +139,6 @@ export interface MicodeFeatures {
   readonly mindmodelInjection?: boolean;
   readonly conversationTitleChatFallback?: boolean;
   readonly skillAutopilot?: boolean;
-  readonly skillEvolution?: boolean;
 }
 
 export interface MicodeConfig {

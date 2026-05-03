@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { Plugin, PluginInput, ToolDefinition } from "@opencode-ai/plugin";
@@ -24,7 +25,6 @@ import {
   getFileOps,
   warnUnknownAgents,
 } from "@/hooks";
-import { createProcedureInjectorHook } from "@/hooks/procedure-injector";
 import { createLifecycleStore } from "@/lifecycle";
 import { createJournalStore } from "@/lifecycle/journal/store";
 import { createLeaseStore } from "@/lifecycle/lease/store";
@@ -57,8 +57,13 @@ import {
 } from "@/octto/persistence";
 import { type SessionListeners, safelyInvoke } from "@/octto/session/listeners";
 import type { Session } from "@/octto/session/types";
-import { runMiner } from "@/skill-evolution/miner-runner";
-import { createCandidateStore } from "@/skill-evolution/store";
+import type { ProjectMemoryStore, SearchHit } from "@/project-memory";
+import { buildInjectionBlock } from "@/skill-autopilot/injector/hook";
+import type { ProcedureEntry } from "@/skill-autopilot/migration";
+import { runMigration } from "@/skill-autopilot/migration";
+import { evaluatePushGuard } from "@/skill-autopilot/push-guard";
+import { runAutopilot } from "@/skill-autopilot/runner";
+import { runStaleSweep } from "@/skill-autopilot/stale-sweep";
 import {
   artifact_search,
   ast_grep_replace,
@@ -81,8 +86,8 @@ import {
   milestone_artifact_search,
 } from "@/tools";
 import { createLifecycleTools } from "@/tools/lifecycle";
+import { getStore } from "@/tools/project-memory/runtime";
 import { createResumeSubagentTool } from "@/tools/resume-subagent";
-import { createSkillsTools } from "@/tools/skills";
 import {
   createPreservedRegistryOver,
   createSpawnAgentTool,
@@ -161,12 +166,6 @@ const PLUGIN_COMMANDS = {
     agent: PRIMARY_AGENT_NAME,
     template:
       "Use the project_memory_* tools to handle this request. Default behaviour: if no arguments are given, run project_memory_health and report a concise summary; if arguments are given, run project_memory_lookup with the arguments as the query. $ARGUMENTS",
-  },
-  skills: {
-    description: "Review pending skill candidates (list/approve/reject)",
-    agent: PRIMARY_AGENT_NAME,
-    template:
-      "Use skills_list to show pending skill candidates. If arguments include 'approve <id>' or 'reject <id> <reason>' run skills_approve or skills_reject. $ARGUMENTS",
   },
 };
 
@@ -450,6 +449,143 @@ function buildCompletionNotifier(ctx: PluginInput): CompletionNotifier {
   });
 }
 
+const DEFAULT_SKILL_CONTEXT_AGENT = "implementer-general";
+const PROCEDURE_ENTRY_TYPE = "procedure";
+const PROCEDURE_STATUS = "tentative";
+const SKILL_AUTOPILOT_LOG_SCOPE = "skill-autopilot";
+const SKILL_INJECTOR_LOG_SCOPE = "skill-autopilot.injector";
+const SKILL_MIGRATION_LOG_SCOPE = "skill-autopilot.migration";
+const SKILL_STALE_LOG_SCOPE = "skill-autopilot.stale";
+
+interface ChatParamsInput {
+  readonly agent?: string;
+}
+
+interface ChatParamsOutput {
+  options?: Record<string, unknown>;
+  system?: string;
+}
+
+function appendSystemBlock(output: ChatParamsOutput, block: string): void {
+  output.system = output.system ? `${output.system}${block}` : block;
+}
+
+function readSkillFile(cwd: string, relativePath: string): string {
+  return readFileSync(join(cwd, relativePath), "utf8");
+}
+
+async function runSkillAutopilot(cwd: string, issueNumber: number): Promise<void> {
+  const identity = await resolveProjectId(cwd);
+  await runAutopilot({ cwd, projectId: identity.projectId, issueNumber, now: Date.now() });
+}
+
+async function listProceduresFromMemory(
+  store: ProjectMemoryStore,
+  projectId: string,
+): Promise<readonly ProcedureEntry[]> {
+  const hits = await store.searchEntries(projectId, PROCEDURE_ENTRY_TYPE, {
+    type: PROCEDURE_ENTRY_TYPE,
+    status: PROCEDURE_STATUS,
+    limit: config.skillAutopilot.maxSkillsPerProject,
+  });
+  return Promise.all(hits.map((hit) => procedureFromHit(store, projectId, hit)));
+}
+
+async function procedureFromHit(store: ProjectMemoryStore, projectId: string, hit: SearchHit): Promise<ProcedureEntry> {
+  const sources = await store.loadSourcesForEntry(projectId, hit.entry.id);
+  return {
+    entryId: hit.entry.id,
+    title: hit.entry.title,
+    summary: hit.entry.summary,
+    sources: sources.map((source) => ({ kind: source.kind, pointer: source.pointer })),
+  };
+}
+
+async function runSkillMigration(cwd: string): Promise<void> {
+  const store = await getStore();
+  const identity = await resolveProjectId(cwd);
+  await runMigration({
+    cwd,
+    projectId: identity.projectId,
+    now: Date.now(),
+    store: { listProcedures: (projectId) => listProceduresFromMemory(store, projectId) },
+  });
+}
+
+function triggerSkillMigration(cwd: string): void {
+  void runSkillMigration(cwd).catch((error: unknown) => {
+    log.warn(SKILL_MIGRATION_LOG_SCOPE, extractErrorMessage(error));
+  });
+}
+
+function triggerSkillMigrationIfEnabled(enabled: boolean, cwd: string): void {
+  if (!enabled) return;
+  triggerSkillMigration(cwd);
+}
+
+async function injectSkillContext(input: ChatParamsInput, output: ChatParamsOutput, cwd: string): Promise<void> {
+  try {
+    const agent = input.agent ?? DEFAULT_SKILL_CONTEXT_AGENT;
+    const block = await buildInjectionBlock({ cwd, agent });
+    if (block) appendSystemBlock(output, block);
+  } catch (error) {
+    log.warn(SKILL_INJECTOR_LOG_SCOPE, extractErrorMessage(error));
+  }
+}
+
+async function injectSkillContextIfEnabled(
+  enabled: boolean,
+  input: ChatParamsInput,
+  output: ChatParamsOutput,
+  cwd: string,
+): Promise<void> {
+  if (!enabled) return;
+  await injectSkillContext(input, output, cwd);
+}
+
+function createSkillPrePushHook(): (
+  cwd: string,
+  issueNumber: number,
+  changedPaths: readonly string[],
+) => Promise<void> {
+  return async (cwd, _issueNumber, changedPaths) => {
+    const decision = evaluatePushGuard({
+      changedPaths,
+      readFile: (path) => readSkillFile(cwd, path),
+    });
+    if (!decision.allowed) throw new Error(decision.reason ?? "push blocked by skill autopilot guard");
+  };
+}
+
+function triggerStaleSweep(cwd: string): void {
+  void runStaleSweep({ cwd }).catch((error: unknown) => {
+    log.warn(SKILL_STALE_LOG_SCOPE, extractErrorMessage(error));
+  });
+}
+
+function createSkillAwareLifecycleHandle<T extends { finish: (...args: never[]) => Promise<{ merged: boolean }> }>(
+  handle: T,
+  cwd: string,
+  enabled: boolean,
+): T {
+  if (!enabled) return handle;
+  return {
+    ...handle,
+    finish: async (...args: Parameters<T["finish"]>) => {
+      const outcome = await handle.finish(...args);
+      if (outcome.merged) triggerStaleSweep(cwd);
+      return outcome;
+    },
+  };
+}
+
+function triggerAutopilotOnDeletedSession(enabled: boolean, run: () => Promise<void>): void {
+  if (!enabled) return;
+  void run().catch((error: unknown) => {
+    log.warn(SKILL_AUTOPILOT_LOG_SCOPE, `trigger skipped: ${extractErrorMessage(error)}`);
+  });
+}
+
 // eslint-disable-next-line max-lines-per-function
 const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Validate external tool dependencies at startup
@@ -472,7 +608,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Think mode state per session
   const thinkModeState = new Map<string, boolean>();
-  const lastUserTextBySession = new Map<string, string>();
 
   // Hooks
   const autoCompactHook = createAutoCompactHook(ctx, {
@@ -523,15 +658,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     ...createProjectMemoryHealthTool(ctx),
     ...createProjectMemoryForgetTool(ctx),
   };
-  const candidateStore = createCandidateStore();
-  const skillsTools = createSkillsTools(ctx, { candidateStore });
-  const skillEvolutionEnabled = userConfig?.features?.skillEvolution === true;
-  const procedureInjectorHook = skillEvolutionEnabled
-    ? createProcedureInjectorHook(ctx, {
-        enabled: true,
-        lastUserText: (sessionID) => lastUserTextBySession.get(sessionID) ?? "",
-      })
-    : null;
+  const skillAutopilotEnabled = userConfig?.features?.skillAutopilot === true;
+  triggerSkillMigrationIfEnabled(skillAutopilotEnabled, ctx.directory);
 
   // Constraint reviewer hook - reviews generated code against .mindmodel/ constraints
   const constraintReviewerHook = createConstraintReviewerHook(ctx, async (reviewPrompt) => {
@@ -628,8 +756,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     journal: lifecycleJournal,
     lease: lifecycleLease,
     notifier: completionNotifier,
+    preStageHook: skillAutopilotEnabled ? runSkillAutopilot : undefined,
+    prePushHook: skillAutopilotEnabled ? createSkillPrePushHook() : undefined,
   });
-  const lifecycleTools = createLifecycleTools(lifecycleHandle, lifecycleResolver, lifecycleProgress);
+  const lifecycleToolHandle = createSkillAwareLifecycleHandle(lifecycleHandle, ctx.directory, skillAutopilotEnabled);
+  const lifecycleTools = createLifecycleTools(lifecycleToolHandle, lifecycleResolver, lifecycleProgress);
 
   // Octto (browser-based brainstorming) tools
   const persistedSessionStore = createPersistedSessionStore({});
@@ -676,7 +807,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
     const sessionId = props.info.id;
     thinkModeState.delete(sessionId);
-    lastUserTextBySession.delete(sessionId);
     ptyManager.cleanupBySession(sessionId);
     constraintReviewerHook.cleanupSession(sessionId);
     fetchTrackerHook.cleanupSession(sessionId);
@@ -693,22 +823,12 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     }
   }
 
-  async function runSkillEvolutionMiner(): Promise<void> {
+  async function triggerAutopilotForCurrentLifecycle(): Promise<void> {
     const resolved = await lifecycleResolver.current();
     if (resolved.kind !== "resolved") return;
 
-    const identity = await resolveProjectId(ctx.directory);
-    const summary = await runMiner({
-      cwd: ctx.directory,
-      projectId: identity.projectId,
-      issueNumber: resolved.record.issueNumber,
-      now: Date.now(),
-      candidateStore,
-    });
-    log.info(
-      "skill-evolution",
-      `miner ran: added=${summary.candidatesAdded} skipped=${summary.candidatesSkipped} rejected=${summary.rejected}`,
-    );
+    await runSkillAutopilot(ctx.directory, resolved.record.issueNumber);
+    log.info(SKILL_AUTOPILOT_LOG_SCOPE, `autopilot ran: issue=${resolved.record.issueNumber}`);
   }
 
   return {
@@ -726,7 +846,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       batch_read,
       ...mindmodelLookupTool,
       ...projectMemoryTools,
-      ...skillsTools,
       ...ptyTools,
       ...octtoTools,
       ...lifecycleTools,
@@ -774,10 +893,6 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         .map((p) => (p as { text: string }).text)
         .join(" ");
 
-      if (skillEvolutionEnabled && text.trim().length > 0) {
-        lastUserTextBySession.set(input.sessionID, text);
-      }
-
       // Track if think mode was requested
       thinkModeState.set(input.sessionID, detectThinkKeyword(text));
 
@@ -801,9 +916,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       // Inject context window status
       await contextWindowMonitorHook["chat.params"](input, output);
 
-      if (procedureInjectorHook) {
-        await procedureInjectorHook["chat.params"](input, output);
-      }
+      await injectSkillContextIfEnabled(skillAutopilotEnabled, input, output, ctx.directory);
 
       // If think mode was requested, increase thinking budget
       if (thinkModeState.get(input.sessionID)) {
@@ -952,11 +1065,7 @@ IMPORTANT:
       // Session cleanup (think mode + PTY + octto + constraint reviewer)
       if (event.type === "session.deleted") {
         await cleanupDeletedSession(event);
-        if (skillEvolutionEnabled) {
-          void runSkillEvolutionMiner().catch((error: unknown) => {
-            log.warn("skill-evolution", `miner trigger skipped: ${extractErrorMessage(error)}`);
-          });
-        }
+        triggerAutopilotOnDeletedSession(skillAutopilotEnabled, triggerAutopilotForCurrentLifecycle);
       }
 
       // Run all event hooks

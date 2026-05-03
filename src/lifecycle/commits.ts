@@ -1,5 +1,6 @@
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
+import { log } from "@/utils/logger";
 
 import { buildLifecycleCommitMessage, type CommitMessageInput } from "./commit-message";
 import type { LifecycleRunner, RunResult } from "./runner";
@@ -14,6 +15,8 @@ export interface CommitAndPushInput {
   readonly summary: string;
   readonly push: boolean;
   readonly marker?: string;
+  readonly preStageHook?: (cwd: string, issueNumber: number) => Promise<void>;
+  readonly prePushHook?: (cwd: string, issueNumber: number, changedPaths: readonly string[]) => Promise<void>;
 }
 
 const SUCCESS_EXIT_CODE = 0;
@@ -23,6 +26,7 @@ const EMPTY_OUTPUT = "";
 const NOTHING_TO_COMMIT_PATTERN = /nothing to commit/i;
 const STAGE_ARGS = ["add", "--all"] as const;
 const SHA_ARGS = ["rev-parse", "HEAD"] as const;
+const CHANGED_PATHS_ARGS = ["diff-tree", "--no-commit-id", "--name-only", "-r"] as const;
 const COMMIT_COMMAND = "commit";
 const MESSAGE_FLAG = "-m";
 const PUSH_COMMAND = "push";
@@ -32,6 +36,9 @@ const STAGING_FAILED_NOTE = "Staging failed";
 const COMMIT_FAILED_NOTE = "Commit failed";
 const SHA_FAILED_NOTE = "Commit SHA lookup failed";
 const PUSH_FAILED_NOTE = "Push failed after retry";
+const PRE_STAGE_HOOK_FAILED_NOTE = "preStageHook failed";
+const PRE_PUSH_BLOCKED_NOTE = "Pre-push hook blocked push";
+const LOG_MODULE = "lifecycle.commits";
 
 const buildPushArgs = (branch: string): readonly string[] => [PUSH_COMMAND, SET_UPSTREAM_FLAG, ORIGIN_REMOTE, branch];
 
@@ -89,6 +96,16 @@ const runGit = async (runner: LifecycleRunner, args: readonly string[], cwd: str
   }
 };
 
+const runPreStageHook = async (input: CommitAndPushInput): Promise<void> => {
+  if (!input.preStageHook) return;
+
+  try {
+    await input.preStageHook(input.cwd, input.issueNumber);
+  } catch (error) {
+    log.warn(LOG_MODULE, `${PRE_STAGE_HOOK_FAILED_NOTE}: ${extractErrorMessage(error)}`);
+  }
+};
+
 const readSha = async (runner: LifecycleRunner, cwd: string): Promise<string | null> => {
   const run = await runGit(runner, SHA_ARGS, cwd);
   if (!succeeded(run)) return null;
@@ -96,6 +113,30 @@ const readSha = async (runner: LifecycleRunner, cwd: string): Promise<string | n
   const sha = run.stdout.trim();
   if (sha.length === 0) return null;
   return sha;
+};
+
+const readChangedPaths = async (runner: LifecycleRunner, cwd: string, sha: string): Promise<readonly string[]> => {
+  const run = await runGit(runner, [...CHANGED_PATHS_ARGS, sha], cwd);
+  if (!succeeded(run)) return [];
+  return run.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+};
+
+const runPrePushHook = async (
+  runner: LifecycleRunner,
+  input: CommitAndPushInput,
+  sha: string,
+): Promise<string | null> => {
+  if (!input.prePushHook) return null;
+  try {
+    const changedPaths = await readChangedPaths(runner, input.cwd, sha);
+    await input.prePushHook(input.cwd, input.issueNumber, changedPaths);
+    return null;
+  } catch (error) {
+    return `${PRE_PUSH_BLOCKED_NOTE}: ${extractErrorMessage(error)}`;
+  }
 };
 
 const pushWithRetry = async (
@@ -123,6 +164,8 @@ export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPus
     return failureOutcome(extractErrorMessage(error));
   }
 
+  await runPreStageHook(input);
+
   const staged = await runGit(runner, STAGE_ARGS, input.cwd);
   if (!succeeded(staged)) return failureOutcome(noteFor(STAGING_FAILED_NOTE, staged));
 
@@ -133,5 +176,7 @@ export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPus
   const sha = await readSha(runner, input.cwd);
   if (sha === null) return retainedOutcome(null, false, SHA_FAILED_NOTE);
   if (!input.push) return completedOutcome(sha, false, false);
+  const blocked = await runPrePushHook(runner, input, sha);
+  if (blocked !== null) return retainedOutcome(sha, false, blocked);
   return pushWithRetry(runner, input.cwd, input.branch, sha);
 }
