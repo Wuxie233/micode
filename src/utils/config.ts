@@ -279,6 +279,21 @@ export const config = {
     refuseWritesOnDegradedIdentity: true,
   },
 
+  skillEvolution: {
+    /** Max procedures injected per chat (strict ceiling so context stays small) */
+    maxInjectedProcedures: 3,
+    /** Hard char budget across all injected procedures combined */
+    injectionCharBudget: 1200,
+    /** Candidate auto-expiry in days; expired entries are purged at next /skills review */
+    candidateExpiryDays: 30,
+    /** Hard cap on stored pending candidates per project (oldest evicted) */
+    maxCandidatesPerProject: 200,
+    /** Per-procedure snippet truncation when injecting */
+    snippetMaxChars: 320,
+    /** Ceiling for sensitivity filter on lookup-and-inject ('internal' excludes 'secret') */
+    injectionSensitivityCeiling: "internal" as "public" | "internal",
+  },
+
   notifications: {
     enabled: true,
     qqUserId: "445714414",

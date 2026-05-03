@@ -53,6 +53,45 @@ describe("extractCandidates", () => {
     expect(r.candidates[0].entryType).toBe("open_question");
   });
 
+  it("emits procedure candidates from a Procedure section", () => {
+    const md = `## Procedure\n- Run /mindmodel before changing project patterns\n`;
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "skill-evolution",
+      sourceKind: "skill",
+      pointer: "x",
+    });
+    expect(r.candidates[0].entryType).toBe("procedure");
+    expect(r.candidates[0].sourceKind).toBe("skill");
+    expect(r.candidates[0].summary).toBe("Run /mindmodel before changing project patterns");
+  });
+
+  it("creates one procedure candidate per bullet", () => {
+    const md = `## Procedure\n- Draft the skill procedure\n- Store it as project memory\n`;
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "skill-evolution",
+      sourceKind: "manual",
+      pointer: "x",
+    });
+    expect(r.candidates.map(({ entryType, summary }) => ({ entryType, summary }))).toEqual([
+      { entryType: "procedure", summary: "Draft the skill procedure" },
+      { entryType: "procedure", summary: "Store it as project memory" },
+    ]);
+  });
+
+  it("recognizes plural Procedures headings", () => {
+    const md = `## Procedures\n- Promote accepted workflows into memory\n`;
+    const r = extractCandidates({
+      markdown: md,
+      defaultEntityName: "skill-evolution",
+      sourceKind: "manual",
+      pointer: "x",
+    });
+    expect(r.candidates[0].entryType).toBe("procedure");
+    expect(r.candidates[0].summary).toBe("Promote accepted workflows into memory");
+  });
+
   it("recognizes Key Decisions and Open Questions headings", () => {
     const md = `## Key Decisions\n- Persist promoted memory in SQLite\n## Open Questions\n- Decide import cadence\n`;
     const r = extractCandidates({ markdown: md, defaultEntityName: "memory", sourceKind: "design", pointer: "x" });

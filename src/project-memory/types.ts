@@ -13,12 +13,13 @@ export const EntryTypeValues = [
   "open_question",
   "hypothesis",
   "note",
+  "procedure",
 ] as const;
 
 export const SensitivityValues = ["public", "internal", "secret"] as const;
 export const StatusValues = ["active", "superseded", "tentative", "hypothesis", "deprecated"] as const;
 export const RelationKindValues = ["parent", "related", "supersedes"] as const;
-export const SourceKindValues = ["design", "plan", "ledger", "lifecycle", "mindmodel", "manual"] as const;
+export const SourceKindValues = ["design", "plan", "ledger", "lifecycle", "mindmodel", "manual", "skill"] as const;
 
 export type EntityKind = (typeof EntityKindValues)[number];
 export type EntryType = (typeof EntryTypeValues)[number];
