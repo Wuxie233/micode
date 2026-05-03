@@ -3,6 +3,7 @@ export const RUNTIME_LOCAL_EXCLUSIONS: readonly string[] = [
   "dist",
   ".git",
   "thoughts",
+  ".opencode/skills",
   "coverage",
   ".turbo",
   ".cache",
