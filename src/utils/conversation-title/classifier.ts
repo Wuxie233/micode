@@ -1,5 +1,6 @@
 // src/utils/conversation-title/classifier.ts
 import { summaryFromPlanPath, TITLE_STATUS, type TitleStatus } from "./format";
+import { isRealIssueNumber } from "./issue";
 import { isToolLikeTopic, TITLE_SOURCE, type TitleSource } from "./source";
 
 export interface ToolMilestoneInput {
@@ -43,8 +44,7 @@ const positiveIntegerField = (args: Record<string, unknown> | undefined, key: st
   if (!args) return null;
   const value = args[key];
   if (typeof value !== "number") return null;
-  if (!Number.isSafeInteger(value)) return null;
-  if (value <= 0) return null;
+  if (!isRealIssueNumber(value)) return null;
   return value;
 };
 
@@ -59,8 +59,7 @@ const firstStringField = (args: Record<string, unknown> | undefined, keys: reado
 const positiveMatch = (match: RegExpExecArray | null): number | null => {
   if (!match) return null;
   const parsed = Number.parseInt(match[1] ?? "", 10);
-  if (!Number.isSafeInteger(parsed)) return null;
-  if (parsed <= 0) return null;
+  if (!isRealIssueNumber(parsed)) return null;
   return parsed;
 };
 
