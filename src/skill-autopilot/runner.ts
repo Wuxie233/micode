@@ -164,7 +164,7 @@ async function loadExistingSummaries(skillsDir: string): Promise<readonly Existi
   const discovered = await discoverSkills(skillsDir);
   return discovered.map((skill) => ({
     name: skill.name,
-    trigger: skill.frontmatter["x-micode-rationale"] ?? skill.description,
+    trigger: skill.description,
     dedupeKey: dedupeKeyFor({ trigger: skill.description, steps: [] }),
   }));
 }

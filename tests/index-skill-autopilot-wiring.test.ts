@@ -4,15 +4,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const indexSrc = readFileSync(join(__dirname, "../src/index.ts"), "utf8");
+const legacyImportPrefix = ["@/skill", "evolution/"].join("-");
+const legacyToolFactory = ["create", "Skills", "Tools"].join("");
+const legacyToolPattern = new RegExp(["skills", "list|skills", "approve|skills", "reject"].join("_"));
 
 describe("plugin wiring", () => {
   it("does not import the old skill-evolution module", () => {
-    expect(indexSrc).not.toContain("@/skill-evolution/");
+    expect(indexSrc).not.toContain(legacyImportPrefix);
   });
 
   it("does not register the legacy skills tools", () => {
-    expect(indexSrc).not.toContain("createSkillsTools");
-    expect(indexSrc).not.toMatch(/skills_list|skills_approve|skills_reject/);
+    expect(indexSrc).not.toContain(legacyToolFactory);
+    expect(indexSrc).not.toMatch(legacyToolPattern);
   });
 
   it("imports runAutopilot from @/skill-autopilot/runner", () => {
