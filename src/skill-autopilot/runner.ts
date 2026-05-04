@@ -13,6 +13,7 @@ import { type DiscoveredSkill, discoverSkills } from "./loader";
 import { extractRawCandidates, type RawCandidate } from "./miner";
 import { decidePolicy, type ExistingSkillSummary, type PolicyAction } from "./policy";
 import { resolveStrictProjectId } from "./project-id";
+import { parseSkillFile } from "./schema";
 import { hasRejection, recordRejection, runSecurityPipeline } from "./security/pipeline";
 import { dedupeKeyFor } from "./security/secret-gate";
 import { slugifySkillName } from "./slugify";
@@ -21,7 +22,7 @@ import { atomicWriteSkill } from "./writer/atomic-write";
 import { renderIndexMd } from "./writer/index-md";
 import { detectTriggerOverlap } from "./writer/overlap";
 import { computeSourceHashes } from "./writer/source-hashes";
-import { decideSovereignty } from "./writer/sovereignty";
+import { type CurrentSnapshot, decideSovereignty } from "./writer/sovereignty";
 
 const LOG_SCOPE = "skill-autopilot.runner";
 const STATE_FILE = ".opencode/skills/.state.json";
@@ -31,11 +32,9 @@ const DESCRIPTION_LIMIT = 240;
 const VERSION = 1;
 const DEFAULT_HITS = 1;
 const BODY_MULTIPLIER = 2;
-const FRONTMATTER_SEGMENTS_TO_DROP = 2;
 const JSON_INDENT = 2;
 const EMPTY_INDEX_HITS = 0;
 const ISO_DATE_END = 10;
-const SECURITY_BODY_DELIMITER = "---\n";
 
 const mutex = createAsyncMutex();
 
@@ -131,21 +130,17 @@ function renderHashMetadata(hashes: Readonly<Record<string, string>>): string {
 function renderSkillFile(input: RenderInput): string {
   const procedure = renderProcedure(input.candidate);
   const hashes = renderHashMetadata(input.hashes);
+  const sensitivity = config.skillAutopilot.defaultSensitivity;
   return `---
 name: ${input.name}
 description: ${input.candidate.trigger}
 version: ${VERSION}
 x-micode-managed: true
-x-micode-sensitivity: internal
-x-micode-agent-scope:
-  - implementer-frontend
-  - implementer-backend
-  - implementer-general
+x-micode-sensitivity: ${sensitivity}
 x-micode-project-origin: ${input.candidate.projectId}
 x-micode-hits: ${input.hits}
-x-micode-rationale: derived from lifecycle ${input.candidate.lifecycleIssueNumber ?? "-"}
-${hashes}
----
+x-micode-rationale: derived from project evidence (lifecycle ${input.candidate.lifecycleIssueNumber ?? "-"})
+${hashes}---
 ## When to Use
 ${input.candidate.trigger}
 
@@ -205,8 +200,18 @@ function selectSkillName(
   return slugifySkillName({ trigger: candidate.trigger, existing: existingSkillNames(existing) });
 }
 
-function contentBody(content: string): string {
-  return content.split(SECURITY_BODY_DELIMITER).slice(FRONTMATTER_SEGMENTS_TO_DROP).join(SECURITY_BODY_DELIMITER);
+function readCurrentSnapshot(targetPath: string): CurrentSnapshot | null {
+  if (!existsSync(targetPath)) return null;
+  try {
+    const text = readFileSync(targetPath, "utf8");
+    const parsed = parseSkillFile(text);
+    if (!parsed.ok) return null;
+    return { frontmatter: parsed.value.frontmatter as Record<string, unknown> };
+  } catch {
+    // intentional: unreadable existing file MUST block writes; signal via empty frontmatter
+    // marker so sovereignty rejects "missing x-micode-managed marker" -> safe default.
+    return { frontmatter: {} };
+  }
 }
 
 function runSecurity(name: string, candidate: RawCandidate, content: string): string | null {
@@ -216,7 +221,10 @@ function runSecurity(name: string, candidate: RawCandidate, content: string): st
       description: candidate.trigger.slice(0, DESCRIPTION_LIMIT),
       trigger: candidate.trigger,
       steps: candidate.steps,
-      body: contentBody(content),
+      // Full rendered SKILL.md content reaches the security pipeline so that
+      // injection patterns hidden in trailing frontmatter (e.g. rationale,
+      // source-file-hashes) and any future appended sections are scanned.
+      body: content,
       frontmatter: { name, description: candidate.trigger, version: VERSION },
     },
     { dirname: name },
@@ -231,13 +239,18 @@ async function writeSkill(
   action: PolicyAction,
 ): Promise<WriteRecord | null> {
   const targetDir = join(input.run.cwd, SKILLS_DIR, name);
+  const targetPath = join(targetDir, SKILL_FILE);
   const lock = await acquireRenameLock(targetDir);
   if (!lock.ok) return null;
 
   try {
-    const sovereignty = decideSovereignty({ tombstone: null, current: null, candidateHash: input.candidate.dedupeKey });
+    const sovereignty = decideSovereignty({
+      tombstone: null,
+      current: readCurrentSnapshot(targetPath),
+      candidateHash: input.candidate.dedupeKey,
+    });
     if (!sovereignty.proceed) return null;
-    const result = await atomicWriteSkill({ targetPath: join(targetDir, SKILL_FILE), content, expectedVersion: null });
+    const result = await atomicWriteSkill({ targetPath, content, expectedVersion: null });
     if (!result.ok) return null;
     return { skillName: name, action, relPath: `${SKILLS_DIR}/${name}/${SKILL_FILE}`, reason: `policy:${action}` };
   } finally {
