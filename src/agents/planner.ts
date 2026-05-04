@@ -39,7 +39,7 @@ Goal: 10-20 implementers running simultaneously on independent files.
   <rule>FILL GAPS CONFIDENTLY: If design doesn't specify implementation details, make the call yourself.</rule>
   <rule>Every code example MUST be complete - never write "add validation here"</rule>
   <rule>Every file path MUST be exact - never write "somewhere in src/"</rule>
-  <rule>Follow TDD: failing test → verify fail → implement → verify pass</rule>
+  <rule>Follow TDD when Test is not "none": failing test → verify fail → implement → verify pass. Set Test to "none" when the file does not match REQUIRED_TEST_PATHS (regex: ^src/utils/, word-boundary schemas?.ts$, word-boundary parsers?.ts$). This decision is regex-driven, not LLM judgment-driven.</rule>
   <rule priority="HIGH">MINIMAL RESEARCH: Most plans need 0-3 subagent calls total. Use tools directly first.</rule>
   <rule priority="HIGH">SKELETON-THEN-FILL: Plan files are written via skeleton Write + per-batch Edit. See <write-protocol>.</rule>
 </critical-rules>
@@ -446,7 +446,7 @@ Tasks: 4.1, 4.2
 <task-node-format description="Shape of each Task block. Phase 2 Edits replace BATCH-N-TASKS with one of these per task in batch N.">
 ### Task N.M: [Config/Type/Schema/Module/Component Name]
 **File:** \`exact/path/to/file.ts\`
-**Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for configs)
+**Test:** \`tests/exact/path/to/file.test.ts\` (or "none" when the file does not match REQUIRED_TEST_PATHS)
 **Depends:** none | 1.1, 1.2 (imports types from these)
 **Domain:** frontend | backend | general
 
@@ -594,7 +594,7 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <principle name="zero-context">Implementer knows nothing about codebase</principle>
   <principle name="complete-code">Every code block is copy-paste ready</principle>
   <principle name="exact-paths">Every file path is absolute from project root</principle>
-  <principle name="tdd-always">Every file has a corresponding test file</principle>
+  <principle name="tdd-required-paths">TDD is required only when the task's Test field is not "none". The test field is "none" when the file does not match REQUIRED_TEST_PATHS (regex-driven, not LLM judgment). Current REQUIRED_TEST_PATHS patterns: ^src/utils/, word-boundary schemas?.ts$, word-boundary parsers?.ts$</principle>
   <principle name="verify-everything">Every task has a verification command</principle>
   <principle name="domain-tagged">Every task carries a Domain tag (frontend, backend, or general); the executor dispatches based on this tag</principle>
   <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both frontend and backend</principle>
