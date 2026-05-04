@@ -1,10 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 
-import { ATLAS_SCHEMA_VERSION } from "@/atlas/config";
+import { type OrchestratorDeps, runColdInit } from "@/atlas/cold-init/orchestrator";
+import { writeVault } from "@/atlas/cold-init/vault-writer";
 import { createAtlasPaths } from "@/atlas/paths";
-import { writeSchemaVersion } from "@/atlas/schema-version";
-import { renderIndexPage, renderPhaseRoadmap } from "@/atlas/templates";
 
 export type InitMode = "fresh" | "reconcile" | "force-rebuild";
 
@@ -14,6 +12,7 @@ export interface InitInput {
   readonly projectName: string;
   readonly projectType: string;
   readonly gitTag?: string;
+  readonly deps?: Partial<OrchestratorDeps>;
 }
 
 export type InitOutcome = "ok" | "rejected" | "dry-run";
@@ -23,44 +22,52 @@ export interface InitResult {
   readonly reason?: string;
   readonly report?: string;
   readonly gitTag?: string;
+  readonly nodesWritten?: number;
+  readonly questionsAsked?: number;
+  readonly logPath?: string;
 }
 
-const ensureDirs = (paths: ReturnType<typeof createAtlasPaths>): void => {
-  for (const dir of [
-    paths.root,
-    paths.impl,
-    paths.behavior,
-    paths.decisions,
-    paths.risks,
-    paths.timeline,
-    paths.archive,
-    paths.meta,
-    paths.challenges,
-    paths.log,
-    paths.staging,
-  ]) {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  }
+const QUESTION_TIMEOUT_MS = 0;
+const EXISTING_ATLAS_REASON = "atlas/ already exists; pass --reconcile or --force-rebuild";
+const RECONCILE_OWNER = "lifecycle-finish atlas-compiler owns reconcile";
+
+const defaultDeps: OrchestratorDeps = {
+  projectMemory: { list: () => Promise.resolve([]) },
+  askQuestions: null,
+  writeVault,
 };
 
-const writeSkeleton = (input: InitInput): void => {
-  const paths = createAtlasPaths(input.projectRoot);
-  ensureDirs(paths);
-  writeFileSync(paths.indexFile, renderIndexPage({ projectName: input.projectName }), "utf8");
-  writeFileSync(join(paths.decisions, "atlas-phase-roadmap.md"), renderPhaseRoadmap(), "utf8");
-  writeSchemaVersion(paths.schemaVersionFile, ATLAS_SCHEMA_VERSION);
-};
+const createOrchestratorDeps = (deps: Partial<OrchestratorDeps> = {}): OrchestratorDeps => ({
+  projectMemory: deps.projectMemory ?? defaultDeps.projectMemory,
+  askQuestions: deps.askQuestions ?? defaultDeps.askQuestions,
+  writeVault: deps.writeVault ?? defaultDeps.writeVault,
+});
 
 export async function runAtlasInit(input: InitInput): Promise<InitResult> {
   const paths = createAtlasPaths(input.projectRoot);
   const exists = existsSync(paths.root);
   if (exists && input.mode === "fresh") {
-    return { outcome: "rejected", reason: "atlas/ already exists; pass --reconcile or --force-rebuild" };
+    return { outcome: "rejected", reason: EXISTING_ATLAS_REASON };
   }
   if (input.mode === "reconcile") {
-    return { outcome: "dry-run", report: `would refresh ${paths.root}; no writes performed` };
+    return { outcome: "dry-run", report: `would refresh ${paths.root}; ${RECONCILE_OWNER}` };
   }
-  writeSkeleton(input);
-  if (input.mode === "force-rebuild") return { outcome: "ok", gitTag: input.gitTag };
-  return { outcome: "ok" };
+  if (input.mode === "force-rebuild" && exists) {
+    rmSync(paths.root, { recursive: true, force: true });
+  }
+  const deps = createOrchestratorDeps(input.deps);
+  const outcome = await runColdInit(
+    {
+      projectRoot: input.projectRoot,
+      options: { askQuestions: deps.askQuestions !== null, questionTimeoutMs: QUESTION_TIMEOUT_MS },
+    },
+    deps,
+  );
+  return {
+    outcome: "ok",
+    gitTag: input.gitTag,
+    nodesWritten: outcome.nodesWritten,
+    questionsAsked: outcome.questionsAsked,
+    logPath: outcome.logPath ?? undefined,
+  };
 }

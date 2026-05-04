@@ -76,6 +76,7 @@ export function renderPhaseRoadmap(): string {
     "atomic write protocol; mtime-based edit detection; challenge flow with dedup and cooldown;",
     "wikilink rewiring constraint; soft delete to `_archive/`; first-person maintenance log;",
     "`/atlas-status`; `/atlas-init --reconcile` and `--force-rebuild`; `atlas:` commit prefix;",
+    "`/atlas-init` is a comprehensive cold-start orchestrator independent of lifecycle handoff;",
     "User Perspective lifecycle enforcement; schema version file at `_meta/schema-version`.\n",
     "### Phase 3: Hardening and operational maturity (deferred)\n",
     "Independent lint and GC pass; project type profile system; agent2 failure escalation;",

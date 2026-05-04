@@ -5,10 +5,15 @@ export interface AtlasCommandDefinition {
   readonly description: string;
 }
 
+const ATLAS_INIT_DESCRIPTION = [
+  "Cold-start the project atlas vault: discover, plan, optionally ask Octto questions,",
+  "and write a usable Obsidian vault (use --reconcile or --force-rebuild on existing vaults)",
+].join(" ");
+
 export const atlasCommandDefinitions: readonly AtlasCommandDefinition[] = [
   {
     name: "/atlas-init",
-    description: "Initialise the project atlas vault (use --reconcile or --force-rebuild on existing vaults)",
+    description: ATLAS_INIT_DESCRIPTION,
   },
   {
     name: "/atlas-status",
