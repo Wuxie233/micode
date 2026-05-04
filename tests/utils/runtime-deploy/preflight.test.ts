@@ -62,6 +62,12 @@ describe("runPreflight", () => {
     expect(r.kind).toBe("ok");
   });
 
+  it("allows source dirty when force=true", async () => {
+    writeFileSync(join(source, "dirty.txt"), "x");
+    const r = await runPreflight({ source, runtime, force: true });
+    expect(r.kind).toBe("ok");
+  });
+
   it("fails when rsync is missing", async () => {
     const r = await runPreflight({
       source,
