@@ -21,6 +21,10 @@ yarn.lock
 # OS files
 .DS_Store
 
+# Python cache
+__pycache__/
+*.py[cod]
+
 # IDE
 .idea/
 
