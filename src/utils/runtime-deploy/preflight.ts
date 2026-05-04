@@ -28,7 +28,7 @@ export async function runPreflight(input: PreflightInput): Promise<PreflightResu
   }
 
   const sourceDirty = await isDirty(input.source);
-  if (sourceDirty) {
+  if (sourceDirty && !input.force) {
     return { kind: "failed", reason: "source-dirty", detail: `Source has uncommitted changes: ${input.source}` };
   }
 

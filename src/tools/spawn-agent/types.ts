@@ -17,14 +17,12 @@ export interface SpawnSuccess {
   readonly diagnostics?: string;
 }
 
-export interface SpawnPreserved {
+export interface SpawnTaskIssue {
   readonly outcome: typeof SPAWN_OUTCOMES.TASK_ERROR | typeof SPAWN_OUTCOMES.BLOCKED;
   readonly description: string;
   readonly agent: string;
   readonly elapsedMs: number;
-  readonly sessionId: string;
   readonly output: string;
-  readonly resumeCount: number;
   readonly diagnostics?: string;
 }
 
@@ -46,7 +44,7 @@ export interface SpawnReviewChanges {
   readonly diagnostics?: string;
 }
 
-export type SpawnResult = SpawnSuccess | SpawnPreserved | SpawnHardFailure | SpawnReviewChanges;
+export type SpawnResult = SpawnSuccess | SpawnTaskIssue | SpawnHardFailure | SpawnReviewChanges;
 
 export interface ResumeSubagentInput {
   readonly session_id: string;

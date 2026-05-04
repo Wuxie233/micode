@@ -6,7 +6,6 @@ import { cleanupGeneration } from "@/tools/spawn-agent/cleanup";
 import { createSpawnSessionRegistry } from "@/tools/spawn-agent/spawn-session-registry";
 import { createSpawnAgentTool } from "../../../src/tools/spawn-agent";
 import { createPreservedRegistry } from "../../../src/tools/spawn-agent/registry";
-import { SPAWN_OUTCOMES } from "../../../src/tools/spawn-agent/types";
 
 const SUCCESS_TASK = {
   agent: "implementer-general",
@@ -53,7 +52,7 @@ const callExecute = async (toolDef: ReturnType<typeof createSpawnAgentTool>, arg
 };
 
 describe("spawn_agent integration", () => {
-  it("preserves resumable sessions and formats structured parallel results", async () => {
+  it("deletes internal sessions and formats structured parallel results", async () => {
     const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
     const toolDef = createSpawnAgentTool(createCtx(), {
       registry,
@@ -74,30 +73,15 @@ describe("spawn_agent integration", () => {
     const output = await callExecute(toolDef, {
       agents: [SUCCESS_TASK, TASK_ERROR_TASK, BLOCKED_TASK, HARD_FAILURE_TASK],
     });
-    const preserved = registry.get("session-blocked");
-    const taskError = registry.get("session-task-error");
-
     expect(output).toContain("| Successful task | implementer-general | success |");
     expect(output).toContain("| Task error task | implementer-frontend | task_error |");
     expect(output).toContain("| Blocked task | implementer-backend | blocked |");
     expect(output).toContain("| Hard failure task | reviewer | hard_failure |");
-    expect(output).toContain("| - | Spawned session exploded |");
-    expect(output).toContain("**SessionID**: session-task-error");
-    expect(output).toContain("**SessionID**: session-blocked");
-    expect(taskError).toMatchObject({
-      sessionId: "session-task-error",
-      agent: TASK_ERROR_TASK.agent,
-      description: TASK_ERROR_TASK.description,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
-    expect(preserved).toMatchObject({
-      sessionId: "session-blocked",
-      agent: BLOCKED_TASK.agent,
-      description: BLOCKED_TASK.description,
-      outcome: SPAWN_OUTCOMES.BLOCKED,
-      resumeCount: 0,
-    });
+    expect(output).toContain("Spawned session exploded");
+    expect(output).not.toContain("**SessionID**");
+    expect(output).not.toContain("Resume count");
+    expect(registry.get("session-task-error")).toBeNull();
+    expect(registry.get("session-blocked")).toBeNull();
     expect(registry.get("session-success")).toBeNull();
     expect(registry.get(HARD_FAILURE_SESSION)).toBeNull();
   });
