@@ -2,6 +2,9 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { DEFAULT_MODEL } from "@/utils/config";
 import { artifactSearcherAgent } from "./artifact-searcher";
+import { atlasCompilerAgent } from "./atlas-compiler";
+import { atlasWorkerBehaviorAgent } from "./atlas-worker-behavior";
+import { atlasWorkerBuildAgent } from "./atlas-worker-build";
 import { bootstrapperAgent } from "./bootstrapper";
 import { brainstormerAgent } from "./brainstormer";
 import { codebaseAnalyzerAgent } from "./codebase-analyzer";
@@ -53,6 +56,9 @@ export const agents: Record<string, AgentConfig> = {
   "executor-direct": { ...executorDirectAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
   "artifact-searcher": { ...artifactSearcherAgent, model: DEFAULT_MODEL },
+  "atlas-compiler": { ...atlasCompilerAgent, model: DEFAULT_MODEL },
+  "atlas-worker-build": { ...atlasWorkerBuildAgent, model: DEFAULT_MODEL },
+  "atlas-worker-behavior": { ...atlasWorkerBehaviorAgent, model: DEFAULT_MODEL },
   "notification-courier": { ...notificationCourierAgent, model: DEFAULT_MODEL },
   "project-initializer": { ...projectInitializerAgent, model: DEFAULT_MODEL },
   octto: { ...octtoAgent, model: DEFAULT_MODEL },
