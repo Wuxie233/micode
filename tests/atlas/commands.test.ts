@@ -9,6 +9,11 @@ describe("atlas slash commands", () => {
     for (const command of atlasCommandDefinitions) {
       expect(command.description.length).toBeGreaterThan(0);
     }
+    const atlasInitDescription = [
+      "Cold-start the project atlas vault: discover, plan, optionally ask Octto questions,",
+      "and write a usable Obsidian vault (use --reconcile or --force-rebuild on existing vaults)",
+    ].join(" ");
+    expect(atlasCommandDefinitions[0]?.description).toBe(atlasInitDescription);
   });
 
   it("parses --reconcile and --force-rebuild flags for /atlas-init", () => {
