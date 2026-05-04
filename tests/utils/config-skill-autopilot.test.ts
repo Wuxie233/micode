@@ -13,8 +13,6 @@ describe("config.skillAutopilot", () => {
     expect(sa.maxStepsPerSkill).toBeGreaterThan(0);
     expect(sa.maxSkillsPerProject).toBeGreaterThan(0);
     expect(sa.maxIndexBytes).toBeGreaterThan(0);
-    expect(sa.injectionCharBudget).toBeGreaterThan(0);
-    expect(sa.injectionSensitivityCeiling).toBe("internal");
     expect(sa.recurrenceMinHits).toBe(2);
     expect(sa.recurrenceMinDistinctIssues).toBe(2);
     expect(sa.maxWritesPerLifecycle).toBeGreaterThanOrEqual(1);
@@ -22,12 +20,12 @@ describe("config.skillAutopilot", () => {
     expect(sa.runtimeInstallPath).toBe("/root/.micode");
   });
 
-  it("supports x-micode-agent-scope defaults that exclude reviewer/planner/executor", () => {
-    expect(config.skillAutopilot.defaultAgentScope).toEqual(
-      expect.arrayContaining(["implementer-frontend", "implementer-backend", "implementer-general"]),
-    );
-    expect(config.skillAutopilot.defaultAgentScope).not.toContain("reviewer");
-    expect(config.skillAutopilot.defaultAgentScope).not.toContain("planner");
-    expect(config.skillAutopilot.defaultAgentScope).not.toContain("executor");
+  it("uses a public-by-default sensitivity policy", () => {
+    const sensitivities = config.skillAutopilot.allowedAutoWriteSensitivities;
+
+    expect(config.skillAutopilot.defaultSensitivity).toBe("public");
+    expect(sensitivities).toEqual(["public"]);
+    expect(sensitivities).not.toContain("internal");
+    expect(sensitivities).not.toContain("secret");
   });
 });

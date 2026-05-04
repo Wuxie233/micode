@@ -12,6 +12,16 @@ const baseCandidate = {
   lifecycleIssueNumber: 27,
 } as const;
 
+function recurringCreateInput() {
+  return {
+    candidate: baseCandidate,
+    hitsByKey: { k1: 5 },
+    distinctIssuesByKey: { k1: new Set([27, 26]) },
+    existingSkills: [],
+    writesThisLifecycle: 0,
+  };
+}
+
 describe("decidePolicy", () => {
   it("skips when hits below recurrenceMinHits", () => {
     const r = decidePolicy({
@@ -66,5 +76,27 @@ describe("decidePolicy", () => {
       writesThisLifecycle: 0,
     });
     expect(r.action).toBe("patch");
+  });
+
+  it("skips internal proposedSensitivity even when recurrence would create", () => {
+    const r = decidePolicy({ ...recurringCreateInput(), proposedSensitivity: "internal" });
+    expect(r.action).toBe("skip");
+    expect(r.reason).toContain("not in allow-list");
+  });
+
+  it("skips secret proposedSensitivity even when recurrence would create", () => {
+    const r = decidePolicy({ ...recurringCreateInput(), proposedSensitivity: "secret" });
+    expect(r.action).toBe("skip");
+    expect(r.reason).toContain("not in allow-list");
+  });
+
+  it("creates when public proposedSensitivity meets recurrence requirements", () => {
+    const r = decidePolicy({ ...recurringCreateInput(), proposedSensitivity: "public" });
+    expect(r.action).toBe("create");
+  });
+
+  it("creates when proposedSensitivity is omitted and recurrence requirements pass", () => {
+    const r = decidePolicy(recurringCreateInput());
+    expect(r.action).toBe("create");
   });
 });
