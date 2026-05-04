@@ -30,9 +30,9 @@ beforeEach(async () => {
   runtime = join(workspace, "rt");
   mkdirSync(source, { recursive: true });
   mkdirSync(runtime, { recursive: true });
-  await $`git init -q ${source}`;
+  await initRepo(source);
   await $`git -C ${source} commit --allow-empty -m init -q`;
-  await $`git init -q ${runtime}`;
+  await initRepo(runtime);
   await $`git -C ${runtime} commit --allow-empty -m init -q`;
 });
 
@@ -106,4 +106,10 @@ function writeMinimalProject(dir: string): void {
 async function commitFixture(dir: string): Promise<void> {
   await $`git -C ${dir} add ${PACKAGE_FILE} ${LOCKFILE} ${BUILD_FILE}`;
   await $`git -C ${dir} commit -m fixture -q`;
+}
+
+async function initRepo(repo: string): Promise<void> {
+  await $`git init -q ${repo}`;
+  await $`git -C ${repo} config user.name runtime-deploy-test`;
+  await $`git -C ${repo} config user.email runtime-deploy-test@example.com`;
 }

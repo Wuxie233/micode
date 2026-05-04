@@ -14,9 +14,9 @@ beforeEach(async () => {
   workspace = mkdtempSync(join(tmpdir(), "rd-pre-"));
   source = join(workspace, "src-repo");
   runtime = join(workspace, "rt-repo");
-  await $`git init -q ${source}`;
+  await initRepo(source);
   await $`git -C ${source} commit --allow-empty -m init -q`;
-  await $`git init -q ${runtime}`;
+  await initRepo(runtime);
   await $`git -C ${runtime} commit --allow-empty -m init -q`;
 });
 
@@ -88,3 +88,9 @@ describe("runPreflight", () => {
     if (r.kind === "failed") expect(r.reason).toBe("bun-missing");
   });
 });
+
+async function initRepo(repo: string): Promise<void> {
+  await $`git init -q ${repo}`;
+  await $`git -C ${repo} config user.name runtime-deploy-test`;
+  await $`git -C ${repo} config user.email runtime-deploy-test@example.com`;
+}
