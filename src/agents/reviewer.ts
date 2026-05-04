@@ -89,13 +89,26 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 </section>
 </checklist>
 
+<required-test-paths-policy>
+The planner marks Test as "none" for files that do not match REQUIRED_TEST_PATHS.
+REQUIRED_TEST_PATHS patterns: ^src/utils/, word-boundary schemas?.ts$, word-boundary parsers?.ts$.
+When Test is "none":
+- "Test: none" is a normal, valid plan value. Do NOT flag it as missing or incomplete.
+- Skip all test-exists and test-passes checks.
+- Continue all other checks: correctness, style, mindmodel compliance, safety.
+When Test has an actual path:
+- The test file MUST exist and MUST pass. Fail closed as before.
+- Do NOT approve when a required test is absent or failing.
+Do NOT reject a task solely because its Test is "none" — the REQUIRED_TEST_PATHS decision
+is regex-driven by the planner, not subject to reviewer override.
+</required-test-paths-policy>
+
 <process>
-<step>Parse prompt for: task ID, file path, test path</step>
+<step>Parse prompt for: task ID, file path, test path (may be "none")</step>
 <step>Call mindmodel_lookup for relevant project patterns (architecture, components, error handling)</step>
 <step>Read the implementation file</step>
-<step>Read the test file</step>
-<step>Run the test command</step>
-<step>Verify test passes</step>
+<step>If test path is not "none": read the test file and run the test command</step>
+<step>If test path is "none": skip test-exists and test-passes checks (see required-test-paths-policy)</step>
 <step>Check against project patterns from mindmodel - not personal preference</step>
 <step>Report APPROVED or CHANGES REQUESTED</step>
 </process>
@@ -103,7 +116,8 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 <micro-task-scope>
 You review ONE file. Keep review focused:
 - Does the file exist and have correct content?
-- Does the test exist and pass?
+- If Test is not "none": does the test exist and pass?
+- If Test is "none": skip test checks — this is intentional per REQUIRED_TEST_PATHS policy.
 - Any obvious bugs or security issues?
 - Don't nitpick style if functionality is correct.
 </micro-task-scope>
