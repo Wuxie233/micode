@@ -4,7 +4,6 @@ import type { PluginInput } from "@opencode-ai/plugin";
 import { createResumeSubagentTool } from "../../src/tools/resume-subagent";
 import { createSpawnAgentTool } from "../../src/tools/spawn-agent";
 import { createPreservedRegistry } from "../../src/tools/spawn-agent/registry";
-import { SPAWN_OUTCOMES } from "../../src/tools/spawn-agent/types";
 
 const SUCCESS_TASK = {
   agent: "implementer-general",
@@ -87,7 +86,7 @@ async function callResumeExecute(toolDef: ReturnType<typeof createResumeSubagent
 }
 
 describe("spawn_agent allSettled integration", () => {
-  it("preserves task_error sessions and resumes them to success", async () => {
+  it("deletes task_error sessions and rejects resume", async () => {
     const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
     const recorder: Recorder = { promptCalls: [], deleteCalls: [] };
     const ctx = createCtx(recorder);
@@ -109,35 +108,26 @@ describe("spawn_agent allSettled integration", () => {
     expect(spawnOutput).toContain("| Successful task | implementer-general | success |");
     expect(spawnOutput).toContain("| Task error task | implementer-frontend | task_error |");
     expect(spawnOutput).toContain("| Hard failure task | reviewer | hard_failure |");
-    expect(registry.size()).toBe(1);
-    expect(registry.get(TASK_ERROR_SESSION)).toMatchObject({
-      sessionId: TASK_ERROR_SESSION,
-      agent: TASK_ERROR_TASK.agent,
-      description: TASK_ERROR_TASK.description,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
+    expect(spawnOutput).not.toContain("SessionID");
+    expect(registry.size()).toBe(0);
+    expect(registry.get(TASK_ERROR_SESSION)).toBeNull();
     expect(registry.get(SUCCESS_SESSION)).toBeNull();
     expect(recorder.deleteCalls).toContain(SUCCESS_SESSION);
+    expect(recorder.deleteCalls).toContain(TASK_ERROR_SESSION);
 
     const resumeTool = createResumeSubagentTool(ctx, { registry });
     const resumeOutput = await callResumeExecute(resumeTool, { session_id: TASK_ERROR_SESSION });
 
-    expect(resumeOutput).toContain("**Outcome**: success");
-    expect(resumeOutput).toContain(`**SessionID**: ${TASK_ERROR_SESSION}`);
-    expect(resumeOutput).toContain("**Resume count**: 1");
-    expect(resumeOutput).toContain(RESUME_SUCCESS_OUTPUT);
-    expect(recorder.deleteCalls).toContain(TASK_ERROR_SESSION);
+    expect(resumeOutput).toContain("**Outcome**: hard_failure");
+    expect(resumeOutput).toContain("**SessionID**: -");
+    expect(resumeOutput).toContain("Session not preserved or expired.");
     expect(registry.size()).toBe(0);
 
     const secondSpawnOutput = await callSpawnExecute(spawnTool, { agents: [TASK_ERROR_TASK] });
 
     expect(secondSpawnOutput).toContain("**Outcome**: task_error");
     expect(secondSpawnOutput).not.toContain("Generation fence");
-    expect(registry.get(TASK_ERROR_SESSION)).toMatchObject({
-      sessionId: TASK_ERROR_SESSION,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
+    expect(secondSpawnOutput).not.toContain("SessionID");
+    expect(registry.get(TASK_ERROR_SESSION)).toBeNull();
   });
 });

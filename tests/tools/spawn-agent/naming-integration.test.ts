@@ -14,11 +14,6 @@ interface CreateRequest {
   readonly body: { readonly title?: string };
 }
 
-interface UpdateRequest {
-  readonly path: { readonly id: string };
-  readonly body: { readonly title?: string };
-}
-
 function createCtx(assistantOutput: string) {
   const create = mock(async () => ({ data: { id: SESSION_ID } }));
   const prompt = mock(async () => ({}));
@@ -65,7 +60,7 @@ describe("spawn-agent naming integration", () => {
     expect(stubs.update).not.toHaveBeenCalled();
   });
 
-  it("blocked path: session is preserved and title is updated to 阻塞", async () => {
+  it("blocked path: session is deleted without terminal-title write", async () => {
     const stubs = createCtx(BLOCKED_OUTPUT);
     const registry = createPreservedRegistry(REGISTRY_OPTS);
     const tool = createSpawnAgentTool(stubs.ctx, { registry });
@@ -83,13 +78,9 @@ describe("spawn-agent naming integration", () => {
       { metadata: () => {} } as never,
     );
 
-    expect(stubs.delete).not.toHaveBeenCalled();
-    expect(stubs.update).toHaveBeenCalledTimes(1);
-
-    const updateCall = stubs.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
-    expect(updateCall?.path.id).toBe(SESSION_ID);
-    expect(updateCall?.body.title).toBe("阻塞: 审查 PR #42");
-    expect(registry.get(SESSION_ID)).not.toBeNull();
+    expect(stubs.delete).toHaveBeenCalledTimes(1);
+    expect(stubs.update).not.toHaveBeenCalled();
+    expect(registry.get(SESSION_ID)).toBeNull();
   });
 
   it("missing description falls back to Chinese role label across the full pipeline", async () => {
