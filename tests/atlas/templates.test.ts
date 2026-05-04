@@ -31,6 +31,7 @@ describe("page templates", () => {
   it("renders the phase roadmap with phase 2 and phase 3 sections", () => {
     const text = renderPhaseRoadmap();
     expect(text).toContain("Phase 2: Closed-loop integration");
+    expect(text).toContain("comprehensive cold-start orchestrator independent of lifecycle handoff");
     expect(text).toContain("Phase 3");
     expect(text).toContain("layer: decision");
   });

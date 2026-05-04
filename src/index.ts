@@ -6,7 +6,11 @@ import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
 import type { McpLocalConfig, Part } from "@opencode-ai/sdk";
 
 import { agents, PRIMARY_AGENT_NAME } from "@/agents";
+import { type OcttoQuestionPayload, toOcttoPayloads } from "@/atlas/cold-init/octto-adapter";
+import type { AnswerMap, OrchestratorDeps } from "@/atlas/cold-init/orchestrator";
+import { writeVault } from "@/atlas/cold-init/vault-writer";
 import { atlasCommandDefinitions, parseAtlasInitArgs } from "@/atlas/commands";
+import type { ProjectMemoryEntry } from "@/atlas/sources/project-memory";
 import { loadAvailableModels, loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
 import {
   createArtifactAutoIndexHook,
@@ -56,6 +60,7 @@ import {
   type ReconcileReport,
   reconcilePersistedSessions,
 } from "@/octto/persistence";
+import type { Answer, SessionStore } from "@/octto/session";
 import { type SessionListeners, safelyInvoke } from "@/octto/session/listeners";
 import type { Session } from "@/octto/session/types";
 import { evaluatePushGuard } from "@/skill-autopilot/push-guard";
@@ -174,6 +179,9 @@ const ATLAS_PROJECT_TYPE = "opencode-plugin";
 const ATLAS_ARGS_SPLIT_PATTERN = /\s+/u;
 const ATLAS_JSON_FENCE = "```json";
 const MARKDOWN_FENCE = "```";
+const ATLAS_INIT_OCTTO_TITLE = "Project Atlas cold init";
+const ATLAS_INIT_OCTTO_SCOPE = "atlas.init.octto";
+const EMPTY_PROJECT_MEMORY: readonly ProjectMemoryEntry[] = [];
 
 interface AtlasCommandInput {
   readonly command: string;
@@ -183,6 +191,15 @@ interface AtlasCommandInput {
 
 interface AtlasCommandOutput {
   readonly parts: Part[];
+}
+
+interface AtlasCommandDeps {
+  readonly buildColdInitDeps: (ownerSessionID: string) => OrchestratorDeps;
+}
+
+interface AtlasOcttoTracker {
+  readonly onCreated?: (parentSessionId: string, octtoSessionId: string) => void;
+  readonly onEnded?: (parentSessionId: string, octtoSessionId: string) => void;
 }
 
 function normalizeAtlasCommandName(name: string): string {
@@ -212,7 +229,125 @@ function appendAtlasCommandPart(input: AtlasCommandInput, output: AtlasCommandOu
   });
 }
 
-async function runAtlasCommand(ctx: PluginInput, input: AtlasCommandInput, output: AtlasCommandOutput): Promise<void> {
+const buildProjectMemoryReader = (): OrchestratorDeps["projectMemory"] => ({
+  list: () => Promise.resolve(EMPTY_PROJECT_MEMORY),
+});
+
+const selectedToString = (value: unknown): string | null => {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  return value.filter((item): item is string => typeof item === "string").join(", ");
+};
+
+const answerToString = (answer: Answer | undefined): string => {
+  if (!answer) return "";
+  if ("text" in answer) return answer.text;
+  if ("code" in answer) return answer.code;
+  if ("selected" in answer) return selectedToString(answer.selected) ?? "";
+  if ("choice" in answer) return answer.choice;
+  if ("emoji" in answer) return answer.emoji;
+  if ("value" in answer) return String(answer.value);
+  return JSON.stringify(answer) ?? "";
+};
+
+const mapQuestionIds = (
+  questionIds: readonly string[],
+  payloads: readonly OcttoQuestionPayload[],
+): ReadonlyMap<string, string> => {
+  const keys = new Map<string, string>();
+  for (const [index, questionId] of questionIds.entries()) {
+    const payload = payloads[index];
+    if (payload) keys.set(questionId, payload.questionKey);
+  }
+  return keys;
+};
+
+const recordAtlasAnswer = (
+  answers: Record<string, string>,
+  questionKeys: ReadonlyMap<string, string>,
+  questionId: string | undefined,
+  answer: Answer | undefined,
+): void => {
+  if (!questionId) return;
+  const key = questionKeys.get(questionId);
+  if (!key) return;
+  answers[key] = answerToString(answer);
+};
+
+async function endAtlasOcttoSession(
+  sessions: SessionStore,
+  ownerSessionID: string,
+  sessionId: string,
+  tracker?: AtlasOcttoTracker,
+): Promise<void> {
+  try {
+    await sessions.endSession(sessionId);
+    tracker?.onEnded?.(ownerSessionID, sessionId);
+  } catch (error) {
+    log.warn(ATLAS_INIT_OCTTO_SCOPE, `end session failed: ${extractErrorMessage(error)}`);
+  }
+}
+
+async function collectAtlasAnswers(
+  sessions: SessionStore,
+  sessionId: string,
+  payloads: readonly OcttoQuestionPayload[],
+  questionIds: readonly string[],
+): Promise<AnswerMap> {
+  const questionKeys = mapQuestionIds(questionIds, payloads);
+  const answers: Record<string, string> = {};
+  for (const _payload of payloads) {
+    const next = await sessions.getNextAnswer({ session_id: sessionId, block: true });
+    if (!next.completed) break;
+    recordAtlasAnswer(answers, questionKeys, next.question_id, next.response);
+  }
+  return answers;
+}
+
+function createAtlasOcttoAsker(
+  sessions: SessionStore,
+  ownerSessionID: string,
+  tracker?: AtlasOcttoTracker,
+): OrchestratorDeps["askQuestions"] {
+  return async (questions) => {
+    let sessionId: string | undefined;
+    try {
+      const payloads = toOcttoPayloads(questions);
+      const session = await sessions.startSession({
+        title: ATLAS_INIT_OCTTO_TITLE,
+        ownerSessionID,
+        questions: payloads.map((payload) => ({ type: payload.type, config: payload.config })),
+      });
+      sessionId = session.session_id;
+      tracker?.onCreated?.(ownerSessionID, sessionId);
+      return await collectAtlasAnswers(sessions, sessionId, payloads, session.question_ids ?? []);
+    } catch (error) {
+      log.warn(ATLAS_INIT_OCTTO_SCOPE, `question session failed: ${extractErrorMessage(error)}`);
+      return null;
+    } finally {
+      if (sessionId) await endAtlasOcttoSession(sessions, ownerSessionID, sessionId, tracker);
+    }
+  };
+}
+
+function buildColdInitDeps(
+  sessions: SessionStore,
+  ownerSessionID: string,
+  tracker?: AtlasOcttoTracker,
+): OrchestratorDeps {
+  return {
+    projectMemory: buildProjectMemoryReader(),
+    askQuestions: createAtlasOcttoAsker(sessions, ownerSessionID, tracker),
+    writeVault: (input) => writeVault(input),
+  };
+}
+
+async function runAtlasCommand(
+  ctx: PluginInput,
+  input: AtlasCommandInput,
+  output: AtlasCommandOutput,
+  deps: AtlasCommandDeps,
+): Promise<void> {
   const command = normalizeAtlasCommandName(input.command);
   if (command === ATLAS_INIT_COMMAND) {
     const parsed = parseAtlasInitArgs(splitAtlasArgs(input.arguments));
@@ -221,6 +356,7 @@ async function runAtlasCommand(ctx: PluginInput, input: AtlasCommandInput, outpu
       mode: parsed.mode,
       projectName: basename(ctx.directory),
       projectType: ATLAS_PROJECT_TYPE,
+      deps: deps.buildColdInitDeps(input.sessionID),
     });
     appendAtlasCommandPart(input, output, formatAtlasCommandResult(command, result));
     return;
@@ -772,7 +908,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   // Track octto sessions per opencode session for cleanup
   const octtoSessions = new Map<string, Set<string>>();
 
-  const octtoTools = createOcttoTools(octtoSessionStore, ctx.client, {
+  const octtoTracker: AtlasOcttoTracker = {
     onCreated: (parentSessionId, octtoSessionId) => {
       const sessions = octtoSessions.get(parentSessionId) ?? new Set<string>();
       sessions.add(octtoSessionId);
@@ -788,7 +924,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
         octtoSessions.delete(parentSessionId);
       }
     },
-  });
+  };
+
+  const octtoTools = createOcttoTools(octtoSessionStore, ctx.client, octtoTracker);
 
   async function cleanupDeletedSession(event: { properties?: unknown }): Promise<void> {
     const props = event.properties as { info?: { id?: string } } | undefined;
@@ -868,7 +1006,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "command.execute.before": async (input, output) => {
-      await runAtlasCommand(ctx, input, output);
+      await runAtlasCommand(ctx, input, output, {
+        buildColdInitDeps: (ownerSessionID) => buildColdInitDeps(octtoSessionStore, ownerSessionID, octtoTracker),
+      });
     },
 
     "chat.message": async (input, output) => {
