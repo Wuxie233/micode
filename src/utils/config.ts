@@ -336,22 +336,3 @@ export const config = {
 
 /** Plugin fallback model — single source of truth for the default model string */
 export const DEFAULT_MODEL = config.model.default;
-
-/**
- * Paths that always require a corresponding test file.
- * The regex is matched against the implementation file path (relative from project root).
- * Patterns:
- *   1. Anything under src/utils/ — shared utilities tend to be high-leverage and easy to unit-test.
- *   2. Files whose basename is schema.ts / schemas.ts — Valibot/Zod schema definitions must be exercised.
- *   3. Files whose basename is parser.ts / parsers.ts — parsing logic has well-defined inputs/outputs.
- */
-export const REQUIRED_TEST_PATHS: readonly RegExp[] = [/^src\/utils\//, /\bschemas?\.ts$/, /\bparsers?\.ts$/] as const;
-
-/**
- * Returns true when the given file path matches at least one of REQUIRED_TEST_PATHS,
- * meaning the planner must emit a test file for it and the reviewer must verify it.
- * The decision is regex-driven, not LLM judgment-driven.
- */
-export function requiresTest(filePath: string): boolean {
-  return REQUIRED_TEST_PATHS.some((pattern) => pattern.test(filePath));
-}
