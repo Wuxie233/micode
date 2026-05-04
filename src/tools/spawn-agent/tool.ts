@@ -6,7 +6,7 @@ import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
-import { createInternalSession, deleteInternalSession, updateInternalSession } from "@/utils/internal-session";
+import { createInternalSession, deleteInternalSession } from "@/utils/internal-session";
 import { log } from "@/utils/logger";
 import { type ModelReference, resolveModelReference } from "@/utils/model-selection";
 import {
@@ -19,14 +19,10 @@ import {
 import { buildDiagnosticLine, type DiagnosticFields } from "./diagnostics";
 import { formatSpawnResults } from "./format";
 import { evaluateFence, FENCE_DECISIONS, type FenceResult } from "./generation-fence";
-import { buildSpawnCompletionTitle, buildSpawnRunningTitle } from "./naming";
+import { buildSpawnRunningTitle } from "./naming";
 import type { PreservedRegistry } from "./registry";
 import { retryOnTransient } from "./retry";
-import {
-  createSpawnSessionRegistry,
-  type SpawnPreservedRecord,
-  type SpawnSessionRegistry,
-} from "./spawn-session-registry";
+import { createSpawnSessionRegistry, type SpawnSessionRegistry } from "./spawn-session-registry";
 import { deriveTaskIdentity, type TaskIdentity } from "./task-identity";
 import { SPAWN_OUTCOMES, type SpawnResult } from "./types";
 import type { VerifyMarkerInput } from "./verifier";
@@ -84,7 +80,6 @@ export interface SpawnAgentToolOptions {
 
 interface ResolvedSpawnAgentToolOptions extends SpawnAgentToolOptions {
   readonly spawnRegistry: SpawnSessionRegistry;
-  readonly mirrorLegacyRegistry: boolean;
 }
 
 const EMPTY_MODELS: ReadonlySet<string> = new Set<string>();
@@ -110,8 +105,8 @@ function createDefaultSpawnRegistry(): SpawnSessionRegistry {
 }
 
 function resolveOptions(options: SpawnAgentToolOptions): ResolvedSpawnAgentToolOptions {
-  if (options.spawnRegistry) return { ...options, spawnRegistry: options.spawnRegistry, mirrorLegacyRegistry: false };
-  return { ...options, spawnRegistry: createDefaultSpawnRegistry(), mirrorLegacyRegistry: true };
+  if (options.spawnRegistry) return { ...options, spawnRegistry: options.spawnRegistry };
+  return { ...options, spawnRegistry: createDefaultSpawnRegistry() };
 }
 
 interface ProgressState {
@@ -384,22 +379,24 @@ function createReviewChangesResult(task: AgentTask, elapsedMs: number, output: s
   };
 }
 
-function createPreservedResult(
+function readIssueOutput(value: AttemptValue): string {
+  const output = value.output.trim();
+  if (output.length > 0) return value.output;
+  return value.error ?? value.classification.reason;
+}
+
+function createTaskIssueResult(
   task: AgentTask,
   elapsedMs: number,
-  sessionId: string,
-  output: string,
   outcome: AmbiguousKind,
-  record: SpawnPreservedRecord | null,
+  value: AttemptValue,
 ): SpawnResult {
   return {
     outcome,
     description: task.description,
     agent: task.agent,
     elapsedMs,
-    sessionId,
-    output,
-    resumeCount: record?.resumeCount ?? 0,
+    output: readIssueOutput(value),
   };
 }
 
@@ -452,9 +449,7 @@ function blockedFenceResult(task: AgentTask, fence: FenceResult, started: number
     description: task.description,
     agent: task.agent,
     elapsedMs: Date.now() - started,
-    sessionId: conflictSessionId,
     output: `Generation fence: ${fence.decision}; conflict session ${conflictSessionId}`,
-    resumeCount: 0,
   };
 }
 
@@ -476,17 +471,6 @@ function registerRunning(
   });
 }
 
-function mirrorLegacyPreserve(options: ResolvedSpawnAgentToolOptions, result: SpawnResult): void {
-  if (!options.mirrorLegacyRegistry) return;
-  if (result.outcome !== SPAWN_OUTCOMES.TASK_ERROR && result.outcome !== SPAWN_OUTCOMES.BLOCKED) return;
-  options.registry.preserve({
-    sessionId: result.sessionId,
-    agent: result.agent,
-    description: result.description,
-    outcome: result.outcome,
-  });
-}
-
 async function runVerifier(
   verifier: SpawnAgentToolOptions["verifier"],
   settled: { readonly value: AttemptValue },
@@ -504,20 +488,7 @@ async function runVerifier(
   }
 }
 
-async function updatePreservedTitle(
-  ctx: PluginInput,
-  task: AgentTask,
-  sessionId: string,
-  outcome: AmbiguousKind,
-): Promise<void> {
-  await updateInternalSession({
-    ctx,
-    sessionId,
-    title: buildSpawnCompletionTitle({ agent: task.agent, description: task.description, outcome }),
-  });
-}
-
-async function preserveSession(
+async function finalizeIssueSession(
   ctx: PluginInput,
   task: AgentTask,
   options: ResolvedSpawnAgentToolOptions,
@@ -526,11 +497,8 @@ async function preserveSession(
   outcome: AmbiguousKind,
 ): Promise<SpawnResult> {
   if (value.sessionId === null) return createHardFailureResult(task, elapsedMs, value);
-  const record = options.spawnRegistry.markPreserved(value.sessionId, outcome);
-  const result = createPreservedResult(task, elapsedMs, value.sessionId, value.output, outcome, record);
-  mirrorLegacyPreserve(options, result);
-  await updatePreservedTitle(ctx, task, value.sessionId, outcome);
-  return result;
+  await cleanupSession(ctx, task, options, value.sessionId);
+  return createTaskIssueResult(task, elapsedMs, outcome, value);
 }
 
 async function handleVerification(
@@ -548,7 +516,7 @@ async function handleVerification(
   }
   const verifier = await runVerifier(options.verifier, settled, ambiguousKind);
   if (verifier === VERIFIER_VERDICTS.FINAL) {
-    const result = await preserveSession(ctx, task, options, elapsedMs, settled.value, ambiguousKind);
+    const result = await finalizeIssueSession(ctx, task, options, elapsedMs, settled.value, ambiguousKind);
     return { result, verifier };
   }
   options.spawnRegistry.complete(settled.value.sessionId ?? UNKNOWN_SESSION_ID);
@@ -609,24 +577,6 @@ async function cleanupSession(
   await deleteInternalSession({ ctx, sessionId, agent: task.agent });
 }
 
-async function finalizeReviewChanges(
-  ctx: PluginInput,
-  task: AgentTask,
-  options: ResolvedSpawnAgentToolOptions,
-  value: AttemptValue,
-): Promise<void> {
-  options.spawnRegistry.complete(value.sessionId ?? UNKNOWN_SESSION_ID);
-  await updateInternalSession({
-    ctx,
-    sessionId: value.sessionId,
-    title: buildSpawnCompletionTitle({
-      agent: task.agent,
-      description: task.description,
-      outcome: SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED,
-    }),
-  });
-}
-
 async function finalizeSettled(
   ctx: PluginInput,
   task: AgentTask,
@@ -640,7 +590,7 @@ async function finalizeSettled(
     return attachDiagnostics(task, verified.result, { ...fields, verifier: verified.verifier });
   }
   if (settled.class === INTERNAL_CLASSES.REVIEW_CHANGES_REQUESTED) {
-    await finalizeReviewChanges(ctx, task, options, settled.value);
+    await cleanupSession(ctx, task, options, settled.value.sessionId);
     return attachDiagnostics(task, createReviewChangesResult(task, elapsedMs, settled.value.output), fields);
   }
   if (settled.class === INTERNAL_CLASSES.SUCCESS) {
@@ -648,7 +598,7 @@ async function finalizeSettled(
     return attachDiagnostics(task, createSuccessResult(task, elapsedMs, settled.value.output), fields);
   }
   if (settled.class === INTERNAL_CLASSES.TASK_ERROR || settled.class === INTERNAL_CLASSES.BLOCKED) {
-    const result = await preserveSession(ctx, task, options, elapsedMs, settled.value, settled.class);
+    const result = await finalizeIssueSession(ctx, task, options, elapsedMs, settled.value, settled.class);
     return attachDiagnostics(task, result, fields);
   }
   await cleanupSession(ctx, task, options, settled.value.sessionId);

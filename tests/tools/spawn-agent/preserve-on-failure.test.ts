@@ -2,7 +2,6 @@ import { describe, expect, it, mock } from "bun:test";
 
 import { createPreservedRegistry } from "@/tools/spawn-agent/registry";
 import { createSpawnAgentTool } from "@/tools/spawn-agent/tool";
-import { SPAWN_OUTCOMES } from "@/tools/spawn-agent/types";
 
 interface FakeClient {
   readonly session: {
@@ -30,8 +29,8 @@ const createCtx = (client: FakeClient) =>
 
 const createRegistry = () => createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
 
-describe("spawn-agent preserves task_error/blocked sessions", () => {
-  it("does not delete the session when outcome is task_error", async () => {
+describe("spawn-agent deletes task_error/blocked sessions", () => {
+  it("deletes the session when outcome is task_error", async () => {
     const del = mock(async () => ({}));
     const client: FakeClient = { session: { delete: del } };
     const ctx = createCtx(client);
@@ -42,19 +41,15 @@ describe("spawn-agent preserves task_error/blocked sessions", () => {
     const tool = createSpawnAgentTool(ctx, { registry, executeAgentSession });
     const output = await tool.execute({ agents: [TASK] }, { metadata: () => {} } as never);
 
-    expect(output).toContain(TASK_ERROR_SESSION);
-    expect(del).not.toHaveBeenCalled();
-    expect(registry.get(TASK_ERROR_SESSION)).toMatchObject({
-      sessionId: TASK_ERROR_SESSION,
-      agent: AGENT,
-      description: DESCRIPTION,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
-    expect(registry.size()).toBe(1);
+    expect(output).toContain(TASK_ERROR_OUTPUT);
+    expect(output).not.toContain(TASK_ERROR_SESSION);
+    expect(output).not.toContain("SessionID");
+    expect(del).toHaveBeenCalled();
+    expect(registry.get(TASK_ERROR_SESSION)).toBeNull();
+    expect(registry.size()).toBe(0);
   });
 
-  it("does not delete the session when outcome is blocked", async () => {
+  it("deletes the session when outcome is blocked", async () => {
     const del = mock(async () => ({}));
     const client: FakeClient = { session: { delete: del } };
     const ctx = createCtx(client);
@@ -65,16 +60,12 @@ describe("spawn-agent preserves task_error/blocked sessions", () => {
     const tool = createSpawnAgentTool(ctx, { registry, executeAgentSession });
     const output = await tool.execute({ agents: [TASK] }, { metadata: () => {} } as never);
 
-    expect(output).toContain(BLOCKED_SESSION);
-    expect(del).not.toHaveBeenCalled();
-    expect(registry.get(BLOCKED_SESSION)).toMatchObject({
-      sessionId: BLOCKED_SESSION,
-      agent: AGENT,
-      description: DESCRIPTION,
-      outcome: SPAWN_OUTCOMES.BLOCKED,
-      resumeCount: 0,
-    });
-    expect(registry.size()).toBe(1);
+    expect(output).toContain(BLOCKED_OUTPUT);
+    expect(output).not.toContain(BLOCKED_SESSION);
+    expect(output).not.toContain("SessionID");
+    expect(del).toHaveBeenCalled();
+    expect(registry.get(BLOCKED_SESSION)).toBeNull();
+    expect(registry.size()).toBe(0);
   });
 
   it("deletes the session on success", async () => {

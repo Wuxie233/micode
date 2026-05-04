@@ -20,7 +20,7 @@ const summarize = (spawn: SpawnResult): string => {
       return spawn.output;
     case SPAWN_OUTCOMES.TASK_ERROR:
     case SPAWN_OUTCOMES.BLOCKED:
-      return `${spawn.sessionId}:${spawn.resumeCount}`;
+      return spawn.output;
     case SPAWN_OUTCOMES.HARD_FAILURE:
       return spawn.error;
     case SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED:
@@ -53,18 +53,14 @@ describe("spawn-agent result types", () => {
         description: "Failed task",
         agent: AGENT,
         elapsedMs: 20,
-        sessionId: "session-task-error",
         output: "TEST FAILED",
-        resumeCount: 1,
       },
       {
         outcome: SPAWN_OUTCOMES.BLOCKED,
         description: "Blocked task",
         agent: AGENT,
         elapsedMs: 30,
-        sessionId: "session-blocked",
         output: "BLOCKED:",
-        resumeCount: 2,
       },
       {
         outcome: SPAWN_OUTCOMES.HARD_FAILURE,
@@ -75,12 +71,7 @@ describe("spawn-agent result types", () => {
       },
     ];
 
-    expect(samples.map(summarize)).toEqual([
-      "done",
-      "session-task-error:1",
-      "session-blocked:2",
-      "session create failed",
-    ]);
+    expect(samples.map(summarize)).toEqual(["done", "TEST FAILED", "BLOCKED:", "session create failed"]);
   });
 
   it("types resume inputs and results by contract", () => {

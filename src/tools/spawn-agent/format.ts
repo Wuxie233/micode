@@ -1,20 +1,19 @@
 import {
   SPAWN_OUTCOMES,
   type SpawnHardFailure,
-  type SpawnPreserved,
   type SpawnResult,
   type SpawnReviewChanges,
   type SpawnSuccess,
+  type SpawnTaskIssue,
 } from "./types";
 
 const MS_PER_SECOND = 1000;
 const SNIPPET_LIMIT = 96;
 const SNIPPET_OMISSION = "...";
 const EMPTY_OUTPUT = "_No spawn-agent results._";
-const MISSING_SESSION = "-";
 const SECTION_DIVIDER = "\n\n---\n\n";
-const TABLE_HEADER = "| Description | Agent | Outcome | Elapsed | SessionID | Output snippet |";
-const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- |";
+const TABLE_HEADER = "| Description | Agent | Outcome | Elapsed | Output snippet |";
+const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- |";
 
 function assertNever(result: never): never {
   throw new Error(`Unexpected spawn result: ${JSON.stringify(result)}`);
@@ -38,12 +37,6 @@ function formatSnippet(value: string): string {
   return `${normalized.slice(0, SNIPPET_LIMIT - SNIPPET_OMISSION.length)}${SNIPPET_OMISSION}`;
 }
 
-function getSessionId(result: SpawnResult): string {
-  if (result.outcome === SPAWN_OUTCOMES.TASK_ERROR) return result.sessionId;
-  if (result.outcome === SPAWN_OUTCOMES.BLOCKED) return result.sessionId;
-  return MISSING_SESSION;
-}
-
 function getOutput(result: SpawnResult): string {
   if (result.outcome === SPAWN_OUTCOMES.HARD_FAILURE) return result.error;
   return result.output;
@@ -55,7 +48,6 @@ function formatRow(result: SpawnResult): string {
     result.agent,
     result.outcome,
     formatElapsed(result.elapsedMs),
-    getSessionId(result),
     formatSnippet(getOutput(result)),
   ];
   return `| ${cells.map(escapeCell).join(" | ")} |`;
@@ -88,7 +80,7 @@ function formatSuccess(result: SpawnSuccess): string {
   );
 }
 
-function formatPreserved(result: SpawnPreserved): string {
+function formatTaskIssue(result: SpawnTaskIssue): string {
   return joinLines(
     appendDiagnostics(
       [
@@ -96,8 +88,6 @@ function formatPreserved(result: SpawnPreserved): string {
         "",
         `**Agent**: ${result.agent}`,
         `**Outcome**: ${result.outcome}`,
-        `**SessionID**: ${result.sessionId}`,
-        `**Resume count**: ${result.resumeCount}`,
         "",
         "### Result",
         "",
@@ -150,7 +140,7 @@ function formatSection(result: SpawnResult): string {
       return formatSuccess(result);
     case SPAWN_OUTCOMES.TASK_ERROR:
     case SPAWN_OUTCOMES.BLOCKED:
-      return formatPreserved(result);
+      return formatTaskIssue(result);
     case SPAWN_OUTCOMES.HARD_FAILURE:
       return formatHardFailure(result);
     case SPAWN_OUTCOMES.REVIEW_CHANGES_REQUESTED:
