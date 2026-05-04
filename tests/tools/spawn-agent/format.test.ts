@@ -27,16 +27,14 @@ DONE
 All checks passed.`);
   });
 
-  it("includes resume details for a single task error", () => {
+  it("omits resumable session details for a single task error", () => {
     const output = formatSpawnResults([
       {
         outcome: SPAWN_OUTCOMES.TASK_ERROR,
         description: "Stabilize tests",
         agent: AGENT,
         elapsedMs: 2500,
-        sessionId: "session-task-error",
         output: "TEST FAILED: expected pass.",
-        resumeCount: 2,
       },
     ]);
 
@@ -44,8 +42,6 @@ All checks passed.`);
 
 **Agent**: implementer-general
 **Outcome**: task_error
-**SessionID**: session-task-error
-**Resume count**: 2
 
 ### Result
 
@@ -66,18 +62,14 @@ TEST FAILED: expected pass.`);
         description: "Task error task",
         agent: "implementer-backend",
         elapsedMs: 2345,
-        sessionId: "session-task",
         output: "TEST FAILED: unit test rejected the change.",
-        resumeCount: 1,
       },
       {
         outcome: SPAWN_OUTCOMES.BLOCKED,
         description: "Blocked task",
         agent: "implementer-frontend",
         elapsedMs: 3456,
-        sessionId: "session-blocked",
         output: "BLOCKED: contract mismatch.",
-        resumeCount: 0,
       },
       {
         outcome: SPAWN_OUTCOMES.HARD_FAILURE,
@@ -91,23 +83,18 @@ TEST FAILED: expected pass.`);
     const output = formatSpawnResults(results);
 
     expect(output).toStartWith(
-      "| Description | Agent | Outcome | Elapsed | SessionID | Output snippet |\n| --- | --- | --- | --- | --- | --- |",
+      "| Description | Agent | Outcome | Elapsed | Output snippet |\n| --- | --- | --- | --- | --- |",
     );
+    expect(output).toContain("| Successful task | implementer-general | success | 1.0s | Completed successfully. |");
     expect(output).toContain(
-      "| Successful task | implementer-general | success | 1.0s | - | Completed successfully. |",
+      "| Task error task | implementer-backend | task_error | 2.3s | TEST FAILED: unit test rejected the change. |",
     );
-    expect(output).toContain(
-      "| Task error task | implementer-backend | task_error | 2.3s | session-task | TEST FAILED: unit test rejected the change. |",
-    );
-    expect(output).toContain(
-      "| Blocked task | implementer-frontend | blocked | 3.5s | session-blocked | BLOCKED: contract mismatch. |",
-    );
-    expect(output).toContain("| Hard failure task | general | hard_failure | 4.6s | - | Failed to create session |");
+    expect(output).toContain("| Blocked task | implementer-frontend | blocked | 3.5s | BLOCKED: contract mismatch. |");
+    expect(output).toContain("| Hard failure task | general | hard_failure | 4.6s | Failed to create session |");
     expect(output).toContain("## Successful task (1.0s)");
     expect(output).toContain("## Task error task (2.3s)");
-    expect(output).toContain("**SessionID**: session-task");
     expect(output).toContain("## Blocked task (3.5s)");
-    expect(output).toContain("**SessionID**: session-blocked");
+    expect(output).not.toContain("SessionID");
     expect(output).toContain("## Hard failure task (4.6s)");
     expect(output).toContain("### Error\n\nFailed to create session");
   });
@@ -132,13 +119,13 @@ describe("formatSpawnResults review_changes_requested", () => {
     expect(output).not.toContain("**Outcome**: hard_failure");
   });
 
-  it("emits missing session ids for duplicate review_changes_requested table rows", () => {
+  it("does not emit session ids for duplicate review_changes_requested table rows", () => {
     const output = formatSpawnResults([reviewResult, reviewResult]);
     const rows = output.split("\n").filter((line) => line.startsWith("| Review task"));
 
     expect(rows).toHaveLength(2);
     for (const row of rows) {
-      expect(row.split("|")[5].trim()).toBe("-");
+      expect(row).not.toContain("SessionID");
     }
   });
 
