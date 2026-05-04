@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,6 +62,8 @@ describe("atlas end-to-end", () => {
     const before = statSync(path).mtimeMs;
     expect(before).toBeGreaterThan(0);
     writeFileSync(path, `${readFileSync(path, "utf8")}\n\nhuman edit\n`, "utf8");
+    const editedAt = new Date(before + 1000);
+    utimesSync(path, editedAt, editedAt);
     const result = await detectHumanEdit(path);
     expect(result.edited).toBe(true);
   });

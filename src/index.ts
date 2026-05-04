@@ -379,14 +379,20 @@ async function runAtlasCommand(
 }
 
 const ATLAS_COMMANDS = Object.fromEntries(
-  atlasCommandDefinitions.map((definition) => [
-    normalizeAtlasCommandName(definition.name),
-    {
-      description: definition.description,
-      agent: PRIMARY_AGENT_NAME,
-      template: `Run the ${definition.name} Project Atlas command with arguments: $ARGUMENTS`,
-    },
-  ]),
+  atlasCommandDefinitions.map((definition) => {
+    const name = normalizeAtlasCommandName(definition.name);
+    // /atlas-init routes to the dedicated initializer agent (multi-phase cold build with spawn_agent workers).
+    // /atlas-status and /atlas-refresh are executed deterministically by the command.execute.before hook.
+    const agent = name === ATLAS_INIT_COMMAND ? "atlas-initializer" : PRIMARY_AGENT_NAME;
+    return [
+      name,
+      {
+        description: definition.description,
+        agent,
+        template: `Run the ${definition.name} Project Atlas command with arguments: $ARGUMENTS`,
+      },
+    ];
+  }),
 );
 
 const PERSIST_START_LABEL = "persist.start";
@@ -1006,6 +1012,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "command.execute.before": async (input, output) => {
+      // atlas-init routes to the atlas-initializer agent; skip direct hook execution.
+      const commandName = normalizeAtlasCommandName(input.command);
+      if (commandName === ATLAS_INIT_COMMAND) return;
       await runAtlasCommand(ctx, input, output, {
         buildColdInitDeps: (ownerSessionID) => buildColdInitDeps(octtoSessionStore, ownerSessionID, octtoTracker),
       });
