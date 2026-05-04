@@ -8,7 +8,7 @@ import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 import { resolveProjectId } from "@/utils/project-id";
-import { commitAndPush } from "./commits";
+import { type CommitAndPushInput, commitAndPush } from "./commits";
 import { resolveDefaultBranch } from "./default-branch";
 import { detectBlockedTasks } from "./finish-guards";
 import { renderIssueBody } from "./issue-body";
@@ -90,6 +90,8 @@ export interface LifecycleStoreInput {
   readonly journal?: JournalStore;
   readonly lease?: LeaseStore;
   readonly notifier?: CompletionNotifier;
+  readonly preStageHook?: CommitAndPushInput["preStageHook"];
+  readonly prePushHook?: CommitAndPushInput["prePushHook"];
 }
 
 interface IssueIdentity {
@@ -106,6 +108,8 @@ interface LifecycleContext {
   readonly journal: JournalStore;
   readonly lease: LeaseStore;
   readonly notifier?: CompletionNotifier;
+  readonly preStageHook?: CommitAndPushInput["preStageHook"];
+  readonly prePushHook?: CommitAndPushInput["prePushHook"];
 }
 
 type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
@@ -640,6 +644,8 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
       summary: commitInput.summary,
       push: commitInput.push,
       marker,
+      preStageHook: context.preStageHook,
+      prePushHook: context.prePushHook,
     });
     await saveAndSync(context, applyCommitOutcome(record, outcome));
     await recordCommitObserved(context, issueNumber, commitInput, outcome, marker);
@@ -818,6 +824,8 @@ export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandl
     journal,
     lease,
     notifier: input.notifier,
+    preStageHook: input.preStageHook,
+    prePushHook: input.prePushHook,
   };
 
   return {

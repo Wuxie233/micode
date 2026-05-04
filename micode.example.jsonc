@@ -26,6 +26,12 @@
 //     for read-only investigation and strong enough to build evidence chains.
 //     Used by the investigator agent.
 //
+//   <YOUR_DIRECT_EXEC_MODEL>
+//     A model tuned for fast scoped no-plan direct execution: implementation,
+//     build, deploy, and verification in a single subagent session without
+//     subagent dispatch. The recommended choice is Claude Sonnet 4.6. Used by
+//     executor-direct and configurable to any gateway model.
+//
 // Model string format: "provider_id/model_id". The provider_id must already be
 // registered in your opencode.json under the `provider` object.
 //
@@ -50,7 +56,8 @@
     "implementer-general": { "model": "<YOUR_BACKEND_MODEL>" },
 
     // --- Diagnostic read-only investigator ---
-    "investigator": { "model": "<YOUR_DIAGNOSTIC_MODEL>" }
+    "investigator": { "model": "<YOUR_DIAGNOSTIC_MODEL>" },
+    "executor-direct": { "model": "<YOUR_DIRECT_EXEC_MODEL>" }
   }
 
   // Other top-level keys you MAY add:

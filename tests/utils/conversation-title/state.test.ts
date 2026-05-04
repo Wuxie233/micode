@@ -22,6 +22,7 @@ const PLAN_TOPIC = "lifecycle preflight title v2";
 const MANUAL_TITLE = "我的对话";
 const ISSUE_TOPIC = "优化主会话标题生成";
 const RENAMED_ISSUE_TOPIC = "改进主会话标题命名";
+const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
 
 type Registry = ReturnType<typeof createTitleStateRegistry>;
 
@@ -356,6 +357,46 @@ describe("title state registry", () => {
       currentTitle: title,
       now: NEXT_NOW,
       issueNumber: 0,
+    });
+
+    expect(writtenTitle(next)).toBe("#13 执行中：优化主会话标题生成");
+    expect(registry.getTopic(SESSION).issueNumber).toBe(13);
+  });
+
+  it("rejects the aborted sentinel issue number", () => {
+    const registry = createTitleStateRegistry();
+
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: ABORTED_ISSUE_NUMBER,
+      }),
+    );
+
+    expect(title).toBe(ISSUE_TOPIC);
+    expect(registry.getTopic(SESSION)).toEqual({
+      topic: ISSUE_TOPIC,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      issueNumber: null,
+    });
+  });
+
+  it("does not replace a real issue number with the aborted sentinel", () => {
+    const registry = createTitleStateRegistry();
+    const title = writtenTitle(
+      decide(registry, {
+        summary: ISSUE_TOPIC,
+        issueNumber: 13,
+      }),
+    );
+
+    const next = decide(registry, {
+      status: TITLE_STATUS.EXECUTING,
+      summary: null,
+      source: TITLE_SOURCE.LIFECYCLE_ISSUE,
+      currentTitle: title,
+      now: NEXT_NOW,
+      issueNumber: ABORTED_ISSUE_NUMBER,
     });
 
     expect(writtenTitle(next)).toBe("#13 执行中：优化主会话标题生成");

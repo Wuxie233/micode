@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { sanitizeFeatures } from "@/config-schemas";
 import {
   loadAvailableModels,
   loadDefaultModel,
@@ -14,6 +15,33 @@ import {
   validateAgentModels,
 } from "../src/config-loader";
 import { DEFAULT_MODEL } from "../src/utils/config";
+
+describe("sanitizeFeatures: skillAutopilot flag", () => {
+  it("accepts skillAutopilot=true", () => {
+    const out = sanitizeFeatures({ skillAutopilot: true });
+    expect(out.skillAutopilot).toBe(true);
+  });
+
+  it("accepts skillAutopilot=false", () => {
+    const out = sanitizeFeatures({ skillAutopilot: false });
+    expect(out.skillAutopilot).toBe(false);
+  });
+
+  it("omits skillAutopilot when missing", () => {
+    const out = sanitizeFeatures({ mindmodelInjection: true });
+    expect(out.skillAutopilot).toBeUndefined();
+  });
+
+  it("rejects non-boolean skillAutopilot by dropping the field", () => {
+    const out = sanitizeFeatures({ skillAutopilot: "yes" } as Record<string, unknown>);
+    expect(out.skillAutopilot).toBeUndefined();
+  });
+
+  it("drops the legacy skillEvolution flag", () => {
+    const out = sanitizeFeatures({ skillEvolution: true } as Record<string, unknown>);
+    expect(out).not.toHaveProperty("skillEvolution");
+  });
+});
 
 describe("config-loader", () => {
   let testConfigDir: string;
