@@ -8,6 +8,8 @@ import { runAutopilot } from "@/skill-autopilot/runner";
 const LIFECYCLE_DIR = "thoughts/lifecycle";
 const SKILLS_DIR = ".opencode/skills";
 const REQUEST_TEXT = "## Request\n\nRun lint then tests\n";
+const TRIGGER_SUMMARY = "Run lint checks";
+const STEP_SUMMARY = "Verify test suite";
 const roots: string[] = [];
 
 function journalEntry(
@@ -31,7 +33,7 @@ function journalEntry(
 }
 
 function journalText(issue: number): string {
-  return `${journalEntry(issue, 1, "review_completed", "approved")}\n${journalEntry(issue, 2, "batch_completed", "lint")}\n${journalEntry(issue, 3, "batch_completed", "test")}\n`;
+  return `${journalEntry(issue, 1, "review_completed", "approved")}\n${journalEntry(issue, 2, "batch_completed", TRIGGER_SUMMARY)}\n${journalEntry(issue, 3, "batch_completed", STEP_SUMMARY)}\n`;
 }
 
 function tempRoot(): string {
