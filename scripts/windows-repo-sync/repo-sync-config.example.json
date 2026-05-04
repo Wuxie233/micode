@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Project Atlas (主仓库)",
+    "url": "https://github.com/Wuxie233/micode.git"
+  },
+  {
+    "name": "示例:个人笔记仓库",
+    "url": "git@github.com:example-user/notes.git"
+  }
+]
