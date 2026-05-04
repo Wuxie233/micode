@@ -5,15 +5,18 @@ import { dedupeKeyFor, sanitizeCandidateInput } from "./security/secret-gate";
 import type { LedgerText } from "./sources";
 
 const MAX_STEPS = 16;
-const FIRST_LINE_LIMIT = 1;
-const REQUEST_HEADING = /^##\s+Request\b/im;
-const NEXT_HEADING = /^##\s+/m;
-const TRIGGER_FALLBACK = "Lifecycle workflow";
 const PROCEDURE_ENTRY_TYPE = "procedure";
 const BATCH_COMPLETED = "batch_completed";
 const REVIEW_COMPLETED = "review_completed";
 const APPROVED_OUTCOME = "approved";
 const PROCEDURE_BULLET_SEPARATOR = /\s*[;.]\s+/;
+const MIN_TRIGGER_CHARS = 8;
+const MAX_TRIGGER_CHARS = 240;
+
+const SUBSTANTIVE_VERB =
+  /^(?:add|modify|create|update|deploy|run|rebuild|test|debug|fix|configure|document|verify|inspect|refactor|migrate|upgrade)\b/i;
+const LIFECYCLE_TOOLING_NOISE =
+  /\b(?:lifecycle|issue|worktree|branch|merge|push|commit|executor|planner|brainstormer|octto|skill[- ]?autopilot|spawn[- ]?agent|review[- ]?completed|batch[- ]?completed)\b/i;
 
 export interface RawCandidateSource {
   readonly kind: "lifecycle_journal" | "lifecycle_record" | "ledger";
@@ -54,22 +57,10 @@ interface RawDraft {
   readonly sources: readonly RawCandidateSource[];
 }
 
-function firstLine(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return "";
-  return trimmed.split(/\r?\n/, FIRST_LINE_LIMIT)[0]?.trim() ?? "";
-}
-
-function deriveTriggerFromLifecycle(record: string | null): string {
-  if (!record) return TRIGGER_FALLBACK;
-  const request = REQUEST_HEADING.exec(record);
-  if (!request) return TRIGGER_FALLBACK;
-
-  const afterRequest = record.slice(request.index + request[0].length);
-  const nextHeading = NEXT_HEADING.exec(afterRequest);
-  const body = nextHeading ? afterRequest.slice(0, nextHeading.index) : afterRequest;
-  const trigger = firstLine(body);
-  return trigger.length > 0 ? trigger : TRIGGER_FALLBACK;
+function isSubstantiveTrigger(trigger: string): boolean {
+  if (trigger.length < MIN_TRIGGER_CHARS || trigger.length > MAX_TRIGGER_CHARS) return false;
+  if (LIFECYCLE_TOOLING_NOISE.test(trigger)) return false;
+  return SUBSTANTIVE_VERB.test(trigger);
 }
 
 function reviewApproved(events: readonly JournalEvent[]): boolean {
@@ -83,19 +74,23 @@ function batchSteps(events: readonly JournalEvent[]): readonly string[] {
     .slice(0, MAX_STEPS);
 }
 
+// Lifecycle remains EVIDENCE, never a verbatim trigger source. We require an
+// independent substantive trigger derived from approved batch_completed steps.
+// If no substantive trigger can be derived, no lifecycle draft is emitted.
 function lifecycleDraft(input: MinerInput): RawDraft | null {
   if (input.lifecycleIssueNumber === null) return null;
   if (!reviewApproved(input.journalEvents)) return null;
   const steps = batchSteps(input.journalEvents);
   if (steps.length === 0) return null;
-  const trigger = deriveTriggerFromLifecycle(input.lifecycleRecord);
+  const firstStep = steps[0] ?? "";
+  if (!isSubstantiveTrigger(firstStep)) return null;
   const sources: RawCandidateSource[] = [
     { kind: "lifecycle_journal", pointer: `thoughts/lifecycle/${input.lifecycleIssueNumber}.journal.jsonl` },
   ];
   if (input.lifecycleRecord !== null) {
     sources.push({ kind: "lifecycle_record", pointer: `thoughts/lifecycle/${input.lifecycleIssueNumber}.md` });
   }
-  return { trigger, steps, sources };
+  return { trigger: firstStep, steps: steps.slice(1, MAX_STEPS), sources };
 }
 
 function splitProcedureSummary(summary: string): readonly string[] {
@@ -111,6 +106,7 @@ function ledgerDraftFor(candidate: PromotionCandidate, pointer: string): RawDraf
   if (parts.length < 2) return null;
   const [trigger, ...steps] = parts;
   if (!trigger) return null;
+  if (!isSubstantiveTrigger(trigger)) return null;
   return { trigger, steps: steps.slice(0, MAX_STEPS), sources: [{ kind: "ledger", pointer }] };
 }
 
@@ -147,10 +143,12 @@ function buildCandidate(input: MinerInput, draft: RawDraft): RawCandidate | Mine
 }
 
 export function extractRawCandidates(input: MinerInput): MinerOutput {
+  // Ledger drafts are listed first because the corrected design ranks ledgers
+  // higher than lifecycle journal events (lifecycle is evidence only).
   const drafts: RawDraft[] = [];
+  drafts.push(...ledgerDrafts(input));
   const lifecycle = lifecycleDraft(input);
   if (lifecycle !== null) drafts.push(lifecycle);
-  drafts.push(...ledgerDrafts(input));
 
   const candidates: RawCandidate[] = [];
   const rejected: MinerRejection[] = [];

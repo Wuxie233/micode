@@ -1,8 +1,8 @@
 import { parseSkillFile } from "@/skill-autopilot/schema";
+import { config } from "@/utils/config";
 import { detectSecret } from "@/utils/secret-detect";
 
 const SKILL_PATH = /^\.opencode\/skills\/[^/]+\/SKILL\.md$/;
-const BLOCKED_SENSITIVITIES = new Set(["internal", "secret"]);
 
 export interface PushGuardInput {
   readonly changedPaths: readonly string[];
@@ -24,13 +24,21 @@ function readSkillText(input: PushGuardInput, path: string): string | null {
   }
 }
 
+function isAllowedSensitivity(sensitivity: string): boolean {
+  return config.skillAutopilot.allowedAutoWriteSensitivities.includes(sensitivity);
+}
+
 function isBlockedSkill(text: string | null): boolean {
   if (text === null) return true;
   if (detectSecret(text)) return true;
   const parsed = parseSkillFile(text);
   if (!parsed.ok) return true;
-  const sensitivity = parsed.value.frontmatter["x-micode-sensitivity"] ?? "internal";
-  return BLOCKED_SENSITIVITIES.has(sensitivity);
+  const sensitivity = parsed.value.frontmatter["x-micode-sensitivity"] ?? config.skillAutopilot.defaultSensitivity;
+  return !isAllowedSensitivity(sensitivity);
+}
+
+function allowedSensitivitiesText(): string {
+  return config.skillAutopilot.allowedAutoWriteSensitivities.join(", ");
 }
 
 export function evaluatePushGuard(input: PushGuardInput): PushGuardDecision {
@@ -40,9 +48,12 @@ export function evaluatePushGuard(input: PushGuardInput): PushGuardDecision {
     if (isBlockedSkill(readSkillText(input, path))) blocked.push(path);
   }
   if (blocked.length === 0) return { allowed: true, blockedPaths: [] };
+  const allowed = allowedSensitivitiesText();
   return {
     allowed: false,
-    reason: `push blocked: ${blocked.length} skill(s) classified internal/secret. Downgrade to public, freeze, or remove before push.`,
+    reason:
+      `push blocked: ${blocked.length} skill(s) not in allowed-sensitivity allow-list (${allowed}). ` +
+      "Downgrade, freeze, or remove before push.",
     blockedPaths: blocked,
   };
 }

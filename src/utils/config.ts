@@ -293,12 +293,8 @@ export const config = {
     bodyMaxBytes: 8192,
     maxStepsPerSkill: 16,
     maxSkillsPerProject: 200,
-    // discovery / injection
+    // discovery (used by writer index, NOT runtime injection)
     maxIndexBytes: 16_384,
-    injectionCharBudget: 1200,
-    snippetMaxChars: 320,
-    injectionSensitivityCeiling: "internal" as "public" | "internal",
-    defaultAgentScope: ["implementer-frontend", "implementer-backend", "implementer-general"] as readonly string[],
     // conservative write
     recurrenceMinHits: 2,
     recurrenceMinDistinctIssues: 2,
@@ -308,6 +304,9 @@ export const config = {
     runtimeInstallPath: "/root/.micode",
     // code-verbatim guard
     maxFenceLines: 3,
+    // public-by-default write policy
+    defaultSensitivity: "public" as const,
+    allowedAutoWriteSensitivities: ["public"] as readonly string[],
   },
 
   skillEvolution: {
