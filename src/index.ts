@@ -1,10 +1,11 @@
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { Plugin, PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
-import type { McpLocalConfig } from "@opencode-ai/sdk";
+import type { McpLocalConfig, Part } from "@opencode-ai/sdk";
 
 import { agents, PRIMARY_AGENT_NAME } from "@/agents";
+import { atlasCommandDefinitions, parseAtlasInitArgs } from "@/atlas/commands";
 import { loadAvailableModels, loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
 import {
   createArtifactAutoIndexHook,
@@ -77,6 +78,7 @@ import {
   look_at,
   milestone_artifact_search,
 } from "@/tools";
+import { runAtlasInit, runAtlasRefresh, runAtlasStatus } from "@/tools/atlas";
 import { createLifecycleTools } from "@/tools/lifecycle";
 import { createResumeSubagentTool } from "@/tools/resume-subagent";
 import {
@@ -158,6 +160,93 @@ const PLUGIN_COMMANDS = {
       "Use the project_memory_* tools to handle this request. Default behaviour: if no arguments are given, run project_memory_health and report a concise summary; if arguments are given, run project_memory_lookup with the arguments as the query. $ARGUMENTS",
   },
 };
+
+const ATLAS_COMMAND_PREFIX = "/";
+const ATLAS_INIT_COMMAND = "atlas-init";
+const ATLAS_STATUS_COMMAND = "atlas-status";
+const ATLAS_REFRESH_COMMAND = "atlas-refresh";
+const ATLAS_PROJECT_TYPE = "opencode-plugin";
+const ATLAS_ARGS_SPLIT_PATTERN = /\s+/u;
+const ATLAS_JSON_FENCE = "```json";
+const MARKDOWN_FENCE = "```";
+
+interface AtlasCommandInput {
+  readonly command: string;
+  readonly sessionID: string;
+  readonly arguments: string;
+}
+
+interface AtlasCommandOutput {
+  readonly parts: Part[];
+}
+
+function normalizeAtlasCommandName(name: string): string {
+  if (name.startsWith(ATLAS_COMMAND_PREFIX)) return name.slice(ATLAS_COMMAND_PREFIX.length);
+  return name;
+}
+
+function splitAtlasArgs(raw: string): readonly string[] {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return [];
+  return trimmed.split(ATLAS_ARGS_SPLIT_PATTERN);
+}
+
+function formatAtlasCommandResult(command: string, value: unknown): string {
+  const serialized = JSON.stringify(value, null, 2) ?? String(value);
+  return [`/${command} result:`, ATLAS_JSON_FENCE, serialized, MARKDOWN_FENCE].join("\n");
+}
+
+function appendAtlasCommandPart(input: AtlasCommandInput, output: AtlasCommandOutput, text: string): void {
+  output.parts.push({
+    id: `${input.command}-result`,
+    sessionID: input.sessionID,
+    messageID: `${input.command}-result`,
+    type: "text",
+    text,
+    synthetic: true,
+  });
+}
+
+async function runAtlasCommand(ctx: PluginInput, input: AtlasCommandInput, output: AtlasCommandOutput): Promise<void> {
+  const command = normalizeAtlasCommandName(input.command);
+  if (command === ATLAS_INIT_COMMAND) {
+    const parsed = parseAtlasInitArgs(splitAtlasArgs(input.arguments));
+    const result = await runAtlasInit({
+      projectRoot: ctx.directory,
+      mode: parsed.mode,
+      projectName: basename(ctx.directory),
+      projectType: ATLAS_PROJECT_TYPE,
+    });
+    appendAtlasCommandPart(input, output, formatAtlasCommandResult(command, result));
+    return;
+  }
+
+  if (command === ATLAS_STATUS_COMMAND) {
+    const result = await runAtlasStatus({ projectRoot: ctx.directory });
+    appendAtlasCommandPart(input, output, formatAtlasCommandResult(command, result));
+    return;
+  }
+
+  if (command !== ATLAS_REFRESH_COMMAND) return;
+  const [target] = splitAtlasArgs(input.arguments);
+  if (!target) {
+    appendAtlasCommandPart(input, output, `/${ATLAS_REFRESH_COMMAND} requires a target node or area.`);
+    return;
+  }
+  const result = await runAtlasRefresh({ projectRoot: ctx.directory, target });
+  appendAtlasCommandPart(input, output, formatAtlasCommandResult(command, result));
+}
+
+const ATLAS_COMMANDS = Object.fromEntries(
+  atlasCommandDefinitions.map((definition) => [
+    normalizeAtlasCommandName(definition.name),
+    {
+      description: definition.description,
+      agent: PRIMARY_AGENT_NAME,
+      template: `Run the ${definition.name} Project Atlas command with arguments: $ARGUMENTS`,
+    },
+  ]),
+);
 
 const PERSIST_START_LABEL = "persist.start";
 const PERSIST_PUSH_LABEL = "persist.push";
@@ -723,7 +812,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       };
 
       // Add commands
-      config.command = { ...config.command, ...PLUGIN_COMMANDS };
+      config.command = { ...config.command, ...PLUGIN_COMMANDS, ...ATLAS_COMMANDS };
+    },
+
+    "command.execute.before": async (input, output) => {
+      await runAtlasCommand(ctx, input, output);
     },
 
     "chat.message": async (input, output) => {
