@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { DEFAULT_MODEL } from "../../src/utils/config";
 
+const FORBIDDEN_DIRECT_AGENT_NAMES = ["runner", "operator", "light-executor"] as const;
+
 describe("agents index", () => {
   it("should not export handoff agents", async () => {
     const module = await import("../../src/agents/index");
@@ -32,6 +34,38 @@ describe("agents index", () => {
     const module = await import("../../src/agents/index");
 
     expect(module.investigatorAgent).toBeDefined();
+  });
+
+  it("registers executor-direct with a non-empty model", async () => {
+    const module = await import("../../src/agents/index");
+    const agent = module.agents["executor-direct"];
+
+    expect(agent).toBeDefined();
+    expect(typeof agent.model).toBe("string");
+    expect(agent.model.length).toBeGreaterThan(0);
+  });
+
+  it("re-exports executorDirectAgent as a subagent", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect(module.executorDirectAgent).toBeDefined();
+    expect(module.executorDirectAgent.mode).toBe("subagent");
+  });
+
+  it("keeps executor registered alongside executor-direct", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect(module.agents.executor).toBeDefined();
+    expect(module.agents.executor.mode).toBe("subagent");
+    expect(module.agents["executor-direct"]).toBeDefined();
+  });
+
+  it("does not register runner-style direct execution agents", async () => {
+    const module = await import("../../src/agents/index");
+
+    for (const name of FORBIDDEN_DIRECT_AGENT_NAMES) {
+      expect(module.agents[name]).toBeUndefined();
+    }
   });
 
   it("should register mindmodel v2 analysis agents", async () => {

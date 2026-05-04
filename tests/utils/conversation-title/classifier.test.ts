@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { classifyToolMilestone, TITLE_STATUS } from "@/utils/conversation-title";
 import { TITLE_SOURCE } from "@/utils/conversation-title/source";
 
+const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
+
 describe("classifyToolMilestone", () => {
   it("recognizes a design write under thoughts/shared/plans/", () => {
     const signal = classifyToolMilestone({
@@ -146,6 +148,23 @@ describe("classifyToolMilestone - issue number extraction", () => {
     expect(signal?.issueNumber).toBeNull();
   });
 
+  it("rejects the aborted sentinel issue number from lifecycle_start_request output", () => {
+    const output = [
+      "## Lifecycle pre-flight failed",
+      "| Issue # | Branch | Worktree | State |",
+      "|---|---|---|---|",
+      `| ${ABORTED_ISSUE_NUMBER} | \`issue/${ABORTED_ISSUE_NUMBER}-aborted\` | \`/tmp/wt\` | \`aborted\` |`,
+    ].join("\n");
+
+    const signal = classifyToolMilestone({
+      tool: "lifecycle_start_request",
+      args: { summary: "x", goals: [], constraints: [] },
+      output,
+    });
+
+    expect(signal?.issueNumber).toBeNull();
+  });
+
   it("reads issue_number from lifecycle_commit args", () => {
     const signal = classifyToolMilestone({
       tool: "lifecycle_commit",
@@ -197,6 +216,21 @@ describe("classifyToolMilestone - issue number extraction", () => {
       args: { issue_number: "13", scope: "x", summary: "fix" },
     });
     expect(signalString?.issueNumber).toBeNull();
+  });
+
+  it("rejects the aborted sentinel issue_number from lifecycle tools", () => {
+    const commit = classifyToolMilestone({
+      tool: "lifecycle_commit",
+      args: { issue_number: ABORTED_ISSUE_NUMBER, scope: "x", summary: "fix" },
+    });
+    const finish = classifyToolMilestone({
+      tool: "lifecycle_finish",
+      args: { issue_number: ABORTED_ISSUE_NUMBER },
+      output: "merged and closed",
+    });
+
+    expect(commit?.issueNumber).toBeNull();
+    expect(finish?.issueNumber).toBeNull();
   });
 
   it("plan write keeps issueNumber null", () => {

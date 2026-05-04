@@ -1,5 +1,6 @@
 // src/utils/conversation-title/state.ts
 import { buildIssueAwareTitle, CONCLUSIVE_STATUSES, type TitleStatus } from "./format";
+import { isRealIssueNumber } from "./issue";
 import { compareConfidence, isToolLikeTopic, type TitleSource } from "./source";
 
 const TITLE_THROTTLE_MS = 1000;
@@ -104,7 +105,7 @@ const applyTopic = (record: SessionRecord, input: DecisionInput, allowEqualConfi
 
 const applyIssueNumber = (record: SessionRecord, incoming: number | null | undefined): void => {
   if (incoming === null || incoming === undefined) return;
-  if (!Number.isSafeInteger(incoming) || incoming <= 0) return;
+  if (!isRealIssueNumber(incoming)) return;
   record.issueNumber = incoming;
 };
 

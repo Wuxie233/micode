@@ -279,6 +279,52 @@ export const config = {
     refuseWritesOnDegradedIdentity: true,
   },
 
+  skillAutopilot: {
+    skillsDir: ".opencode/skills",
+    indexFile: ".opencode/skills/INDEX.md",
+    rejectionsJournal: ".opencode/skills/.rejections.jsonl",
+    tombstoneFile: ".tombstone",
+    managedMarker: "x-micode-managed",
+    frozenMarker: "x-micode-frozen",
+    // agentskills.io spec
+    nameMaxChars: 64,
+    nameRegex: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    descriptionMaxBytes: 1024,
+    bodyMaxBytes: 8192,
+    maxStepsPerSkill: 16,
+    maxSkillsPerProject: 200,
+    // discovery / injection
+    maxIndexBytes: 16_384,
+    injectionCharBudget: 1200,
+    snippetMaxChars: 320,
+    injectionSensitivityCeiling: "internal" as "public" | "internal",
+    defaultAgentScope: ["implementer-frontend", "implementer-backend", "implementer-general"] as readonly string[],
+    // conservative write
+    recurrenceMinHits: 2,
+    recurrenceMinDistinctIssues: 2,
+    maxWritesPerLifecycle: 2,
+    triggerOverlapThreshold: 0.6,
+    // platform
+    runtimeInstallPath: "/root/.micode",
+    // code-verbatim guard
+    maxFenceLines: 3,
+  },
+
+  skillEvolution: {
+    /** Max procedures injected per chat (strict ceiling so context stays small) */
+    maxInjectedProcedures: 3,
+    /** Hard char budget across all injected procedures combined */
+    injectionCharBudget: 1200,
+    /** Candidate auto-expiry in days; expired entries are purged at next /skills review */
+    candidateExpiryDays: 30,
+    /** Hard cap on stored pending candidates per project (oldest evicted) */
+    maxCandidatesPerProject: 200,
+    /** Per-procedure snippet truncation when injecting */
+    snippetMaxChars: 320,
+    /** Ceiling for sensitivity filter on lookup-and-inject ('internal' excludes 'secret') */
+    injectionSensitivityCeiling: "internal" as "public" | "internal",
+  },
+
   notifications: {
     enabled: true,
     qqUserId: "445714414",

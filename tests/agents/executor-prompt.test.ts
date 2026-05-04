@@ -34,3 +34,23 @@ describe("executor agent prompt contract for review_changes_requested", () => {
     expect(executorAgent.prompt).toContain("resume_subagent");
   });
 });
+
+describe("executor agent input contract: requires explicit plan path", () => {
+  it("declares an input-contract block requiring a thoughts/shared/plans/*.md plan path", () => {
+    expect(executorAgent.prompt).toContain("<input-contract");
+    expect(executorAgent.prompt).toContain("thoughts/shared/plans/");
+    expect(executorAgent.prompt.toLowerCase()).toContain("plan path");
+  });
+
+  it("instructs the executor to refuse natural-language direct tasks without a plan path", () => {
+    const prompt = executorAgent.prompt.toLowerCase();
+    expect(prompt).toMatch(/refuse|stop.*report|reject/);
+    expect(prompt).toContain("executor-direct");
+  });
+
+  it("names planner and investigator as alternative escalation targets", () => {
+    const prompt = executorAgent.prompt.toLowerCase();
+    expect(prompt).toContain("planner");
+    expect(prompt).toContain("investigator");
+  });
+});
