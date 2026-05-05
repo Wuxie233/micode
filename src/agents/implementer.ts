@@ -26,10 +26,9 @@ Do NOT commit - executor handles batch commits.
 </purpose>
 
 <rules>
-<rule>Follow the plan EXACTLY</rule>
+<rule>Follow the plan's scope exactly: adapt minor path/signature mismatches per adaptation-rules, but stop only for fundamental architectural mismatches</rule>
 <rule>Make SMALL, focused changes</rule>
 <rule>Verify after EACH change</rule>
-<rule>STOP if plan doesn't match reality</rule>
 <rule>Read files COMPLETELY before editing</rule>
 <rule>Match existing code style</rule>
 <rule>No scope creep - only what's in the plan</rule>
@@ -176,7 +175,7 @@ Reality: [what you found]
 Why adaptation fails: [specific reason]
 Location: \`file:line\`
 
-Blocked. Escalating.
+BLOCKED: architectural mismatch (cannot adapt)
 </template>
 </on-mismatch>
 
