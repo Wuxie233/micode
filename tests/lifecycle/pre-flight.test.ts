@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { classifyRepo, REPO_KIND } from "@/lifecycle/pre-flight";
+import { classifyRepo, parseOriginTarget, REPO_KIND } from "@/lifecycle/pre-flight";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 
 const CWD = "/workspace/micode";
@@ -9,14 +9,18 @@ const REPO = "Wuxie233/micode";
 const PARENT_OWNER = "vtemian";
 const PARENT_NAME = "micode";
 const PARENT_REPO = `${PARENT_OWNER}/${PARENT_NAME}`;
-const ORIGIN = `git@github.com:${REPO}.git`;
+const ORIGIN_SSH = `git@github.com:${REPO}.git`;
+const ORIGIN_HTTPS = `https://github.com/${REPO}.git`;
+const ORIGIN_HTTPS_NO_GIT = `https://github.com/${REPO}`;
+const ORIGIN_SSH_PROTOCOL = `ssh://git@github.com/${REPO}.git`;
 const PARENT_URL = `https://github.com/${PARENT_REPO}`;
 const OK_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
 const EMPTY_OUTPUT = "";
 const GIT_ARGS = ["remote", "get-url", "origin"] as const;
 const GH_FIELDS = "nameWithOwner,isFork,parent,owner,viewerPermission,hasIssuesEnabled";
-const GH_ARGS = ["repo", "view", "--json", GH_FIELDS] as const;
+// The new explicit-target form: repo view <owner/repo> --json <fields>
+const GH_ARGS_WITH_TARGET = ["repo", "view", REPO, "--json", GH_FIELDS] as const;
 const REAL_GH_REPO_VIEW = JSON.stringify({
   hasIssuesEnabled: true,
   isFork: true,
@@ -51,14 +55,14 @@ const createRun = (stdout: string, exitCode = OK_EXIT_CODE): RunResult => ({
   exitCode,
 });
 
-const createRunner = (outputs: RunnerOutputs): FakeRunner => {
+const createRunner = (outputs: RunnerOutputs, origin = ORIGIN_SSH): FakeRunner => {
   const calls: RunnerCall[] = [];
 
   return {
     calls,
     git: async (args, options) => {
       calls.push({ bin: "git", args, cwd: options?.cwd });
-      return outputs.git ?? createRun(`${ORIGIN}\n`);
+      return outputs.git ?? createRun(`${origin}\n`);
     },
     gh: async (args, options) => {
       calls.push({ bin: "gh", args, cwd: options?.cwd });
@@ -81,11 +85,111 @@ const createRepoView = (overrides: Record<string, unknown>): string =>
 const expectCalls = (runner: FakeRunner): void => {
   expect(runner.calls).toEqual([
     { bin: "git", args: GIT_ARGS, cwd: CWD },
-    { bin: "gh", args: GH_ARGS, cwd: CWD },
+    { bin: "gh", args: GH_ARGS_WITH_TARGET, cwd: CWD },
   ]);
 };
 
+describe("parseOriginTarget", () => {
+  it("parses ssh remote with .git suffix", () => {
+    expect(parseOriginTarget("git@github.com:Wuxie233/micode.git")).toBe("Wuxie233/micode");
+  });
+
+  it("parses https remote with .git suffix", () => {
+    expect(parseOriginTarget("https://github.com/Wuxie233/micode.git")).toBe("Wuxie233/micode");
+  });
+
+  it("parses https remote without .git suffix", () => {
+    expect(parseOriginTarget("https://github.com/Wuxie233/micode")).toBe("Wuxie233/micode");
+  });
+
+  it("parses ssh:// protocol remote with .git suffix", () => {
+    expect(parseOriginTarget("ssh://git@github.com/Wuxie233/micode.git")).toBe("Wuxie233/micode");
+  });
+
+  it("returns null for non-github remotes", () => {
+    expect(parseOriginTarget("https://gitlab.com/owner/repo.git")).toBeNull();
+  });
+
+  it("returns null for malformed URLs", () => {
+    expect(parseOriginTarget("not-a-url")).toBeNull();
+    expect(parseOriginTarget("")).toBeNull();
+  });
+});
+
 describe("classifyRepo", () => {
+  it("passes explicit origin target to gh repo view for ssh remote", async () => {
+    const runner = createRunner({
+      gh: createRun(createRepoView({ isFork: true, parent: { name: PARENT_NAME, owner: { login: PARENT_OWNER } } })),
+    });
+
+    await classifyRepo(runner, CWD);
+
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args[2]).toBe(REPO);
+  });
+
+  it("passes explicit origin target to gh repo view for https remote", async () => {
+    const runner = createRunner(
+      {
+        gh: createRun(createRepoView({ isFork: true, parent: { name: PARENT_NAME, owner: { login: PARENT_OWNER } } })),
+      },
+      ORIGIN_HTTPS,
+    );
+
+    await classifyRepo(runner, CWD);
+
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args[2]).toBe(REPO);
+  });
+
+  it("passes explicit origin target to gh repo view for https without .git", async () => {
+    const runner = createRunner({ gh: createRun(createRepoView({ isFork: true, parent: null })) }, ORIGIN_HTTPS_NO_GIT);
+
+    await classifyRepo(runner, CWD);
+
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args[2]).toBe(REPO);
+  });
+
+  it("passes explicit origin target to gh repo view for ssh:// protocol", async () => {
+    const runner = createRunner({ gh: createRun(createRepoView({ isFork: true, parent: null })) }, ORIGIN_SSH_PROTOCOL);
+
+    await classifyRepo(runner, CWD);
+
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args[2]).toBe(REPO);
+  });
+
+  it("returns unknown when gh nameWithOwner does not case-insensitively match origin", async () => {
+    // gh returned metadata for vtemian/micode (upstream) instead of Wuxie233/micode (origin)
+    const runner = createRunner({
+      gh: createRun(
+        createRepoView({
+          nameWithOwner: "vtemian/micode",
+          owner: { login: "vtemian" },
+          viewerPermission: "READ",
+          hasIssuesEnabled: false,
+          isFork: false,
+        }),
+      ),
+    });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.nameWithOwner).toBe(EMPTY_OUTPUT);
+  });
+
+  it("returns unknown when origin URL cannot be parsed", async () => {
+    const runner = createRunner({ git: createRun("not-a-github-url\n") }, "not-a-github-url");
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    // Should not have called gh at all since origin is unparseable
+    expect(runner.calls.filter((c) => c.bin === "gh")).toHaveLength(0);
+  });
+
   it("classifies forks when parent uses { name, owner.login } shape", async () => {
     const runner = createRunner({
       gh: createRun(
@@ -100,7 +204,7 @@ describe("classifyRepo", () => {
 
     expect(preflight).toEqual({
       kind: REPO_KIND.FORK,
-      origin: ORIGIN,
+      origin: ORIGIN_SSH,
       nameWithOwner: REPO,
       viewerLogin: OWNER,
       issuesEnabled: true,
@@ -123,7 +227,7 @@ describe("classifyRepo", () => {
 
     expect(preflight).toEqual({
       kind: REPO_KIND.FORK,
-      origin: ORIGIN,
+      origin: ORIGIN_SSH,
       nameWithOwner: REPO,
       viewerLogin: OWNER,
       issuesEnabled: true,
@@ -146,7 +250,7 @@ describe("classifyRepo", () => {
 
     expect(preflight).toEqual({
       kind: REPO_KIND.FORK,
-      origin: ORIGIN,
+      origin: ORIGIN_SSH,
       nameWithOwner: REPO,
       viewerLogin: OWNER,
       issuesEnabled: true,
@@ -166,7 +270,10 @@ describe("classifyRepo", () => {
   });
 
   it("classifies writable originals as own repos", async () => {
-    const runner = createRunner({ gh: createRun(createRepoView({ nameWithOwner: "Wuxie233/tool" })) });
+    const runner = createRunner(
+      { gh: createRun(createRepoView({ nameWithOwner: "Wuxie233/tool" })) },
+      "git@github.com:Wuxie233/tool.git",
+    );
 
     const preflight = await classifyRepo(runner, CWD);
 
@@ -174,32 +281,38 @@ describe("classifyRepo", () => {
     expect(preflight.nameWithOwner).toBe("Wuxie233/tool");
     expect(preflight.viewerLogin).toBe(OWNER);
     expect(preflight.upstreamUrl).toBeNull();
-    expectCalls(runner);
+    // gh should have been called with the tool repo target
+    const ghCall = runner.calls.find((c) => c.bin === "gh");
+    expect(ghCall?.args[2]).toBe("Wuxie233/tool");
   });
 
-  it("classifies read-only originals as upstream repos", async () => {
-    const runner = createRunner({
-      gh: createRun(
-        createRepoView({
-          nameWithOwner: "vtemian/micode",
-          owner: { login: "vtemian" },
-          viewerPermission: "READ",
-          hasIssuesEnabled: false,
-        }),
-      ),
-    });
+  it("classifies read-only originals as upstream repos when viewed for that same repo", async () => {
+    // This scenario: origin IS vtemian/micode (user cloned upstream directly).
+    // gh view returns upstream data that matches origin, so it should classify as UPSTREAM.
+    const runner = createRunner(
+      {
+        gh: createRun(
+          createRepoView({
+            nameWithOwner: "vtemian/micode",
+            owner: { login: "vtemian" },
+            viewerPermission: "READ",
+            hasIssuesEnabled: false,
+          }),
+        ),
+      },
+      "git@github.com:vtemian/micode.git",
+    );
 
     const preflight = await classifyRepo(runner, CWD);
 
     expect(preflight).toEqual({
       kind: REPO_KIND.UPSTREAM,
-      origin: ORIGIN,
+      origin: "git@github.com:vtemian/micode.git",
       nameWithOwner: "vtemian/micode",
       viewerLogin: null,
       issuesEnabled: false,
       upstreamUrl: null,
     });
-    expectCalls(runner);
   });
 
   it("returns unknown when ownership commands fail", async () => {

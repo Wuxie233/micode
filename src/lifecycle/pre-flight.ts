@@ -25,8 +25,12 @@ const EMPTY_OUTPUT = "";
 const GITHUB_REPO_BASE_URL = "https://github.com";
 const GIT_ORIGIN_ARGS = ["remote", "get-url", "origin"] as const;
 const GH_FIELDS = "nameWithOwner,isFork,parent,owner,viewerPermission,hasIssuesEnabled";
-const GH_REPO_ARGS = ["repo", "view", "--json", GH_FIELDS] as const;
 const OWNER_PERMISSIONS: readonly string[] = ["ADMIN", "MAINTAIN", "WRITE"];
+
+// Patterns for common GitHub remote URL forms.
+// Group 1: owner, Group 2: repo (without .git suffix).
+const HTTPS_ORIGIN_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/;
+const SSH_ORIGIN_PATTERN = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/;
 
 interface RepoParent {
   readonly nameWithOwner: string;
@@ -156,16 +160,41 @@ const createResult = (origin: string, view: RepoView): PreFlightResult => {
   };
 };
 
+/**
+ * Parses a GitHub remote URL into "owner/repo" form.
+ * Returns null when the URL does not match any known GitHub remote format,
+ * so callers can fall back to UNKNOWN rather than guessing the target.
+ */
+export const parseOriginTarget = (url: string): string | null => {
+  const https = HTTPS_ORIGIN_PATTERN.exec(url);
+  if (https) return `${https[1]}/${https[2]}`;
+
+  const ssh = SSH_ORIGIN_PATTERN.exec(url);
+  if (ssh) return `${ssh[1]}/${ssh[2]}`;
+
+  return null;
+};
+
+const viewMatchesOrigin = (nameWithOwner: string, target: string): boolean =>
+  nameWithOwner.toLowerCase() === target.toLowerCase();
+
 export async function classifyRepo(runner: LifecycleRunner, cwd: string): Promise<PreFlightResult> {
   const remote = await runner.git(GIT_ORIGIN_ARGS, { cwd });
   if (!completed(remote)) return createUnknown();
 
   const origin = remote.stdout.trim();
-  const inspected = await runner.gh(GH_REPO_ARGS, { cwd });
+  const target = parseOriginTarget(origin);
+  // If we cannot parse the origin into owner/repo, we cannot safely target gh.
+  if (!target) return createUnknown(origin);
+
+  const inspected = await runner.gh(["repo", "view", target, "--json", GH_FIELDS], { cwd });
   if (!completed(inspected)) return createUnknown(origin);
 
   const view = parseRepoView(inspected.stdout);
   if (!view) return createUnknown(origin);
+
+  // Reject silently if gh returned metadata for a different repo (e.g. inferred upstream).
+  if (!viewMatchesOrigin(view.nameWithOwner, target)) return createUnknown(origin);
 
   return createResult(origin, view);
 }
