@@ -158,6 +158,7 @@ const GH_VIEW = "view";
 const GH_EDIT = "edit";
 const GH_TITLE_FLAG = "--title";
 const GH_BODY_FLAG = "--body";
+const GH_REPO_FLAG = "--repo";
 const GH_JSON_FLAG = "--json";
 const GH_BODY_FIELD = "body";
 const GH_ENABLE_ISSUES_FLAG = "--enable-issues";
@@ -433,9 +434,14 @@ const saveAndSync = async (context: LifecycleContext, record: LifecycleRecord): 
   return record;
 };
 
-const createIssue = async (runner: LifecycleRunner, input: StartRequestInput, cwd: string): Promise<IssueIdentity> => {
+const createIssue = async (
+  runner: LifecycleRunner,
+  input: StartRequestInput,
+  cwd: string,
+  repoTarget: string,
+): Promise<IssueIdentity> => {
   const created = await runner.gh(
-    [GH_ISSUE, GH_CREATE, GH_TITLE_FLAG, input.summary, GH_BODY_FLAG, renderStartBody(input)],
+    [GH_ISSUE, GH_CREATE, GH_REPO_FLAG, repoTarget, GH_TITLE_FLAG, input.summary, GH_BODY_FLAG, renderStartBody(input)],
     { cwd },
   );
   if (!completed(created)) throw new Error(formatFailure(ISSUE_CREATE_FAILED, created));
@@ -574,7 +580,7 @@ const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
     const enableNote = await ensureIssuesEnabled(context.runner, preflight, context.cwd);
     if (enableNote) return abortStart(context, request, preflight, enableNote);
 
-    const identity = await createIssue(context.runner, request, context.cwd);
+    const identity = await createIssue(context.runner, request, context.cwd, preflight.nameWithOwner);
     const opened = createRecord(request, context.worktreesRoot, identity, LIFECYCLE_STATES.ISSUE_OPEN);
     const worktreeNote = await createWorktree(context.runner, opened, context.cwd);
     if (worktreeNote) return abortRecord(context, opened, worktreeNote);
