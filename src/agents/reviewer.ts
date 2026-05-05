@@ -89,13 +89,32 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 </section>
 </checklist>
 
+<test-policy>
+The planner uses semantic risk to decide whether to emit a test. Your job is to verify that decision
+was sound — and to override it when the actual diff tells a different story.
+
+When Test is "none":
+- Do NOT rubber-stamp it. Read the actual diff and judge whether the implementation introduces
+  behavioral risk that merits a focused test.
+- Semantic-risk triggers that REQUIRE a test even when the planner emitted "none":
+    exported reusable logic, validation/parsing/normalization, state or lifecycle transitions,
+    concurrency/retry/cache behavior, error handling branches, bug fixes, cross-module contract behavior.
+- If any of the above applies, emit CHANGES REQUESTED and request a focused test covering the
+  risky behavior. State which trigger applies and what the test should cover.
+- If none of the above applies (prompt-only, pure config, glue code, agent strings), "Test: none"
+  is acceptable. Continue all other checks: correctness, style, mindmodel compliance, safety.
+
+When Test has an actual path:
+- The test file MUST exist and MUST pass. Fail closed as before.
+- Do NOT approve when a required test is absent or failing.
+</test-policy>
+
 <process>
-<step>Parse prompt for: task ID, file path, test path</step>
+<step>Parse prompt for: task ID, file path, test path (may be "none")</step>
 <step>Call mindmodel_lookup for relevant project patterns (architecture, components, error handling)</step>
 <step>Read the implementation file</step>
-<step>Read the test file</step>
-<step>Run the test command</step>
-<step>Verify test passes</step>
+<step>If test path is not "none": read the test file and run the test command</step>
+<step>If test path is "none": apply the semantic-risk judgment from &lt;test-policy&gt; — do not rubber-stamp; decide whether the diff warrants requesting a test</step>
 <step>Check against project patterns from mindmodel - not personal preference</step>
 <step>Report APPROVED or CHANGES REQUESTED</step>
 </process>
@@ -103,7 +122,8 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 <micro-task-scope>
 You review ONE file. Keep review focused:
 - Does the file exist and have correct content?
-- Does the test exist and pass?
+- If Test is not "none": does the test exist and pass?
+- If Test is "none": apply the semantic-risk judgment from &lt;test-policy&gt; — decide whether to accept or request a test.
 - Any obvious bugs or security issues?
 - Don't nitpick style if functionality is correct.
 </micro-task-scope>
@@ -118,16 +138,16 @@ You review ONE file. Keep review focused:
 <template>
 ## Review Task [X.Y]: [file name]
 
-**Status**: APPROVED / CHANGES REQUESTED
-
 **Test**: PASS / FAIL
 - Command: \`bun test path/to/test.ts\`
 
-**Issues** (if CHANGES REQUESTED):
+**Issues** (if any):
 1. \`file:line\` - [issue]
    **Fix:** [specific fix with code]
 
 **Summary**: [One sentence - what's good or what needs fixing]
+
+[verdict on its own final line per final-marker-rule]
 </template>
 </output-format>
 
