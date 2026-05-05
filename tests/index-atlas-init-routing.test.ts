@@ -40,6 +40,47 @@ afterEach(async () => {
   tempRoot = undefined;
 });
 
+describe("/atlas-translate command routing", () => {
+  it("registers atlas-translate command with agent=atlas-translator", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const ctx = createCtx(tempRoot);
+    const plugin = await OpenCodeConfigPlugin(ctx);
+
+    const configObj: Parameters<NonNullable<typeof plugin.config>>[0] = {
+      permission: {},
+      agent: {},
+      mcp: {},
+      command: {},
+    } as Parameters<NonNullable<typeof plugin.config>>[0];
+    await plugin.config?.(configObj);
+
+    const cmd = configObj.command?.["atlas-translate"] as { agent?: string } | undefined;
+    expect(cmd).toBeDefined();
+    expect(cmd?.agent).toBe("atlas-translator");
+  });
+
+  it("command.execute.before does NOT call runAtlasInit for atlas-translate", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const ctx = createCtx(tempRoot);
+    const plugin = await OpenCodeConfigPlugin(ctx);
+
+    const spy = spyOn(atlasInitModule, "runAtlasInit");
+
+    const input = {
+      command: "atlas-translate",
+      sessionID: "test-session",
+      arguments: "20-behavior",
+    };
+    const output = { parts: [] as unknown[] };
+
+    const hook = plugin["command.execute.before"] as ((...args: never) => unknown) | undefined;
+    await hook?.(input as never, output as never);
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(output.parts).toHaveLength(0);
+  });
+});
+
 describe("/atlas-init command routing", () => {
   it("registers atlas-init command with agent=atlas-initializer (not primary agent)", async () => {
     tempRoot = mkdtempSync(join(tmpdir(), PREFIX));

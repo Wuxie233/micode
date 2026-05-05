@@ -6,6 +6,7 @@ import { atlasColdBehaviorAgent } from "./atlas-cold-behavior";
 import { atlasColdBuildAgent } from "./atlas-cold-build";
 import { atlasCompilerAgent } from "./atlas-compiler";
 import { atlasInitializerAgent } from "./atlas-initializer";
+import { atlasTranslatorAgent } from "./atlas-translator";
 import { atlasWorkerBehaviorAgent } from "./atlas-worker-behavior";
 import { atlasWorkerBuildAgent } from "./atlas-worker-build";
 import { bootstrapperAgent } from "./bootstrapper";
@@ -63,6 +64,7 @@ export const agents: Record<string, AgentConfig> = {
   "atlas-cold-build": { ...atlasColdBuildAgent, model: DEFAULT_MODEL },
   "atlas-cold-behavior": { ...atlasColdBehaviorAgent, model: DEFAULT_MODEL },
   "atlas-initializer": { ...atlasInitializerAgent, model: DEFAULT_MODEL },
+  "atlas-translator": { ...atlasTranslatorAgent, model: DEFAULT_MODEL },
   "atlas-worker-build": { ...atlasWorkerBuildAgent, model: DEFAULT_MODEL },
   "atlas-worker-behavior": { ...atlasWorkerBehaviorAgent, model: DEFAULT_MODEL },
   "notification-courier": { ...notificationCourierAgent, model: DEFAULT_MODEL },

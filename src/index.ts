@@ -175,6 +175,7 @@ const ATLAS_COMMAND_PREFIX = "/";
 const ATLAS_INIT_COMMAND = "atlas-init";
 const ATLAS_STATUS_COMMAND = "atlas-status";
 const ATLAS_REFRESH_COMMAND = "atlas-refresh";
+const ATLAS_TRANSLATE_COMMAND = "atlas-translate";
 const ATLAS_PROJECT_TYPE = "opencode-plugin";
 const ATLAS_ARGS_SPLIT_PATTERN = /\s+/u;
 const ATLAS_JSON_FENCE = "```json";
@@ -378,12 +379,18 @@ async function runAtlasCommand(
   appendAtlasCommandPart(input, output, formatAtlasCommandResult(command, result));
 }
 
+const ATLAS_AGENT_ROUTES: Record<string, string> = {
+  [ATLAS_INIT_COMMAND]: "atlas-initializer",
+  // /atlas-translate routes to the dedicated translator agent (LLM-driven in-place prose translation).
+  [ATLAS_TRANSLATE_COMMAND]: "atlas-translator",
+};
+
 const ATLAS_COMMANDS = Object.fromEntries(
   atlasCommandDefinitions.map((definition) => {
     const name = normalizeAtlasCommandName(definition.name);
-    // /atlas-init routes to the dedicated initializer agent (multi-phase cold build with spawn_agent workers).
+    // /atlas-init and /atlas-translate route to dedicated agents.
     // /atlas-status and /atlas-refresh are executed deterministically by the command.execute.before hook.
-    const agent = name === ATLAS_INIT_COMMAND ? "atlas-initializer" : PRIMARY_AGENT_NAME;
+    const agent = ATLAS_AGENT_ROUTES[name] ?? PRIMARY_AGENT_NAME;
     return [
       name,
       {
@@ -1012,9 +1019,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "command.execute.before": async (input, output) => {
-      // atlas-init routes to the atlas-initializer agent; skip direct hook execution.
+      // Commands that route to dedicated agents skip direct hook execution.
       const commandName = normalizeAtlasCommandName(input.command);
-      if (commandName === ATLAS_INIT_COMMAND) return;
+      if (commandName in ATLAS_AGENT_ROUTES) return;
       await runAtlasCommand(ctx, input, output, {
         buildColdInitDeps: (ownerSessionID) => buildColdInitDeps(octtoSessionStore, ownerSessionID, octtoTracker),
       });
