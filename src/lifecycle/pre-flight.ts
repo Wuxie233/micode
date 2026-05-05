@@ -25,8 +25,18 @@ const EMPTY_OUTPUT = "";
 const GITHUB_REPO_BASE_URL = "https://github.com";
 const GIT_ORIGIN_ARGS = ["remote", "get-url", "origin"] as const;
 const GH_FIELDS = "nameWithOwner,isFork,parent,owner,viewerPermission,hasIssuesEnabled";
-const GH_REPO_ARGS = ["repo", "view", "--json", GH_FIELDS] as const;
 const OWNER_PERMISSIONS: readonly string[] = ["ADMIN", "MAINTAIN", "WRITE"];
+
+// Matches:
+//   git@github.com:owner/repo.git
+//   git@github.com:owner/repo
+//   https://github.com/owner/repo.git
+//   https://github.com/owner/repo
+//   ssh://git@github.com/owner/repo.git
+const GITHUB_ORIGIN_PATTERN =
+  /^(?:git@github\.com:|(?:https?|ssh):\/\/(?:[^@]+@)?github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?$/;
+
+const buildGhRepoArgs = (slug: string): readonly string[] => ["repo", "view", slug, "--json", GH_FIELDS];
 
 interface RepoParent {
   readonly nameWithOwner: string;
@@ -90,6 +100,17 @@ const createUnknown = (origin = EMPTY_OUTPUT): PreFlightResult => ({
 });
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
+
+const parseOriginSlug = (origin: string): string | null => {
+  const trimmed = origin.trim();
+  if (trimmed === EMPTY_OUTPUT) return null;
+  const match = trimmed.match(GITHUB_ORIGIN_PATTERN);
+  if (!match) return null;
+  const owner = match[1];
+  const repo = match[2];
+  if (!owner || !repo) return null;
+  return `${owner}/${repo}`;
+};
 
 const createParent = (nameWithOwner: string, url?: string): RepoParent => {
   if (url === undefined) return { nameWithOwner };
@@ -161,7 +182,10 @@ export async function classifyRepo(runner: LifecycleRunner, cwd: string): Promis
   if (!completed(remote)) return createUnknown();
 
   const origin = remote.stdout.trim();
-  const inspected = await runner.gh(GH_REPO_ARGS, { cwd });
+  const slug = parseOriginSlug(origin);
+  if (!slug) return createUnknown(origin);
+
+  const inspected = await runner.gh(buildGhRepoArgs(slug), { cwd });
   if (!completed(inspected)) return createUnknown(origin);
 
   const view = parseRepoView(inspected.stdout);
