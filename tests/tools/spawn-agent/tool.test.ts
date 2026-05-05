@@ -41,12 +41,6 @@ interface CreateRequest {
   readonly query: { readonly directory: string };
 }
 
-interface UpdateRequest {
-  readonly path: { readonly id: string };
-  readonly body: { readonly title?: string };
-  readonly query: { readonly directory: string };
-}
-
 interface DeleteRequest {
   readonly path: { readonly id: string };
   readonly query: { readonly directory: string };
@@ -111,7 +105,7 @@ describe("spawn-agent tool internal sessions", () => {
     expect(registry.size()).toBe(0);
   });
 
-  it("preserves task_error sessions instead of deleting them", async () => {
+  it("deletes task_error sessions without preserving them", async () => {
     const deleteSession = mock(async () => ({}));
     const ctx = createCtx(TASK_ERROR_OUTPUT, deleteSession);
     const registry = createRegistry();
@@ -119,18 +113,12 @@ describe("spawn-agent tool internal sessions", () => {
 
     const output = await tool.execute({ agents: [TASK] }, { metadata: () => {} } as never);
 
-    expect(output).toContain(SESSION_ID);
-    expect(deleteSession).not.toHaveBeenCalled();
-    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
-    expect(updateCall?.path.id).toBe(SESSION_ID);
-    expect(updateCall?.body.title).toBe("失败: Inspect code");
-    expect(registry.get(SESSION_ID)).toMatchObject({
-      sessionId: SESSION_ID,
-      agent: AGENT,
-      description: DESCRIPTION,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
+    expect(output).toContain(TASK_ERROR_OUTPUT);
+    expect(output).not.toContain("SessionID");
+    expect(output).not.toContain(SESSION_ID);
+    expect(deleteSession).toHaveBeenCalled();
+    expect(ctx.client.session.update.mock.calls).toHaveLength(0);
+    expect(registry.get(SESSION_ID)).toBeNull();
   });
 
   it("emits review_changes_requested for reviewer CHANGES REQUESTED without failure outcomes", async () => {
@@ -152,7 +140,7 @@ describe("spawn-agent tool internal sessions", () => {
     expect(registry.size()).toBe(0);
   });
 
-  it("retitles reviewer CHANGES REQUESTED sessions without preserving or deleting them", async () => {
+  it("deletes reviewer CHANGES REQUESTED sessions without retitling or preserving them", async () => {
     const deleteSession = mock(async () => ({}));
     const ctx = createCtx(REVIEW_CHANGES_OUTPUT, deleteSession);
     const registry = createRegistry();
@@ -164,15 +152,13 @@ describe("spawn-agent tool internal sessions", () => {
       sessionID: PARENT_SESSION_ID,
     } as never);
 
-    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
-    expect(updateCall?.path.id).toBe(SESSION_ID);
-    expect(updateCall?.body.title).toBe("需修改: 审查 2.3");
+    expect(ctx.client.session.update.mock.calls).toHaveLength(0);
     expect(spawnRegistry.size()).toBe(0);
     expect(spawnRegistry.get(SESSION_ID)).toBeNull();
-    expect(deleteSession).not.toHaveBeenCalled();
+    expect(deleteSession).toHaveBeenCalled();
   });
 
-  it("keeps implementer CHANGES REQUESTED on the legacy task_error preserve path", async () => {
+  it("deletes implementer CHANGES REQUESTED task_error sessions without preserving them", async () => {
     const deleteSession = mock(async () => ({}));
     const ctx = createCtx(REVIEW_CHANGES_OUTPUT, deleteSession);
     const registry = createRegistry();
@@ -183,17 +169,9 @@ describe("spawn-agent tool internal sessions", () => {
       { metadata: () => {} } as never,
     );
 
-    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
-    expect(updateCall?.path.id).toBe(SESSION_ID);
-    expect(updateCall?.body.title).toBe("失败: 实现 2.3");
-    expect(registry.get(SESSION_ID)).toMatchObject({
-      sessionId: SESSION_ID,
-      agent: IMPLEMENTER_AGENT,
-      description: IMPLEMENT_DESCRIPTION,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
-    expect(deleteSession).not.toHaveBeenCalled();
+    expect(ctx.client.session.update.mock.calls).toHaveLength(0);
+    expect(registry.get(SESSION_ID)).toBeNull();
+    expect(deleteSession).toHaveBeenCalled();
   });
 
   it("blocks duplicate generations before creating a session", async () => {
@@ -254,7 +232,7 @@ describe("spawn-agent tool internal sessions", () => {
     expect(spawnRegistry.listPreserved()).toHaveLength(0);
   });
 
-  it("preserves a session when marker is final without verifier consultation", async () => {
+  it("deletes a session when marker is final without verifier consultation", async () => {
     const deleteSession = mock(async () => ({}));
     const ctx = createCtx(SUCCESS_OUTPUT, deleteSession);
     const registry = createRegistry();
@@ -275,8 +253,10 @@ describe("spawn-agent tool internal sessions", () => {
     expect(output).toContain(SPAWN_OUTCOMES.TASK_ERROR);
     expect(output).toContain(FINAL_MARKER_OUTPUT);
     expect(verifier).not.toHaveBeenCalled();
-    expect(deleteSession).not.toHaveBeenCalled();
-    expect(spawnRegistry.listPreserved()).toHaveLength(1);
+    expect(output).not.toContain("SessionID");
+    expect(deleteSession).toHaveBeenCalled();
+    expect(spawnRegistry.listPreserved()).toHaveLength(0);
+    expect(spawnRegistry.size()).toBe(0);
   });
 
   it("uses verifier narrative verdicts to clean up ambiguous marker sessions", async () => {
@@ -301,7 +281,7 @@ describe("spawn-agent tool internal sessions", () => {
     expect(spawnRegistry.size()).toBe(0);
   });
 
-  it("uses verifier final verdicts to preserve ambiguous marker sessions", async () => {
+  it("uses verifier final verdicts to return task_error and delete sessions", async () => {
     const deleteSession = mock(async () => ({}));
     const ctx = createCtx(NARRATIVE_OUTPUT, deleteSession);
     const registry = createRegistry();
@@ -317,14 +297,10 @@ describe("spawn-agent tool internal sessions", () => {
 
     expect(output).toContain(SPAWN_OUTCOMES.TASK_ERROR);
     expect(output).toContain("verifier=final");
-    expect(deleteSession).not.toHaveBeenCalled();
-    const updateCall = ctx.client.session.update.mock.calls[0]?.[0] as UpdateRequest | undefined;
-    expect(updateCall?.body.title).toBe("失败: Inspect code");
-    expect(spawnRegistry.get(SESSION_ID)).toMatchObject({
-      sessionId: SESSION_ID,
-      outcome: SPAWN_OUTCOMES.TASK_ERROR,
-      resumeCount: 0,
-    });
+    expect(output).not.toContain("SessionID");
+    expect(deleteSession).toHaveBeenCalled();
+    expect(ctx.client.session.update.mock.calls).toHaveLength(0);
+    expect(spawnRegistry.get(SESSION_ID)).toBeNull();
   });
 
   it("falls back to success and cleanup when verifier returns null", async () => {

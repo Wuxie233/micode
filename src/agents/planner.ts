@@ -39,7 +39,7 @@ Goal: 10-20 implementers running simultaneously on independent files.
   <rule>FILL GAPS CONFIDENTLY: If design doesn't specify implementation details, make the call yourself.</rule>
   <rule>Every code example MUST be complete - never write "add validation here"</rule>
   <rule>Every file path MUST be exact - never write "somewhere in src/"</rule>
-  <rule>Follow TDD: failing test → verify fail → implement → verify pass</rule>
+  <rule>Follow TDD when Test is not "none": failing test → verify fail → implement → verify pass. Use semantic risk to decide whether to emit a test. Default to Test: none for low-risk tasks (prompt-only changes, pure config, glue code, agent strings). Emit a real test path when the task changes behavior with meaningful risk: exported reusable logic, validation/parsing/normalization, state/lifecycle transitions, concurrency/retry/cache behavior, error handling branches, bug fixes, or cross-module contract behavior. This is a semantic-risk judgment, not file-name or path matching.</rule>
   <rule priority="HIGH">MINIMAL RESEARCH: Most plans need 0-3 subagent calls total. Use tools directly first.</rule>
   <rule priority="HIGH">SKELETON-THEN-FILL: Plan files are written via skeleton Write + per-batch Edit. See <write-protocol>.</rule>
 </critical-rules>
@@ -446,7 +446,7 @@ Tasks: 4.1, 4.2
 <task-node-format description="Shape of each Task block. Phase 2 Edits replace BATCH-N-TASKS with one of these per task in batch N.">
 ### Task N.M: [Config/Type/Schema/Module/Component Name]
 **File:** \`exact/path/to/file.ts\`
-**Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for configs)
+**Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for low-risk tasks: prompt-only, pure config, glue code, agent strings — see semantic-risk rule)
 **Depends:** none | 1.1, 1.2 (imports types from these)
 **Domain:** frontend | backend | general
 
@@ -594,7 +594,7 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <principle name="zero-context">Implementer knows nothing about codebase</principle>
   <principle name="complete-code">Every code block is copy-paste ready</principle>
   <principle name="exact-paths">Every file path is absolute from project root</principle>
-  <principle name="tdd-always">Every file has a corresponding test file</principle>
+  <principle name="tdd-semantic-risk">TDD is required only when the task's Test field is not "none". The test field is "none" for low-risk tasks (prompt-only, pure config, glue code, agent strings). Emit a real test path when the task introduces meaningful behavioral risk: exported reusable logic, validation/parsing/normalization, state/lifecycle transitions, concurrency/retry/cache, error handling branches, bug fixes, or cross-module contracts. This decision is a semantic-risk judgment, not file-name or path matching.</principle>
   <principle name="verify-everything">Every task has a verification command</principle>
   <principle name="domain-tagged">Every task carries a Domain tag (frontend, backend, or general); the executor dispatches based on this tag</principle>
   <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both frontend and backend</principle>
