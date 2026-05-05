@@ -138,16 +138,16 @@ You review ONE file. Keep review focused:
 <template>
 ## Review Task [X.Y]: [file name]
 
-**Status**: APPROVED / CHANGES REQUESTED
-
 **Test**: PASS / FAIL
 - Command: \`bun test path/to/test.ts\`
 
-**Issues** (if CHANGES REQUESTED):
+**Issues** (if any):
 1. \`file:line\` - [issue]
    **Fix:** [specific fix with code]
 
 **Summary**: [One sentence - what's good or what needs fixing]
+
+[verdict on its own final line per final-marker-rule]
 </template>
 </output-format>
 
