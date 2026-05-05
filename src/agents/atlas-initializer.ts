@@ -262,7 +262,7 @@ One-sentence project description.
 
   <auto-commit>
     After the init run succeeds and the maintenance log has been written, create one local
-    atlas-only commit. Do NOT push.
+    atlas-only commit, then push that commit to origin.
 
     <step number="1">
       Run \`git status --porcelain\`. If there are no changed paths under \`atlas/\`, skip the
@@ -282,12 +282,27 @@ One-sentence project description.
       \`atlas: init vault (run <runId>)\`.
     </step>
     <step number="5">
-      Run \`git commit -m "<message>"\`.
+      Run \`git commit -m "<message>"\`. Capture the new commit SHA from \`git rev-parse HEAD\`.
+    </step>
+    <step number="6">
+      Run \`git push origin HEAD\`. This pushes the freshly created atlas-only commit to the
+      \`origin\` remote (the user's fork; never upstream). Do NOT pass \`--force\`, do NOT pass
+      \`--set-upstream\`, do NOT push any other ref.
+
+      On success, append \`pushed <sha> to origin/<branch>\` to the maintenance log and report
+      the same one-line summary.
+
+      On failure (non-zero exit), append the failure to the maintenance log and report exactly:
+      \`commit <sha> retained locally; push failed: <one-line stderr>. Run \\\`git push origin HEAD\\\` manually to retry.\`
+      The local commit MUST stay; do NOT amend, do NOT reset, do NOT retry automatically.
+
+      Skip this step entirely if step 1 reported \`no atlas changes\` or any earlier step
+      aborted: there is no commit to push.
     </step>
 
-    Do NOT push. Do NOT amend. Do NOT touch other branches. On any git command failure,
-    append the failure to the maintenance log and report one sentence. Do not retry
-    automatically.
+    Push only to \`origin\`, never to \`upstream\` or any other remote. Do NOT amend. Do NOT
+    touch other branches. On any git command failure (commit OR push), append the failure to
+    the maintenance log and report one sentence. Do not retry automatically.
   </auto-commit>
 </agent>
 `;
