@@ -23,6 +23,10 @@ Return Markdown. Do not include frontmatter, do not include a top-level H1, do n
 - Do not propose Behavior layer claims.
 - Use single-word names where context allows.
 - Keep total length under 60 lines.
+- LANGUAGE: Write all human-readable prose (paragraph summaries, bullet point text) in Chinese. Do NOT translate:
+  source pointers (e.g. "code:src/foo.ts"), file paths, package names, code symbols, identifiers,
+  commit SHAs, URLs, command names, inline code spans, fenced code blocks, or Obsidian wikilinks
+  (the text inside [[...]]).
 </constraints>
 `,
 };

@@ -173,6 +173,7 @@ const PLUGIN_COMMANDS = {
 
 const ATLAS_COMMAND_PREFIX = "/";
 const ATLAS_INIT_COMMAND = "atlas-init";
+const ATLAS_TRANSLATE_COMMAND = "atlas-translate";
 const ATLAS_STATUS_COMMAND = "atlas-status";
 const ATLAS_REFRESH_COMMAND = "atlas-refresh";
 const ATLAS_PROJECT_TYPE = "opencode-plugin";
@@ -205,6 +206,17 @@ interface AtlasOcttoTracker {
 function normalizeAtlasCommandName(name: string): string {
   if (name.startsWith(ATLAS_COMMAND_PREFIX)) return name.slice(ATLAS_COMMAND_PREFIX.length);
   return name;
+}
+
+function getAtlasCommandAgent(name: string): string {
+  if (name === ATLAS_INIT_COMMAND) return "atlas-initializer";
+  if (name === ATLAS_TRANSLATE_COMMAND) return "atlas-translator";
+  return PRIMARY_AGENT_NAME;
+}
+
+function shouldSkipAtlasCommandHook(command: string): boolean {
+  const name = normalizeAtlasCommandName(command);
+  return name === ATLAS_INIT_COMMAND || name === ATLAS_TRANSLATE_COMMAND;
 }
 
 function splitAtlasArgs(raw: string): readonly string[] {
@@ -381,14 +393,11 @@ async function runAtlasCommand(
 const ATLAS_COMMANDS = Object.fromEntries(
   atlasCommandDefinitions.map((definition) => {
     const name = normalizeAtlasCommandName(definition.name);
-    // /atlas-init routes to the dedicated initializer agent (multi-phase cold build with spawn_agent workers).
-    // /atlas-status and /atlas-refresh are executed deterministically by the command.execute.before hook.
-    const agent = name === ATLAS_INIT_COMMAND ? "atlas-initializer" : PRIMARY_AGENT_NAME;
     return [
       name,
       {
         description: definition.description,
-        agent,
+        agent: getAtlasCommandAgent(name),
         template: `Run the ${definition.name} Project Atlas command with arguments: $ARGUMENTS`,
       },
     ];
@@ -1012,9 +1021,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     "command.execute.before": async (input, output) => {
-      // atlas-init routes to the atlas-initializer agent; skip direct hook execution.
-      const commandName = normalizeAtlasCommandName(input.command);
-      if (commandName === ATLAS_INIT_COMMAND) return;
+      if (shouldSkipAtlasCommandHook(input.command)) return;
       await runAtlasCommand(ctx, input, output, {
         buildColdInitDeps: (ownerSessionID) => buildColdInitDeps(octtoSessionStore, ownerSessionID, octtoTracker),
       });
@@ -1217,4 +1224,4 @@ IMPORTANT:
   };
 };
 
-export { OpenCodeConfigPlugin };
+export { OpenCodeConfigPlugin, shouldSkipAtlasCommandHook };

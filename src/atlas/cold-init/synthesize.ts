@@ -6,6 +6,7 @@ const SCHEME_PREFIX_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
 const THOUGHTS_PATH_PREFIX = "thoughts/";
 const THOUGHTS_SOURCE_PREFIX = "thoughts:";
 const CLOSED_LIFECYCLE_STATES = new Set(["closed", "merging"]);
+const INFERRED_BEHAVIOR_SUMMARY = "从已关闭生命周期记录推断的用户可见行为。";
 
 const slugify = (raw: string): string =>
   raw
@@ -19,7 +20,7 @@ const planIndex = (discovery: ColdInitDiscovery): PlannedNode => ({
   layer: ATLAS_LAYERS.DECISION,
   relativePath: "00-index.md",
   title: discovery.projectName,
-  summary: discovery.readmeSummary ?? `Project atlas for ${discovery.projectName}.`,
+  summary: discovery.readmeSummary ?? `项目 ${discovery.projectName} 的 Atlas 知识库。`,
   sources: discovery.readmeSummary !== null ? ["code:README.md"] : [],
   connections: [],
   inferred: false,
@@ -66,7 +67,7 @@ const planLifecycleBehaviorNodes = (discovery: ColdInitDiscovery): readonly Plan
       layer: ATLAS_LAYERS.BEHAVIOR,
       relativePath: `20-behavior/lifecycle-${record.issueNumber}.md`,
       title,
-      summary: design?.excerpt ?? "Behavior derived from lifecycle record.",
+      summary: design?.excerpt ?? INFERRED_BEHAVIOR_SUMMARY,
       sources: [record.pointer, ...record.designPointers.map(normalizeDesignSource)],
       connections: findRelatedBuildIds(`${title} ${design?.excerpt ?? ""}`, discovery.modules),
       inferred: design === undefined,
@@ -98,7 +99,7 @@ const PHASE_ROADMAP_NODE: PlannedNode = {
   layer: ATLAS_LAYERS.DECISION,
   relativePath: "40-decisions/atlas-phase-roadmap.md",
   title: "Atlas phase roadmap",
-  summary: "Canonical record of what is in scope for the current phase.",
+  summary: "记录当前阶段的范围、推进顺序和交付边界。",
   sources: ["thoughts:shared/designs/2026-05-04-project-atlas-design.md"],
   connections: [],
   inferred: false,
@@ -138,7 +139,7 @@ const planTimelineNodes = (discovery: ColdInitDiscovery): readonly PlannedNode[]
     layer: ATLAS_LAYERS.TIMELINE,
     relativePath: `60-timeline/lifecycle-${record.issueNumber}.md`,
     title: `Lifecycle ${record.issueNumber}`,
-    summary: `State at last write: ${record.state}.`,
+    summary: `最近一次写入状态：${record.state}。`,
     sources: [record.pointer],
     connections: [`20-behavior/lifecycle-${record.issueNumber}`],
     inferred: false,
@@ -148,7 +149,7 @@ const planTimelineNodes = (discovery: ColdInitDiscovery): readonly PlannedNode[]
     layer: ATLAS_LAYERS.TIMELINE,
     relativePath: "60-timeline/index.md",
     title: "Project timeline",
-    summary: `Chronological feed of ${records.length} lifecycle record(s).`,
+    summary: `项目时间线包含 ${records.length} 条生命周期记录。`,
     sources: [],
     connections: records.map((record) => record.id),
     inferred: false,

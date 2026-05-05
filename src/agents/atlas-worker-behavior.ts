@@ -26,6 +26,7 @@ Return a JSON array of claims:
 - Stay in the Behavior layer.
 - Cross-layer connections are emitted as separate claims with target "20-behavior/<node>.md" and a claim string of the form "links to [[10-impl/<module>]]".
 - Do not propose changes outside the affectedFeatures list in the handoff.
+- LANGUAGE: Write claim prose in Chinese. Do NOT translate source pointers, code symbols, file paths, package names, or identifiers.
 </constraints>
 `,
 };

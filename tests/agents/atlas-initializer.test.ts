@@ -66,6 +66,28 @@ describe("atlas-initializer agent config", () => {
   it("states that no lifecycle handoff is required", () => {
     expect(atlasInitializerAgent.prompt).toContain("lifecycle handoff");
   });
+
+  it("instructs atlas-only auto-commit after a successful run", () => {
+    const p = atlasInitializerAgent.prompt;
+    expect(p).toContain("<auto-commit>");
+    expect(p).toContain("git status --porcelain");
+    expect(p).toContain("no atlas changes");
+    expect(p).toContain("git add atlas/");
+    expect(p).toContain("git diff --cached --name-only");
+    expect(p).toContain("validateStagedPaths");
+    expect(p).toContain("buildAtlasInitCommitSummary");
+    expect(p).toContain("atlas: init vault (run <runId>)");
+    expect(p).toContain('git commit -m "<message>"');
+    expect(p.toLowerCase()).toContain("do not push");
+  });
+
+  it("refuses to commit when non-atlas paths are staged", () => {
+    const p = atlasInitializerAgent.prompt.toLowerCase();
+    expect(p).toContain("every output line must start with `atlas/`");
+    expect(p).toContain("do not commit");
+    expect(p).toContain("non-atlas");
+    expect(p).toMatch(/reset|unstage/);
+  });
 });
 
 describe("agents barrel includes atlas-initializer", () => {

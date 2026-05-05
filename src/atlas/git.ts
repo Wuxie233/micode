@@ -18,3 +18,20 @@ export function validateStagedPaths(paths: readonly string[]): StagedValidation 
   if (offenders.length > 0) return { ok: false, reason: `non-atlas paths staged: ${offenders.join(", ")}` };
   return { ok: true };
 }
+
+export interface AtlasInitCommitSummaryInput {
+  readonly runId: string;
+}
+
+export function buildAtlasInitCommitSummary(input: AtlasInitCommitSummaryInput): string {
+  return `init vault (run ${input.runId})`;
+}
+
+export interface AtlasTranslateCommitSummaryInput {
+  readonly runId: string;
+  readonly targetPath: string;
+}
+
+export function buildAtlasTranslateCommitSummary(input: AtlasTranslateCommitSummaryInput): string {
+  return `translate ${input.targetPath} (run ${input.runId})`;
+}

@@ -23,11 +23,18 @@ export const atlasCommandDefinitions: readonly AtlasCommandDefinition[] = [
     name: "/atlas-refresh",
     description: "Manually refresh a single atlas node or area without waiting for lifecycle finish",
   },
+  {
+    name: "/atlas-translate",
+    description: "Translate atlas nodes or the full vault into Chinese while preserving atlas structure",
+  },
 ];
 
 const RECONCILE = "--reconcile";
 const FORCE_REBUILD = "--force-rebuild";
 const KNOWN_FLAGS = new Set<string>([RECONCILE, FORCE_REBUILD]);
+const FLAG_PREFIX = "--";
+const DEFAULT_TRANSLATE_TARGET = "all";
+const MAX_TRANSLATE_POSITIONALS = 1;
 
 export function parseAtlasInitArgs(argv: readonly string[]): { readonly mode: InitMode } {
   for (const arg of argv) {
@@ -40,4 +47,13 @@ export function parseAtlasInitArgs(argv: readonly string[]): { readonly mode: In
   if (reconcile) return { mode: "reconcile" };
   if (forceRebuild) return { mode: "force-rebuild" };
   return { mode: "fresh" };
+}
+
+export function parseAtlasTranslateArgs(argv: readonly string[]): { readonly targetPath: string } {
+  const unknownFlag = argv.find((arg) => arg.startsWith(FLAG_PREFIX));
+  if (unknownFlag) throw new Error(`unknown flag: ${unknownFlag}`);
+
+  if (argv.length > MAX_TRANSLATE_POSITIONALS) throw new Error("expected at most one target path");
+
+  return { targetPath: argv[0] ?? DEFAULT_TRANSLATE_TARGET };
 }

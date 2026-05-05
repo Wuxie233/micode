@@ -3,11 +3,10 @@ import { serializeFrontmatter } from "@/atlas/frontmatter";
 import { ATLAS_NODE_STATUSES, type AtlasFrontmatter } from "@/atlas/types";
 import { formatWikilink } from "@/atlas/wikilink";
 
-const EMPTY_PLACEHOLDER = "_none_";
-const SUMMARY_PLACEHOLDER = "_seed summary; refine in a follow-up_";
+const EMPTY_PLACEHOLDER = "_无_";
+const SUMMARY_PLACEHOLDER = "_摘要待补全：请在下次 lifecycle 或 /atlas-refresh 时补全_";
 const INFERRED_PREAMBLE =
-  "This page is an early draft inferred from the source(s) listed below. " +
-  "Refine the prose during the next lifecycle pass; do not treat the wording as authoritative.";
+  "本页是基于下方来源推断生成的早期草稿，措辞尚未定稿；请在下一次 lifecycle 或 /atlas-refresh 时再核实。";
 
 export interface RenderInput {
   readonly node: PlannedNode;

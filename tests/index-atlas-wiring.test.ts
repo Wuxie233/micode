@@ -17,7 +17,10 @@ describe("atlas wiring", () => {
     expect(typeof atlasTools.runAtlasRefresh).toBe("function");
   });
 
-  it("declares three atlas slash commands", () => {
-    expect(atlasCommandDefinitions).toHaveLength(3);
+  it("declares four atlas slash commands", () => {
+    const names = atlasCommandDefinitions.map((command) => command.name);
+
+    expect(atlasCommandDefinitions).toHaveLength(4);
+    expect(names).toContain("/atlas-translate");
   });
 });

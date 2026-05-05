@@ -24,6 +24,10 @@ Write source-backed natural language only. Do not emit a confidence score, do no
 - Stay in the Behavior layer.
 - Cross-layer connections may be mentioned in prose using [[10-impl/<module>]] wikilink form.
 - Keep total length under 80 lines.
+- LANGUAGE: Write all human-readable prose about user-visible behavior, mechanics, numerics, and rules in Chinese.
+  Do NOT translate: source pointers (e.g. "lifecycle:42"), file paths, package names, code symbols,
+  identifiers, commit SHAs, URLs, command names, inline code spans, fenced code blocks, or Obsidian wikilinks
+  (the text inside [[...]]).
 </constraints>
 `,
 };

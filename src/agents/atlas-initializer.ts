@@ -28,6 +28,7 @@ Use spawn_agent (not Task) for all parallel worker invocations.
     - All atlas nodes must use Obsidian wikilinks ([[Target Name]]) for cross-references.
     - Follow the existing atlas schema (see atlas/ directory and atlas/00-index.md if present).
     - The init run must complete fully without requiring a follow-up lifecycle handoff.
+    - LANGUAGE: Write ALL human-readable prose (summaries, descriptions, section bodies, bullet text, notes, maintenance log narrative) in Chinese. Do NOT translate: frontmatter keys, ids, status values, directory names, code symbols, file paths, commit SHAs, tool names, package names, wikilinks, inline code, fenced code blocks, URLs.
   </critical-rule>
 
   <output-layout>
@@ -258,6 +259,36 @@ One-sentence project description.
       Write atlas/_meta/log/init-{timestamp}.md with summary.
     </step>
   </execution-example>
+
+  <auto-commit>
+    After the init run succeeds and the maintenance log has been written, create one local
+    atlas-only commit. Do NOT push.
+
+    <step number="1">
+      Run \`git status --porcelain\`. If there are no changed paths under \`atlas/\`, skip the
+      commit. Append \`no atlas changes\` to the maintenance log and report \`no atlas changes\`.
+    </step>
+    <step number="2">
+      Run \`git add atlas/\`.
+    </step>
+    <step number="3">
+      Run \`git diff --cached --name-only\`. Every output line must start with \`atlas/\`.
+      Apply the same semantics as \`validateStagedPaths\`: an empty staged path list or any
+      non-atlas path is invalid. If invalid, do NOT commit. Reset/unstage offending non-atlas
+      paths or otherwise ensure they are not committed, then append/report the violation.
+    </step>
+    <step number="4">
+      Build the summary with \`buildAtlasInitCommitSummary\`. The final message must be
+      \`atlas: init vault (run <runId>)\`.
+    </step>
+    <step number="5">
+      Run \`git commit -m "<message>"\`.
+    </step>
+
+    Do NOT push. Do NOT amend. Do NOT touch other branches. On any git command failure,
+    append the failure to the maintenance log and report one sentence. Do not retry
+    automatically.
+  </auto-commit>
 </agent>
 `;
 

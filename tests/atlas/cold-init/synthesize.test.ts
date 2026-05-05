@@ -23,6 +23,7 @@ describe("synthesizeVaultPlan", () => {
   it("always plans an index node", () => {
     const plan = synthesizeVaultPlan(emptyDiscovery);
     expect(plan.indexNode.relativePath).toBe("00-index.md");
+    expect(plan.indexNode.summary).toBe("项目 demo 的 Atlas 知识库。");
   });
 
   it("plans one build node per module", () => {
@@ -84,8 +85,59 @@ describe("synthesizeVaultPlan", () => {
     expect(plan.behaviorNodes[0].inferred).toBe(false);
   });
 
+  it("uses a Chinese behavior fallback when a closed lifecycle has no design", () => {
+    const plan = synthesizeVaultPlan({
+      ...emptyDiscovery,
+      lifecycleRecords: [
+        {
+          pointer: "lifecycle:2",
+          issueNumber: 2,
+          state: "closed",
+          designPointers: [],
+          planPointers: [],
+          ledgerPointers: [],
+        },
+      ],
+    });
+    expect(plan.behaviorNodes).toHaveLength(1);
+    expect(plan.behaviorNodes[0].summary).toContain("行为");
+    expect(plan.behaviorNodes[0].summary).not.toContain("Behavior derived from lifecycle");
+    expect(plan.behaviorNodes[0].sources).toEqual(["lifecycle:2"]);
+    expect(plan.behaviorNodes[0].relativePath).toBe("20-behavior/lifecycle-2.md");
+  });
+
   it("always plans the phase roadmap decision node", () => {
     const plan = synthesizeVaultPlan(emptyDiscovery);
     expect(plan.decisionNodes.some((node) => node.id === "decision/atlas-phase-roadmap")).toBe(true);
+    expect(plan.decisionNodes.find((node) => node.id === "decision/atlas-phase-roadmap")?.summary).toContain(
+      "当前阶段",
+    );
+  });
+
+  it("plans Chinese timeline summaries while preserving lifecycle pointers", () => {
+    const plan = synthesizeVaultPlan({
+      ...emptyDiscovery,
+      lifecycleRecords: [
+        {
+          pointer: "lifecycle:3",
+          issueNumber: 3,
+          state: "merging",
+          designPointers: [],
+          planPointers: [],
+          ledgerPointers: [],
+        },
+      ],
+    });
+    expect(plan.timelineNodes[0].id).toBe("60-timeline/index");
+    expect(plan.timelineNodes[0].summary).toContain("时间线");
+    expect(plan.timelineNodes[0].summary).toContain("1");
+    expect(plan.timelineNodes[0].connections).toEqual(["60-timeline/lifecycle-3"]);
+    expect(plan.timelineNodes[1]).toMatchObject({
+      id: "60-timeline/lifecycle-3",
+      relativePath: "60-timeline/lifecycle-3.md",
+      summary: "最近一次写入状态：merging。",
+      sources: ["lifecycle:3"],
+      connections: ["20-behavior/lifecycle-3"],
+    });
   });
 });

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { atlasCommandDefinitions, parseAtlasInitArgs } from "@/atlas/commands";
+import { atlasCommandDefinitions, parseAtlasInitArgs, parseAtlasTranslateArgs } from "@/atlas/commands";
 
 describe("atlas slash commands", () => {
-  it("declares three commands with descriptions", () => {
+  it("declares commands with descriptions", () => {
     const names = atlasCommandDefinitions.map((command) => command.name);
-    expect(names).toEqual(["/atlas-init", "/atlas-status", "/atlas-refresh"]);
+    expect(names).toEqual(["/atlas-init", "/atlas-status", "/atlas-refresh", "/atlas-translate"]);
     for (const command of atlasCommandDefinitions) {
       expect(command.description.length).toBeGreaterThan(0);
     }
@@ -28,5 +28,25 @@ describe("atlas slash commands", () => {
 
   it("rejects passing both --reconcile and --force-rebuild", () => {
     expect(() => parseAtlasInitArgs(["--reconcile", "--force-rebuild"])).toThrow();
+  });
+
+  it("defaults /atlas-translate to all", () => {
+    expect(parseAtlasTranslateArgs([])).toEqual({ targetPath: "all" });
+  });
+
+  it("accepts one /atlas-translate target path", () => {
+    expect(parseAtlasTranslateArgs(["20-behavior"])).toEqual({ targetPath: "20-behavior" });
+    expect(parseAtlasTranslateArgs(["10-impl/runner.md"])).toEqual({ targetPath: "10-impl/runner.md" });
+    expect(parseAtlasTranslateArgs(["all"])).toEqual({ targetPath: "all" });
+  });
+
+  it("rejects /atlas-translate unknown flags", () => {
+    expect(() => parseAtlasTranslateArgs(["--weird"])).toThrow("unknown flag: --weird");
+  });
+
+  it("rejects /atlas-translate multiple targets", () => {
+    expect(() => parseAtlasTranslateArgs(["20-behavior", "10-impl/runner.md"])).toThrow(
+      "expected at most one target path",
+    );
   });
 });

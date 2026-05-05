@@ -57,7 +57,13 @@ describe("writeVault", () => {
       `${ATLAS_SCHEMA_VERSION}\n`,
     );
     expect(out.logPath).toBe(join(projectRoot, "atlas", "_meta", "log", "cold-init-test.md"));
-    expect(readFileSync(out.logPath, "utf8")).toContain("I wrote 6 nodes");
+    const log = readFileSync(out.logPath, "utf8");
+    expect(log).toContain("# 冷启动初始化运行 cold-init-test");
+    expect(log).toContain("本次运行写入 6 个节点");
+    expect(log).toContain("合并了 0 条来自 Octto 的用户补充");
+    expect(log).toContain("## 已写入节点");
+    expect(log).toContain("20-behavior/feature.md（推断草稿）");
+    expect(log).toContain("50-risks/drift.md（推断草稿）");
     expect(existsSync(out.stagingDir)).toBe(false);
   });
 

@@ -24,6 +24,7 @@ Each claim must be one factual statement. Do not bundle multiple claims.
 - Do not propose changes outside the modules listed in the handoff's affectedModules.
 - Granularity stops at module or subsystem level. Do not represent files or functions.
 - Use single-word names where context allows (no Map/Array/List type-name suffixes).
+- LANGUAGE: Write claim prose in Chinese. Do NOT translate source pointers, code symbols, file paths, package names, or identifiers.
 </constraints>
 `,
 };

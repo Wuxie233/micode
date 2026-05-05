@@ -10,7 +10,7 @@ import { writeSchemaVersion } from "@/atlas/schema-version";
 import { createStagingManager, type StagingManager } from "@/atlas/staging";
 
 const EMPTY_COMMIT = "";
-const MARKED_INFERRED = " (inferred draft)";
+const MARKED_INFERRED = "（推断草稿）";
 
 export interface WriteVaultInput {
   readonly projectRoot: string;
@@ -85,12 +85,12 @@ const stageNode = (
 const renderMaintenanceLog = (runId: string, plan: VaultPlan, answersCount: number): string => {
   const nodes = collectNodes(plan);
   const lines = [
-    `# Cold init run ${runId}`,
+    `# 冷启动初始化运行 ${runId}`,
     "",
-    `I wrote ${nodes.length} nodes across the build, behavior, decision, risk, and timeline layers.`,
-    `I incorporated ${answersCount} user-provided notes from Octto.`,
+    `本次运行写入 ${nodes.length} 个节点，覆盖构建、行为、决策、风险和时间线层。`,
+    `本次运行合并了 ${answersCount} 条来自 Octto 的用户补充。`,
     "",
-    "## Nodes written",
+    "## 已写入节点",
     ...nodes.map((node) => `- ${node.relativePath}${node.inferred ? MARKED_INFERRED : ""}`),
   ];
   return `${lines.join("\n")}\n`;
