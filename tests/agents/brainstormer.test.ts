@@ -119,3 +119,85 @@ describe("brainstormer routing: direct-execution output class", () => {
     expect(body).toContain("executor");
   });
 });
+
+describe("brainstormer non-trivial detector guardrails", () => {
+  it("declares a high-priority non-trivial detector block before the routing block", () => {
+    const source = readBrainstormerSource();
+    const detectorIdx = source.indexOf("<non-trivial-detector");
+    const routingIdx = source.indexOf("<routing-by-requested-output");
+
+    expect(detectorIdx).toBeGreaterThan(-1);
+    expect(routingIdx).toBeGreaterThan(-1);
+    expect(detectorIdx).toBeLessThan(routingIdx);
+  });
+
+  it("non-trivial-detector marks priority as HIGHEST", () => {
+    const source = readBrainstormerSource();
+    const match = source.match(/<non-trivial-detector\s+priority="([^"]+)"/);
+
+    expect(match?.[1]).toBe("HIGHEST");
+  });
+
+  it("forbids executor-direct for agent prompt and slash command surfaces", () => {
+    const source = readBrainstormerSource().toLowerCase();
+
+    // The detector or the direct-execution forbidden-for list must mention these surfaces.
+    expect(source).toContain("agent");
+    expect(source).toMatch(/slash[-\s]?command/);
+  });
+
+  it("forbids executor-direct for runtime, deploy, and workflow/lifecycle surfaces", () => {
+    const source = readBrainstormerSource().toLowerCase();
+
+    expect(source).toMatch(/runtime[-\s]sensitive|runtime\s+behavior|runtime\s+deploy/);
+    expect(source).toMatch(/deploy/);
+    expect(source).toMatch(/workflow|lifecycle/);
+  });
+
+  it("forbids executor-direct for cross-module feature work", () => {
+    const source = readBrainstormerSource().toLowerCase();
+
+    expect(source).toMatch(/cross[-\s]?module/);
+  });
+
+  it("direct-execution output-class declares a forbidden-for sub-list", () => {
+    const source = readBrainstormerSource();
+    const match = source.match(
+      /<output-class name="direct-execution" agent="executor-direct">([\s\S]*?)<\/output-class>/,
+    );
+
+    expect(match).not.toBeNull();
+    const body = match?.[1] ?? "";
+    expect(body).toContain("<forbidden-for");
+  });
+
+  it("preserves quick-mode legitimacy for trivial single-file or local-op tasks", () => {
+    const source = readBrainstormerSource().toLowerCase();
+
+    // The design constraint: trivial work must still have a path through direct execution.
+    // We assert the prompt still mentions trivial / single-file / local-op as legitimate inputs.
+    expect(source).toMatch(/trivial|single[-\s]file|local\s+op|typo/);
+  });
+
+  it("non-trivial-detector explicitly routes forbidden cases through lifecycle plus planner plus executor", () => {
+    const source = readBrainstormerSource();
+    const match = source.match(/<non-trivial-detector[\s\S]*?<\/non-trivial-detector>/);
+
+    expect(match).not.toBeNull();
+    const body = (match?.[0] ?? "").toLowerCase();
+    expect(body).toContain("lifecycle");
+    expect(body).toContain("planner");
+    expect(body).toContain("executor");
+  });
+
+  it("non-trivial-detector forbids silent downgrade to executor-direct", () => {
+    const source = readBrainstormerSource();
+    const match = source.match(/<non-trivial-detector[\s\S]*?<\/non-trivial-detector>/);
+
+    expect(match).not.toBeNull();
+    const body = (match?.[0] ?? "").toLowerCase();
+    // Must reference executor-direct AND a denial verb (forbidden / never / must not / do not).
+    expect(body).toContain("executor-direct");
+    expect(body).toMatch(/forbidden|never|must not|do not|cannot/);
+  });
+});

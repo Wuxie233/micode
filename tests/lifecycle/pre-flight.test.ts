@@ -16,7 +16,7 @@ const FAILURE_EXIT_CODE = 1;
 const EMPTY_OUTPUT = "";
 const GIT_ARGS = ["remote", "get-url", "origin"] as const;
 const GH_FIELDS = "nameWithOwner,isFork,parent,owner,viewerPermission,hasIssuesEnabled";
-const GH_ARGS = ["repo", "view", "--json", GH_FIELDS] as const;
+const GH_ARGS = ["repo", "view", REPO, "--json", GH_FIELDS] as const;
 const REAL_GH_REPO_VIEW = JSON.stringify({
   hasIssuesEnabled: true,
   isFork: true,
@@ -216,5 +216,85 @@ describe("classifyRepo", () => {
       upstreamUrl: null,
     });
     expect(runner.calls).toEqual([{ bin: "git", args: GIT_ARGS, cwd: CWD }]);
+  });
+
+  it("passes origin-derived slug as positional argument to gh repo view", async () => {
+    const runner = createRunner({
+      gh: createRun(createRepoView({ isFork: true, parent: { name: PARENT_NAME, owner: { login: PARENT_OWNER } } })),
+    });
+
+    await classifyRepo(runner, CWD);
+
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall).toBeDefined();
+    expect(ghCall?.args).toEqual(["repo", "view", REPO, "--json", GH_FIELDS]);
+  });
+
+  it("parses HTTPS origin URL and queries the matching slug", async () => {
+    const httpsOrigin = `https://github.com/${REPO}.git\n`;
+    const runner = createRunner({
+      git: createRun(httpsOrigin),
+      gh: createRun(createRepoView({ isFork: true, parent: { name: PARENT_NAME, owner: { login: PARENT_OWNER } } })),
+    });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.FORK);
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args).toEqual(["repo", "view", REPO, "--json", GH_FIELDS]);
+  });
+
+  it("parses HTTPS origin URL without trailing .git", async () => {
+    const httpsOrigin = `https://github.com/${REPO}\n`;
+    const runner = createRunner({
+      git: createRun(httpsOrigin),
+      gh: createRun(createRepoView({ isFork: true, parent: { name: PARENT_NAME, owner: { login: PARENT_OWNER } } })),
+    });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.FORK);
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args).toEqual(["repo", "view", REPO, "--json", GH_FIELDS]);
+  });
+
+  it("regression: fork with upstream remote still classifies as FORK against origin slug, not upstream", async () => {
+    // The bug: bare `gh repo view` resolved to upstream (vtemian/micode) when both
+    // origin (Wuxie233/micode) and upstream (vtemian/micode) remotes existed.
+    // The fix: we query gh with the exact origin slug, so upstream existence is irrelevant.
+    const runner = createRunner({
+      gh: createRun(REAL_GH_REPO_VIEW),
+    });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.FORK);
+    expect(preflight.nameWithOwner).toBe(REPO);
+    expect(preflight.viewerLogin).toBe(OWNER);
+    expect(preflight.upstreamUrl).toBe(PARENT_URL);
+    // Critical assertion: gh was called with origin's slug, not bare.
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args).toEqual(["repo", "view", REPO, "--json", GH_FIELDS]);
+  });
+
+  it("returns unknown when origin URL cannot be parsed as github.com slug", async () => {
+    const nonGithubOrigin = "git@gitlab.example.com:other/repo.git\n";
+    const runner = createRunner({ git: createRun(nonGithubOrigin) });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.origin).toBe(nonGithubOrigin.trim());
+    // gh must NOT be invoked when origin is unparseable: fail-closed.
+    expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
+  });
+
+  it("returns unknown when origin is empty after trim", async () => {
+    const runner = createRunner({ git: createRun("\n") });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
   });
 });
