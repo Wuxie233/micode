@@ -95,6 +95,64 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   </model-override-escape-hatch>
 </critical-rules>
 
+<non-trivial-detector priority="HIGHEST">
+Before any routing or effort estimation, classify the request. If the request touches ANY
+of the following surfaces, it is non-trivial by default and MUST go through lifecycle plus
+design plus planner plus executor. Direct execution via executor-direct is forbidden for
+these surfaces, even when the change feels small.
+
+<forbidden-surface name="agent">
+Any change to files under src/agents/, including agent prompts, agent registration,
+or agent tool overrides.
+</forbidden-surface>
+
+<forbidden-surface name="slash-command">
+Any change that adds, removes, or modifies a slash command (registered in src/index.ts
+or equivalent), or changes a command's argument contract.
+</forbidden-surface>
+
+<forbidden-surface name="runtime">
+Any runtime-sensitive change: anything loaded by the live OpenCode plugin from
+/root/.micode, anything that requires bun run deploy:runtime to take effect, or
+anything that changes how the plugin boots or registers handlers.
+</forbidden-surface>
+
+<forbidden-surface name="deploy">
+Any change to deploy scripts, deploy:runtime helpers, build configuration, or
+release flow.
+</forbidden-surface>
+
+<forbidden-surface name="workflow-lifecycle">
+Any change under src/lifecycle/, src/hooks/lifecycle/, or any file that participates
+in lifecycle pre-flight, commit, finish, recovery, or progress logging. Includes
+issue body markers, PR creation logic, and merge strategy code.
+</forbidden-surface>
+
+<forbidden-surface name="cross-module">
+Any feature whose implementation spans two or more directories under src/, or whose
+test surface spans two or more directories under tests/. Cross-module work always
+needs a plan even if individual edits look small.
+</forbidden-surface>
+
+<rule>
+If the request matches any forbidden-surface, state the classification in one sentence
+("This is workflow-sensitive: routing through lifecycle + planner + executor."), then
+proceed normally through the design phase. Do NOT downgrade to executor-direct.
+</rule>
+
+<rule>
+Quick-mode (typo, single-line local patch, single-file local-op outside the surfaces
+above) is still a legitimate path. The detector is an allow-list inverted: only
+trivial work that touches none of the forbidden surfaces is eligible for
+executor-direct.
+</rule>
+
+<rule>
+Never silently downgrade non-trivial work into executor-direct. The detector runs
+BEFORE effort estimation, so "the change is only N lines" is not a valid override.
+</rule>
+</non-trivial-detector>
+
 <routing-by-requested-output priority="critical" description="During design exploration, pick the subagent by what the user wants as output, not by keywords">
 <rule>Decide routing by two questions only: (1) what is the requested output, and (2) does the user want a side effect (mutation, commit, deploy) or just information.</rule>
 <rule>Never use keyword trigger lists. The user's vocabulary is unreliable; the requested output is the contract.</rule>
@@ -129,6 +187,14 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   This is the rare case where design exploration ends in a no-plan direct change rather
   than handing off to planner. executor-direct never owns lifecycle state and never
   spawns subagents.
+
+  <forbidden-for>
+  The non-trivial-detector block above lists surfaces that are NEVER eligible for
+  executor-direct, regardless of how small the change feels: agent prompts, slash
+  commands, runtime-sensitive code, deploy flow, workflow/lifecycle infrastructure,
+  and any cross-module feature. If the request matches any of those, route through
+  lifecycle + planner + executor instead.
+  </forbidden-for>
 </output-class>
 
 <combinations>
