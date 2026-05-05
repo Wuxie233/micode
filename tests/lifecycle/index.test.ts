@@ -170,6 +170,17 @@ describe("lifecycle handle", () => {
     expect(runner.edits.at(-1)).toContain("state: cleaned");
   });
 
+  it("targets the origin repo explicitly in gh issue create", async () => {
+    const runner = createRunner();
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+
+    await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    const issueCreate = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["issue", "create"]));
+    expect(issueCreate?.args).toContain("--repo");
+    expect(issueCreate?.args).toContain(`${OWNER}/${REPO}`);
+  });
+
   it("opens lifecycle finish PRs against the resolved master branch", async () => {
     const runner = createRunner(createRepoView(), { originHead: MASTER_HEAD });
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });

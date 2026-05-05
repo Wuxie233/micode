@@ -27,16 +27,10 @@ const GIT_ORIGIN_ARGS = ["remote", "get-url", "origin"] as const;
 const GH_FIELDS = "nameWithOwner,isFork,parent,owner,viewerPermission,hasIssuesEnabled";
 const OWNER_PERMISSIONS: readonly string[] = ["ADMIN", "MAINTAIN", "WRITE"];
 
-// Matches:
-//   git@github.com:owner/repo.git
-//   git@github.com:owner/repo
-//   https://github.com/owner/repo.git
-//   https://github.com/owner/repo
-//   ssh://git@github.com/owner/repo.git
-const GITHUB_ORIGIN_PATTERN =
-  /^(?:git@github\.com:|(?:https?|ssh):\/\/(?:[^@]+@)?github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?$/;
-
-const buildGhRepoArgs = (slug: string): readonly string[] => ["repo", "view", slug, "--json", GH_FIELDS];
+// Patterns for common GitHub remote URL forms.
+// Group 1: owner, Group 2: repo (without .git suffix).
+const HTTPS_ORIGIN_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/;
+const SSH_ORIGIN_PATTERN = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/;
 
 interface RepoParent {
   readonly nameWithOwner: string;
@@ -100,17 +94,6 @@ const createUnknown = (origin = EMPTY_OUTPUT): PreFlightResult => ({
 });
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
-
-const parseOriginSlug = (origin: string): string | null => {
-  const trimmed = origin.trim();
-  if (trimmed === EMPTY_OUTPUT) return null;
-  const match = trimmed.match(GITHUB_ORIGIN_PATTERN);
-  if (!match) return null;
-  const owner = match[1];
-  const repo = match[2];
-  if (!owner || !repo) return null;
-  return `${owner}/${repo}`;
-};
 
 const createParent = (nameWithOwner: string, url?: string): RepoParent => {
   if (url === undefined) return { nameWithOwner };
@@ -177,19 +160,41 @@ const createResult = (origin: string, view: RepoView): PreFlightResult => {
   };
 };
 
+/**
+ * Parses a GitHub remote URL into "owner/repo" form.
+ * Returns null when the URL does not match any known GitHub remote format,
+ * so callers can fall back to UNKNOWN rather than guessing the target.
+ */
+export const parseOriginTarget = (url: string): string | null => {
+  const https = HTTPS_ORIGIN_PATTERN.exec(url);
+  if (https) return `${https[1]}/${https[2]}`;
+
+  const ssh = SSH_ORIGIN_PATTERN.exec(url);
+  if (ssh) return `${ssh[1]}/${ssh[2]}`;
+
+  return null;
+};
+
+const viewMatchesOrigin = (nameWithOwner: string, target: string): boolean =>
+  nameWithOwner.toLowerCase() === target.toLowerCase();
+
 export async function classifyRepo(runner: LifecycleRunner, cwd: string): Promise<PreFlightResult> {
   const remote = await runner.git(GIT_ORIGIN_ARGS, { cwd });
   if (!completed(remote)) return createUnknown();
 
   const origin = remote.stdout.trim();
-  const slug = parseOriginSlug(origin);
-  if (!slug) return createUnknown(origin);
+  const target = parseOriginTarget(origin);
+  // If we cannot parse the origin into owner/repo, we cannot safely target gh.
+  if (!target) return createUnknown(origin);
 
-  const inspected = await runner.gh(buildGhRepoArgs(slug), { cwd });
+  const inspected = await runner.gh(["repo", "view", target, "--json", GH_FIELDS], { cwd });
   if (!completed(inspected)) return createUnknown(origin);
 
   const view = parseRepoView(inspected.stdout);
   if (!view) return createUnknown(origin);
+
+  // Reject silently if gh returned metadata for a different repo (e.g. inferred upstream).
+  if (!viewMatchesOrigin(view.nameWithOwner, target)) return createUnknown(origin);
 
   return createResult(origin, view);
 }
