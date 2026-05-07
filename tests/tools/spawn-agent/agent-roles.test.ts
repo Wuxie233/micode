@@ -35,4 +35,25 @@ describe("agent-roles", () => {
     expect(AGENT_ROLE_LABELS.reviewer).toBe("代码审查");
     expect(AGENT_ROLE_LABELS.critic).toBe("对抗审查");
   });
+
+  it("returns Chinese labels for the five specialist agents", () => {
+    expect(agentRoleLabel("product-manager")).toBe("产品经理");
+    expect(agentRoleLabel("software-architect")).toBe("软件架构师");
+    expect(agentRoleLabel("ux-designer")).toBe("UX 设计师");
+    expect(agentRoleLabel("architecture-quality-inspector")).toBe("架构质检");
+    expect(agentRoleLabel("rubric-reviewer")).toBe("Rubric 评审");
+  });
+
+  it("exposes the five specialists in the readonly label map", () => {
+    expect(AGENT_ROLE_LABELS["product-manager"]).toBe("产品经理");
+    expect(AGENT_ROLE_LABELS["software-architect"]).toBe("软件架构师");
+    expect(AGENT_ROLE_LABELS["ux-designer"]).toBe("UX 设计师");
+    expect(AGENT_ROLE_LABELS["architecture-quality-inspector"]).toBe("架构质检");
+    expect(AGENT_ROLE_LABELS["rubric-reviewer"]).toBe("Rubric 评审");
+  });
+
+  it("strips the spawn-agent. prefix from a specialist agent name", () => {
+    expect(agentRoleLabel("spawn-agent.product-manager")).toBe("产品经理");
+    expect(agentRoleLabel("spawn-agent.rubric-reviewer")).toBe("Rubric 评审");
+  });
 });
