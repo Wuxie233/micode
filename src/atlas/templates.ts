@@ -1,22 +1,46 @@
+import { deriveDisplayExtras } from "./display-extras";
 import { serializeFrontmatter } from "./frontmatter";
+import { ATLAS_REPO_FALLBACK_BASE } from "./repo-url";
+import { formatSourceLink } from "./source-link";
 import { ATLAS_NODE_STATUSES, type AtlasFrontmatter, type AtlasLayer, type AtlasNodeStatus } from "./types";
+
+const DEFAULT_REF = "main";
 
 interface EmptyNodeInput {
   readonly id: string;
   readonly layer: AtlasLayer;
   readonly status: AtlasNodeStatus;
+  readonly title?: string;
   readonly summary: string;
   readonly sources: readonly string[];
   readonly lastVerifiedCommit: string;
   readonly lastWrittenMtime: number;
   readonly connections?: readonly string[];
+  readonly repoBase?: string;
 }
 
 const renderH2 = (title: string, body: string): string => `## ${title}\n\n${body}\n`;
 const bullet = (items: readonly string[]): string =>
   items.length === 0 ? "_none_" : items.map((s) => `- ${s}`).join("\n");
 
+const renderSourcesBody = (sources: readonly string[], repoBase: string): string => {
+  if (sources.length === 0) return "_none_";
+  const ref = DEFAULT_REF;
+  return sources.map((src) => `- ${formatSourceLink(src, { repoBase, ref })}`).join("\n");
+};
+
+const buildExtras = (input: EmptyNodeInput): Readonly<Record<string, string>> => {
+  const titleForExtras = input.title ?? "";
+  const extras = deriveDisplayExtras({ title: titleForExtras, id: input.id, sources: input.sources });
+  const out: Record<string, string> = {};
+  if (extras.title !== undefined) out.title = extras.title;
+  if (extras.aliases !== undefined) out.aliases = extras.aliases;
+  if (extras.source_path !== undefined) out.source_path = extras.source_path;
+  return out;
+};
+
 export function renderEmptyNode(input: EmptyNodeInput): string {
+  const repoBase = input.repoBase ?? ATLAS_REPO_FALLBACK_BASE;
   const fm: AtlasFrontmatter = {
     id: input.id,
     layer: input.layer,
@@ -24,12 +48,13 @@ export function renderEmptyNode(input: EmptyNodeInput): string {
     last_verified_commit: input.lastVerifiedCommit,
     last_written_mtime: input.lastWrittenMtime,
     sources: input.sources,
-    extras: {},
+    extras: buildExtras(input),
   };
+  const heading = input.title ? `# ${input.title}\n\n` : "";
   const body = [
-    renderH2("Summary", input.summary),
+    heading + renderH2("Summary", input.summary),
     renderH2("Connections", bullet(input.connections ?? [])),
-    renderH2("Sources", bullet(input.sources)),
+    renderH2("Sources", renderSourcesBody(input.sources, repoBase)),
     renderH2("Notes", "_none_"),
   ].join("\n");
   return serializeFrontmatter(fm, body);

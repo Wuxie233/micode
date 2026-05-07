@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("readPage", () => {
-  it("reads a node and returns frontmatter + body sections", async () => {
+  it("reads a node and returns raw frontmatter sources plus rendered body source strings", async () => {
     const file = join(dir, "node.md");
     mkdirSync(dir, { recursive: true });
     const text = renderEmptyNode({
@@ -34,9 +34,10 @@ describe("readPage", () => {
     writeFileSync(file, text, "utf8");
     const node = await readPage(file);
     expect(node.frontmatter.id).toBe("impl/x");
+    expect(node.frontmatter.sources).toEqual(["code:src/x.ts"]);
     expect(node.summary).toContain("x summary");
     expect(node.connections).toEqual(["[[20-behavior/x]]"]);
-    expect(node.sourcesBody).toEqual(["code:src/x.ts"]);
+    expect(node.sourcesBody).toEqual(["[查看源码 src/x.ts](https://github.com/Wuxie233/micode/blob/main/src/x.ts)"]);
   });
 
   it("returns null on missing file", async () => {

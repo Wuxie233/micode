@@ -22,6 +22,53 @@ describe("page templates", () => {
     expect(text).toContain("- code:src/sample.ts");
   });
 
+  it("renderEmptyNode: body Sources renders code: pointers as GitHub permalinks", () => {
+    const out = renderEmptyNode({
+      id: "10-impl/x",
+      layer: "impl",
+      status: ATLAS_NODE_STATUSES.ACTIVE,
+      summary: "summary",
+      sources: ["code:src/x.ts"],
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+      repoBase: "https://github.com/foo/bar",
+    });
+    expect(out).toContain("[查看源码 src/x.ts](https://github.com/foo/bar/blob/main/src/x.ts)");
+    // Frontmatter sources stay raw.
+    expect(out).toContain("  - code:src/x.ts");
+  });
+
+  it("renderEmptyNode: writes title/aliases/source_path into frontmatter extras", () => {
+    const out = renderEmptyNode({
+      id: "10-impl/x",
+      layer: "impl",
+      status: ATLAS_NODE_STATUSES.ACTIVE,
+      title: "X 模块",
+      summary: "s",
+      sources: ["code:src/x.ts"],
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+    });
+    expect(out).toContain("title: X 模块");
+    expect(out).toContain("aliases: 10-impl/x");
+    expect(out).toContain("source_path: src/x.ts");
+  });
+
+  it("renderEmptyNode: backward compatible — works without title or repoBase", () => {
+    const out = renderEmptyNode({
+      id: "10-impl/x",
+      layer: "impl",
+      status: ATLAS_NODE_STATUSES.ACTIVE,
+      summary: "s",
+      sources: [],
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+    });
+    // No title key emitted when title is absent; aliases still written from id.
+    expect(out).not.toMatch(/^title:/m);
+    expect(out).toContain("aliases: 10-impl/x");
+  });
+
   it("renders the index page header", () => {
     const text = renderIndexPage({ projectName: "demo" });
     expect(text).toContain("# demo");

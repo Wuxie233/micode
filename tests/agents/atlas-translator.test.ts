@@ -74,6 +74,31 @@ describe("atlas-translator agent config", () => {
     expect(p).toContain("non-atlas");
     expect(p).toMatch(/reset|unstage/);
   });
+
+  it("instructs translator to inject display metadata into frontmatter extras", () => {
+    const p = atlasTranslatorAgent.prompt;
+    expect(p).toContain("title");
+    expect(p).toContain("aliases");
+    expect(p).toContain("source_path");
+    expect(p).toContain("extras");
+    // Must not rename files or change wikilink targets.
+    expect(p.toLowerCase()).toContain("do not rename");
+  });
+
+  it("instructs translator to rewrite Sources body bullets to GitHub permalinks", () => {
+    const p = atlasTranslatorAgent.prompt;
+    expect(p).toContain("查看源码");
+    expect(p).toContain("github.com");
+    expect(p).toContain("blob/");
+    // Must keep frontmatter sources list as raw pointer strings.
+    expect(p.toLowerCase()).toContain("frontmatter sources");
+    expect(p.toLowerCase()).toContain("raw");
+  });
+
+  it("instructs translator to skip code: pointers it cannot parse", () => {
+    const p = atlasTranslatorAgent.prompt.toLowerCase();
+    expect(p).toContain("preserve the original bullet");
+  });
 });
 
 describe("agents barrel includes atlas-translator", () => {
