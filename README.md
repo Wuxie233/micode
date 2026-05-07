@@ -1,13 +1,11 @@
-# micode (Wuxie233 fork)
+# micode
 
-> Fork of [vtemian/micode](https://github.com/vtemian/micode) adding **domain-routed implementers** and **auto-generated API contracts** for the cross-domain plan case.
+> Independent OpenCode plugin adding **domain-routed implementers** and **auto-generated API contracts** for the cross-domain plan case.
 >
-> What this fork changes:
+> Current focus:
 > - `implementer` is split into `implementer-frontend` / `implementer-backend` / `implementer-general`, so each can run on a model that is strong in that domain (frontend-strong model for UI, backend-strong model for APIs, etc).
 > - `planner` tags every task with a `Domain` field, and when a plan spans both frontend and backend it emits a frozen API contract document the concurrent implementers must conform to.
 > - `executor` dispatches each task to the matching specialist implementer and injects the contract path into implementer and reviewer spawn prompts.
->
-> Everything else (brainstormer, octto, mindmodel, ledger, hooks, tools) is unchanged from upstream.
 
 OpenCode plugin with structured Brainstorm → Plan → Implement workflow and session continuity.
 
@@ -117,7 +115,7 @@ All micode agents will use this model automatically.
 
 ### micode.json (domain routing)
 
-This fork's main value is routing each agent to a model that fits its role. Copy [`micode.example.jsonc`](./micode.example.jsonc) to `~/.config/opencode/micode.jsonc` and fill in the three placeholder types:
+This project's main value is routing each agent to a model that fits its role. Copy [`micode.example.jsonc`](./micode.example.jsonc) to `~/.config/opencode/micode.jsonc` and fill in the three placeholder types:
 
 ```jsonc
 {
@@ -193,7 +191,7 @@ the calling agent should include the replacement model on future relevant `spawn
 
 micode validates explicit `provider/model` values and can resolve unambiguous aliases against configured models, for example `gpt5.5` to `openai/gpt-5.5`.
 
-Primary-agent escape hatch: among primary agents, `brainstormer` is the only one allowed to choose `spawn_agent` for model overrides. It may do so only when the user's message includes a concrete model literal token such as `claude`, `opus`, `sonnet`, `gpt`, or `gemini`; otherwise primary agents should use Task. `octto` currently stays at its upstream default, `spawn_agent` is not explicitly disabled there, and separate follow-up evaluation is needed before changing that behavior. See `thoughts/shared/designs/2026-04-27-primary-agent-model-override-escape-hatch-design.md`. Sunset: when OpenCode Task adds a `model` parameter, this escape hatch should be removed immediately.
+Primary-agent escape hatch: among primary agents, `brainstormer` is the only one allowed to choose `spawn_agent` for model overrides. It may do so only when the user's message includes a concrete model literal token such as `claude`, `opus`, `sonnet`, `gpt`, or `gemini`; otherwise primary agents should use Task. `octto` currently stays at its configured default, `spawn_agent` is not explicitly disabled there, and separate follow-up evaluation is needed before changing that behavior. See `thoughts/shared/designs/2026-04-27-primary-agent-model-override-escape-hatch-design.md`. Sunset: when OpenCode Task adds a `model` parameter, this escape hatch should be removed immediately.
 
 ## Development
 
@@ -231,19 +229,6 @@ bun run deploy:runtime
 The helper does NOT restart OpenCode. After it prints `Runtime ready. Restart of OpenCode requires explicit user approval.`, ask the user before running any restart command.
 
 The helper preserves runtime-local state in `/root/.micode`: `node_modules`, `dist` (rebuilt by the helper), `.git`, `thoughts`, and environment files are never overwritten by the sync.
-
-### Syncing with upstream
-
-This fork tracks `vtemian/micode` as the `upstream` remote. To pull upstream changes:
-
-```bash
-git fetch upstream
-git rebase upstream/main
-bun run check          # verify the rebase did not break anything
-git push origin main --force-with-lease
-```
-
-The fork's changes are isolated to new files (`src/agents/implementer-{frontend,backend,general}.ts`, four new test files, `micode.example.jsonc`) plus prompt edits in `planner.ts`, `executor.ts`, and registry updates in `agents/index.ts`, so rebase conflicts are limited in scope.
 
 ### Release
 
@@ -309,6 +294,17 @@ The browser UI uses draft-before-send: clicking a question's Submit stores a loc
 
 ## Inspiration
 
+- [vtemian/micode](https://github.com/vtemian/micode) - Original MIT-licensed project foundation
 - [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) - Plugin architecture
 - [HumanLayer ACE-FCA](https://github.com/humanlayer/12-factor-agents) - Structured workflows
 - [Factory.ai](https://factory.ai/blog/context-compression) - Structured compaction research
+
+## Acknowledgments
+
+This project was initially based on [vtemian/micode](https://github.com/vtemian/micode) (MIT License)
+and has been substantially restructured. The original copyright and license text are preserved in
+`LICENSES/upstream-micode-MIT.txt`.
+
+## License Notices
+
+See `LICENSES/` for upstream license preservation.
