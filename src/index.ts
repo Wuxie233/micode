@@ -14,6 +14,7 @@ import type { ProjectMemoryEntry } from "@/atlas/sources/project-memory";
 import { loadAvailableModels, loadMicodeConfig, loadModelContextLimits, mergeAgentConfigs } from "@/config-loader";
 import {
   createArtifactAutoIndexHook,
+  createAtlasAutoInjectHook,
   createAutoCompactHook,
   createCommentCheckerHook,
   createConstraintReviewerHook,
@@ -758,6 +759,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   });
   const contextInjectorHook = createContextInjectorHook(ctx);
   const ledgerLoaderHook = createLedgerLoaderHook(ctx);
+  const atlasAutoInjectHook = createAtlasAutoInjectHook(ctx);
   const sessionRecoveryHook = createSessionRecoveryHook(ctx);
   const tokenAwareTruncationHook = createTokenAwareTruncationHook(ctx);
   const contextWindowMonitorHook = createContextWindowMonitorHook(ctx, { modelContextLimits });
@@ -1054,6 +1056,9 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
       // Inject ledger context (high priority)
       await ledgerLoaderHook["chat.params"](input, output);
+
+      // Inject atlas summary for brainstormer/planner (no-op for other agents)
+      await atlasAutoInjectHook["chat.params"](input, output);
 
       // Inject project context files
       await contextInjectorHook["chat.params"](input, output);

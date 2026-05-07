@@ -1,4 +1,5 @@
 export { createArtifactAutoIndexHook, parseLedger } from "./artifact-auto-index";
+export { createAtlasAutoInjectHook } from "./atlas-auto-inject";
 export { type AutoCompactConfig, createAutoCompactHook } from "./auto-compact";
 export { createCommentCheckerHook } from "./comment-checker";
 export { ConstraintViolationError, createConstraintReviewerHook } from "./constraint-reviewer";
