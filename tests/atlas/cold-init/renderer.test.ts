@@ -83,4 +83,55 @@ describe("renderColdInitNode", () => {
     });
     expect(out).toContain("请补充 src/runner.ts 的失败语义。");
   });
+
+  it("renders code: source bullets as GitHub permalinks in body Sources", () => {
+    const out = renderColdInitNode({
+      node: baseNode,
+      userNote: null,
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+      repoBase: "https://github.com/foo/bar",
+    });
+    // Body Sources section uses a clickable link; frontmatter sources stay as raw strings.
+    expect(out).toContain(
+      "[查看源码 src/lifecycle/runner.ts](https://github.com/foo/bar/blob/main/src/lifecycle/runner.ts)",
+    );
+    expect(out).toContain("- code:src/lifecycle/runner.ts"); // frontmatter list still raw
+  });
+
+  it("writes display extras (title, aliases, source_path) into frontmatter", () => {
+    const out = renderColdInitNode({
+      node: { ...baseNode, title: "Lifecycle 状态机" },
+      userNote: null,
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+      repoBase: "https://github.com/foo/bar",
+    });
+    expect(out).toContain("title: Lifecycle 状态机");
+    expect(out).toContain("aliases: 10-impl/runner");
+    expect(out).toContain("source_path: src/lifecycle/runner.ts");
+  });
+
+  it("preserves non-code source bullets verbatim", () => {
+    const out = renderColdInitNode({
+      node: { ...baseNode, sources: ["thoughts:shared/designs/x.md", "lifecycle:42"] },
+      userNote: null,
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+      repoBase: "https://github.com/foo/bar",
+    });
+    expect(out).toContain("- thoughts:shared/designs/x.md");
+    expect(out).toContain("- lifecycle:42");
+    expect(out).not.toContain("blob/main/thoughts");
+  });
+
+  it("falls back to ATLAS_REPO_FALLBACK_BASE when no repoBase is supplied", () => {
+    const out = renderColdInitNode({
+      node: baseNode,
+      userNote: null,
+      lastVerifiedCommit: "",
+      lastWrittenMtime: 0,
+    });
+    expect(out).toContain("https://github.com/Wuxie233/micode/blob/main/src/lifecycle/runner.ts");
+  });
 });

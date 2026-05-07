@@ -1,5 +1,6 @@
 export { artifact_search } from "./artifact-search";
 export { ast_grep_replace, ast_grep_search, checkAstGrepAvailable } from "./ast-grep";
+export { createAtlasLookupTool } from "./atlas";
 export { createBatchReadTool } from "./batch-read";
 export { btca_ask, checkBtcaAvailable } from "./btca";
 export { look_at } from "./look-at";

@@ -73,6 +73,7 @@ import {
   btca_ask,
   checkAstGrepAvailable,
   checkBtcaAvailable,
+  createAtlasLookupTool,
   createBatchReadTool,
   createMindmodelLookupTool,
   createOcttoTools,
@@ -793,6 +794,8 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
 
   // Mindmodel lookup tool - agents call this when they need coding patterns
   const mindmodelLookupTool = createMindmodelLookupTool(ctx);
+  // Atlas lookup tool - agents call this BEFORE broad codebase searches to consult atlas/
+  const atlasLookupTool = createAtlasLookupTool(ctx);
   const projectMemoryTools = {
     ...createProjectMemoryLookupTool(ctx),
     ...createProjectMemoryPromoteTool(ctx),
@@ -978,6 +981,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       resume_subagent,
       cleanup_parent_run,
       batch_read,
+      ...atlasLookupTool,
       ...mindmodelLookupTool,
       ...projectMemoryTools,
       ...ptyTools,
