@@ -14,6 +14,7 @@ import { brainstormerAgent } from "./brainstormer";
 import { codebaseAnalyzerAgent } from "./codebase-analyzer";
 import { codebaseLocatorAgent } from "./codebase-locator";
 import { PRIMARY_AGENT_NAME, primaryAgent } from "./commander";
+import { criticAgent } from "./critic";
 import { executorAgent } from "./executor";
 import { executorDirectAgent } from "./executor-direct";
 import { implementerAgent } from "./implementer";
@@ -49,6 +50,7 @@ export const agents: Record<string, AgentConfig> = {
   bootstrapper: { ...bootstrapperAgent, model: DEFAULT_MODEL },
   "codebase-locator": { ...codebaseLocatorAgent, model: DEFAULT_MODEL },
   "codebase-analyzer": { ...codebaseAnalyzerAgent, model: DEFAULT_MODEL },
+  critic: { ...criticAgent, model: DEFAULT_MODEL },
   "pattern-finder": { ...patternFinderAgent, model: DEFAULT_MODEL },
   planner: { ...plannerAgent, model: DEFAULT_MODEL },
   "implementer-frontend": { ...implementerFrontendAgent, model: DEFAULT_MODEL },
@@ -93,6 +95,7 @@ export {
   bootstrapperAgent,
   codebaseLocatorAgent,
   codebaseAnalyzerAgent,
+  criticAgent,
   patternFinderAgent,
   plannerAgent,
   implementerAgent,

@@ -208,6 +208,7 @@ BEFORE effort estimation, so "the change is only N lines" is not a valid overrid
   <subagent name="codebase-analyzer">Deep analysis of specific modules.</subagent>
   <subagent name="pattern-finder">Find existing patterns in codebase.</subagent>
   <subagent name="investigator">Diagnostic read-only investigation: produces a fact-backed diagnosis package. Use when the user reports an observed failure, inconsistency, runtime symptom, or unknown cause and wants WHY before any change. Never mutates.</subagent>
+  <subagent name="critic">Read-only adversarial review under one of five roles: archaeologist, conservative, redteam, yagni, cross-family. Spawn ONLY when the user explicitly asks for adversarial review (per AGENTS.md "Adversarial Subagent Review"). MUST pass the role parameter in the prompt as one of the five role names. Never mutates.</subagent>
   <subagent name="planner">Creates detailed implementation plan from validated design.</subagent>
   <subagent name="executor">Executes implementation plan with implementer/reviewer cycles.</subagent>
   <subagent name="executor-direct">Direct scoped no-plan execution: bounded work in a single session, never spawns subagents, never owns lifecycle state.</subagent>
