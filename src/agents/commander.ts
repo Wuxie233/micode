@@ -208,6 +208,47 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 </do-not-notify>
 </completion-notify>
 
+<effect-first-reporting priority="high" description="User-facing terminal-state summary structure">
+<purpose>
+当主 agent 的一个用户可见工作单元到达终态时（设计完成 / 计划完成 / 实现完成 / 审查完成 / 较大 quick-op 完成），用户最关心的是改动后的实际表现，不是过程产物。本块要求把汇报中心从"我做了什么"切换到"你会看到什么效果，以及怎么验证它"。
+</purpose>
+
+<structure description="Default user-facing summary order. Use these section labels verbatim.">
+<section name="预期表现">
+现在用户会看到 / 触发到的实际行为。一句话或 2-3 个 bullet。说"是什么"不说"我改了哪个文件"。
+</section>
+<section name="你可以怎么验收">
+用户用 2-4 个步骤自己验证。每步是用户可执行的具体动作（打开某页、跑某命令、检查某输出），不是 agent 内部的 verify 脚本。
+</section>
+<section name="已知限制 / 下一步">
+没完成的部分、需要用户手动处理的事、已知边界。没有就明确写"无"。
+</section>
+<section name="实现记录">
+commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行。除非用户明确要求展开，不要把 reviewer 报告原文、子任务表、commit 列表贴在最前面。
+</section>
+</structure>
+
+<exceptions>
+<rule name="blocked">任务 blocked 时，先输出"为什么阻塞"和"用户需要做什么"，再讲已完成的部分。不要先讲已完成的部分让用户去推断什么阻塞了。</rule>
+<rule name="failed-stop">任务 failed-stop 时，先输出失败结论和恢复建议，再讲实现记录。</rule>
+<rule name="user-asks-process">用户明确要求详细过程（"展开 commit / 测试 / 子任务"）时，可以把"实现记录"展开到正常长度，但仍然保留"预期表现"和"你可以怎么验收"两段在前面。</rule>
+<rule name="trivial">纯查询、单行回答、状态查询类任务，可以一句话完成，不强行套完整四段。本块只在终态用户可见汇报中触发，不是每个回合都要套模板。</rule>
+</exceptions>
+
+<relationship-to-other-rules>
+<rule>本块补充而非替代 completion-notify：QQ 通知是带外短消息（≤200 字符），用户在 OpenCode 里看到的对话回复才是本块作用对象。</rule>
+<rule>本块不影响 intent-classification：意图声明仍然在新请求第一回合的最顶端输出，是路由 UX 信号，不是终态汇报。</rule>
+<rule>本块不改变 executor / reviewer / planner 等 subagent 的内部详细报告格式；它们仍然返回完整结构化输出。primary agent 在综合给用户时按本块压缩。</rule>
+</relationship-to-other-rules>
+
+<anti-patterns>
+<anti-pattern>把 commit hash / 测试命令 / batch 编号 / 子任务表放在响应最前面让用户自己读出"现在能干嘛了"。</anti-pattern>
+<anti-pattern>用"已完成 N 个 task / N 次 review / N 次 commit"开头汇报。这是过程指标不是效果。</anti-pattern>
+<anti-pattern>blocked 时先列已完成的部分，让用户翻到末尾才发现下一步要他做什么。</anti-pattern>
+<anti-pattern>把 reviewer 详细报告或 implementer 报告原文贴进 primary 汇报。它们是过程材料，已经在 thoughts / lifecycle issue 里留档。</anti-pattern>
+</anti-patterns>
+</effect-first-reporting>
+
 <intent-classification priority="HIGH">
 On the FIRST TURN of every NEW user request, before any subagent spawn or design work,
 emit exactly one line at the very top of your response:
