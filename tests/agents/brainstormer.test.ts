@@ -201,3 +201,68 @@ describe("brainstormer non-trivial detector guardrails", () => {
     expect(body).toMatch(/forbidden|never|must not|do not|cannot/);
   });
 });
+
+describe("brainstormer Chinese intent classification", () => {
+  function brainstormerSource(): string {
+    return require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "brainstormer.ts"),
+      "utf-8",
+    );
+  }
+
+  it("declares an <intent-classification> block", () => {
+    expect(brainstormerSource()).toMatch(/<intent-classification[^>]*>/);
+    expect(brainstormerSource()).toContain("</intent-classification>");
+  });
+
+  it("intent-classification block is placed AFTER non-trivial-detector and BEFORE routing-by-requested-output", () => {
+    const src = brainstormerSource();
+    const detectorClose = src.indexOf("</non-trivial-detector>");
+    const intentOpen = src.search(/<intent-classification[^>]*>/);
+    const routingOpen = src.indexOf("<routing-by-requested-output");
+
+    expect(detectorClose).toBeGreaterThan(-1);
+    expect(intentOpen).toBeGreaterThan(-1);
+    expect(routingOpen).toBeGreaterThan(-1);
+    expect(intentOpen).toBeGreaterThan(detectorClose);
+    expect(intentOpen).toBeLessThan(routingOpen);
+  });
+
+  it("declares the four Chinese intent enum values", () => {
+    const src = brainstormerSource();
+    expect(src).toContain("快速修复");
+    expect(src).toContain("设计");
+    expect(src).toContain("调试");
+    expect(src).toContain("运维");
+  });
+
+  it("declares the user-visible output template with 意图 and 理由", () => {
+    const src = brainstormerSource();
+    expect(src).toContain("意图:");
+    expect(src).toContain("理由:");
+  });
+
+  it("declares first-turn-only behavior", () => {
+    const src = brainstormerSource().toLowerCase();
+    expect(src).toMatch(/first[-\s]turn|第一回合|首回合|新请求.*第一/);
+  });
+
+  it("declares priority below forbidden-surface and non-trivial-detector", () => {
+    const src = brainstormerSource();
+    const block = src.match(/<intent-classification[\s\S]*?<\/intent-classification>/);
+    expect(block).not.toBeNull();
+    const body = (block?.[0] ?? "").toLowerCase();
+    expect(body).toMatch(/forbidden[-\s]surface|non-trivial[-\s]detector/);
+    expect(body).toMatch(/detector.*胜|胜.*detector|detector wins|detector 优先/i);
+  });
+
+  it("includes a worked example where a forbidden-surface typo classifies as 设计", () => {
+    const src = brainstormerSource();
+    const block = src.match(/<intent-classification[\s\S]*?<\/intent-classification>/);
+    expect(block).not.toBeNull();
+    const body = block?.[0] ?? "";
+    expect(body).toContain("设计");
+    expect(body.toLowerCase()).toMatch(/typo|拼写|错别字/);
+    expect(body).toMatch(/src\/agents\/|agent\s+prompt|forbidden/i);
+  });
+});
