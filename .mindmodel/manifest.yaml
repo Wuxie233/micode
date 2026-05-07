@@ -16,6 +16,9 @@ categories:
   - path: architecture/organization.md
     description: Directory and module organization
     group: architecture
+  - path: architecture/coupling-reuse.md
+    description: Module decoupling and high-reuse engineering philosophy
+    group: architecture
   - path: patterns/error-handling.md
     description: Error handling conventions
     group: patterns

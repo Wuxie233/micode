@@ -107,3 +107,72 @@ describe("commander routing: direct-execution output class", () => {
     expect(lower).toMatch(/executor-direct.*not.*investigat|not.*investigator.*executor-direct/);
   });
 });
+
+describe("commander Chinese intent classification", () => {
+  function commanderSource(): string {
+    return require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "commander.ts"),
+      "utf-8",
+    );
+  }
+
+  function brainstormerSource(): string {
+    return require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "..", "..", "src", "agents", "brainstormer.ts"),
+      "utf-8",
+    );
+  }
+
+  it("declares an <intent-classification> block", () => {
+    expect(commanderSource()).toMatch(/<intent-classification[^>]*>/);
+    expect(commanderSource()).toContain("</intent-classification>");
+  });
+
+  it("intent-classification block is placed BEFORE routing-by-requested-output", () => {
+    const src = commanderSource();
+    const intentOpen = src.search(/<intent-classification[^>]*>/);
+    const routingOpen = src.indexOf("<routing-by-requested-output");
+
+    expect(intentOpen).toBeGreaterThan(-1);
+    expect(routingOpen).toBeGreaterThan(-1);
+    expect(intentOpen).toBeLessThan(routingOpen);
+  });
+
+  it("declares the four Chinese intent enum values", () => {
+    const src = commanderSource();
+    expect(src).toContain("快速修复");
+    expect(src).toContain("设计");
+    expect(src).toContain("调试");
+    expect(src).toContain("运维");
+  });
+
+  it("declares the user-visible output template with 意图 and 理由", () => {
+    const src = commanderSource();
+    expect(src).toContain("意图:");
+    expect(src).toContain("理由:");
+  });
+
+  it("declares first-turn-only behavior", () => {
+    const src = commanderSource().toLowerCase();
+    expect(src).toMatch(/first[-\s]turn|第一回合|首回合|新请求.*第一/);
+  });
+
+  it("includes a worked example where a forbidden-surface typo classifies as 设计", () => {
+    const src = commanderSource();
+    const block = src.match(/<intent-classification[\s\S]*?<\/intent-classification>/);
+    expect(block).not.toBeNull();
+    const body = block?.[0] ?? "";
+    expect(body).toContain("设计");
+    expect(body.toLowerCase()).toMatch(/typo|拼写|错别字/);
+    expect(body).toMatch(/src\/agents\/|agent\s+prompt|forbidden/i);
+  });
+
+  it("intent-classification block is byte-identical to the brainstormer block (no drift)", () => {
+    const commanderBlock = commanderSource().match(/<intent-classification[\s\S]*?<\/intent-classification>/);
+    const brainstormerBlock = brainstormerSource().match(/<intent-classification[\s\S]*?<\/intent-classification>/);
+
+    expect(commanderBlock).not.toBeNull();
+    expect(brainstormerBlock).not.toBeNull();
+    expect(commanderBlock?.[0]).toBe(brainstormerBlock?.[0]);
+  });
+});
