@@ -4,6 +4,14 @@ import { DEFAULT_MODEL } from "../../src/utils/config";
 
 const FORBIDDEN_DIRECT_AGENT_NAMES = ["runner", "operator", "light-executor"] as const;
 
+const SPECIALIST_AGENT_NAMES = [
+  "product-manager",
+  "software-architect",
+  "ux-designer",
+  "architecture-quality-inspector",
+  "rubric-reviewer",
+] as const;
+
 describe("agents index", () => {
   it("should not export handoff agents", async () => {
     const module = await import("../../src/agents/index");
@@ -123,6 +131,39 @@ describe("agents index", () => {
       expect(agent.mode).toBe("subagent");
       expect(agent.model).toBe(DEFAULT_MODEL);
     }
+  });
+
+  it("registers all five specialist agents at default model", async () => {
+    const module = await import("../../src/agents/index");
+
+    for (const name of SPECIALIST_AGENT_NAMES) {
+      const agent = module.agents[name];
+      expect(agent).toBeDefined();
+      expect(agent.mode).toBe("subagent");
+      expect(agent.model).toBe(DEFAULT_MODEL);
+    }
+  });
+
+  it("registers all five specialists with read-only tool restrictions", async () => {
+    const module = await import("../../src/agents/index");
+
+    for (const name of SPECIALIST_AGENT_NAMES) {
+      const agent = module.agents[name];
+      expect(agent.tools?.write).toBe(false);
+      expect(agent.tools?.edit).toBe(false);
+      expect(agent.tools?.bash).toBe(false);
+      expect(agent.tools?.task).toBe(false);
+    }
+  });
+
+  it("re-exports all five specialist agent objects from the barrel", async () => {
+    const module = (await import("../../src/agents/index")) as Record<string, unknown>;
+
+    expect(module.productManagerAgent).toBeDefined();
+    expect(module.softwareArchitectAgent).toBeDefined();
+    expect(module.uxDesignerAgent).toBeDefined();
+    expect(module.architectureQualityInspectorAgent).toBeDefined();
+    expect(module.rubricReviewerAgent).toBeDefined();
   });
 
   it("should use DEFAULT_MODEL for all agents", async () => {

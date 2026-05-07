@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { DEFAULT_MODEL } from "@/utils/config";
+import { architectureQualityInspectorAgent } from "./architecture-quality-inspector";
 import { artifactSearcherAgent } from "./artifact-searcher";
 import { atlasColdBehaviorAgent } from "./atlas-cold-behavior";
 import { atlasColdBuildAgent } from "./atlas-cold-build";
@@ -41,8 +42,12 @@ import { octtoAgent } from "./octto";
 import { patternFinderAgent } from "./pattern-finder";
 import { plannerAgent } from "./planner";
 import { probeAgent } from "./probe";
+import { productManagerAgent } from "./product-manager";
 import { projectInitializerAgent } from "./project-initializer";
 import { reviewerAgent } from "./reviewer";
+import { rubricReviewerAgent } from "./rubric-reviewer";
+import { softwareArchitectAgent } from "./software-architect";
+import { uxDesignerAgent } from "./ux-designer";
 
 export const agents: Record<string, AgentConfig> = {
   [PRIMARY_AGENT_NAME]: { ...primaryAgent, model: DEFAULT_MODEL },
@@ -51,6 +56,11 @@ export const agents: Record<string, AgentConfig> = {
   "codebase-locator": { ...codebaseLocatorAgent, model: DEFAULT_MODEL },
   "codebase-analyzer": { ...codebaseAnalyzerAgent, model: DEFAULT_MODEL },
   critic: { ...criticAgent, model: DEFAULT_MODEL },
+  "product-manager": { ...productManagerAgent, model: DEFAULT_MODEL },
+  "software-architect": { ...softwareArchitectAgent, model: DEFAULT_MODEL },
+  "ux-designer": { ...uxDesignerAgent, model: DEFAULT_MODEL },
+  "architecture-quality-inspector": { ...architectureQualityInspectorAgent, model: DEFAULT_MODEL },
+  "rubric-reviewer": { ...rubricReviewerAgent, model: DEFAULT_MODEL },
   "pattern-finder": { ...patternFinderAgent, model: DEFAULT_MODEL },
   planner: { ...plannerAgent, model: DEFAULT_MODEL },
   "implementer-frontend": { ...implementerFrontendAgent, model: DEFAULT_MODEL },
@@ -96,6 +106,11 @@ export {
   codebaseLocatorAgent,
   codebaseAnalyzerAgent,
   criticAgent,
+  productManagerAgent,
+  softwareArchitectAgent,
+  uxDesignerAgent,
+  architectureQualityInspectorAgent,
+  rubricReviewerAgent,
   patternFinderAgent,
   plannerAgent,
   implementerAgent,
