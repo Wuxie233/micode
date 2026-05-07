@@ -15,6 +15,7 @@ describe("agent-roles", () => {
     expect(agentRoleLabel("codebase-analyzer")).toBe("代码分析");
     expect(agentRoleLabel("codebase-locator")).toBe("代码定位");
     expect(agentRoleLabel("pattern-finder")).toBe("模式查找");
+    expect(agentRoleLabel("critic")).toBe("对抗审查");
   });
 
   it("strips spawn-agent. technical prefix from unknown agent name", () => {
@@ -32,5 +33,6 @@ describe("agent-roles", () => {
 
   it("exposes the label map as readonly record", () => {
     expect(AGENT_ROLE_LABELS.reviewer).toBe("代码审查");
+    expect(AGENT_ROLE_LABELS.critic).toBe("对抗审查");
   });
 });

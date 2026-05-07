@@ -36,6 +36,30 @@ describe("agents index", () => {
     expect(module.investigatorAgent).toBeDefined();
   });
 
+  it("registers critic agent at default model", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect(module.agents.critic).toBeDefined();
+    expect(module.agents.critic.mode).toBe("subagent");
+    expect(module.agents.critic.model).toBe(DEFAULT_MODEL);
+  });
+
+  it("registers critic with read-only tool restrictions", async () => {
+    const module = await import("../../src/agents/index");
+    const agent = module.agents.critic;
+
+    expect(agent.tools?.write).toBe(false);
+    expect(agent.tools?.edit).toBe(false);
+    expect(agent.tools?.bash).toBe(false);
+    expect(agent.tools?.task).toBe(false);
+  });
+
+  it("re-exports criticAgent from the agents barrel", async () => {
+    const module = await import("../../src/agents/index");
+
+    expect((module as Record<string, unknown>).criticAgent).toBeDefined();
+  });
+
   it("registers executor-direct with a non-empty model", async () => {
     const module = await import("../../src/agents/index");
     const agent = module.agents["executor-direct"];

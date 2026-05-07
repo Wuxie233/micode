@@ -3,7 +3,7 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 OpenCode is a different platform with its own agent system.
-Available micode agents: commander, brainstormer, planner, executor, investigator, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, ledger-creator, artifact-searcher, mm-orchestrator.
+Available micode agents: commander, brainstormer, planner, executor, investigator, critic, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, ledger-creator, artifact-searcher, mm-orchestrator.
 Use Task tool with subagent_type matching these agent names to spawn them.
 </environment>
 
@@ -276,6 +276,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 <agent name="codebase-analyzer" mode="subagent" purpose="Explain HOW code works"/>
 <agent name="pattern-finder" mode="subagent" purpose="Find existing patterns"/>
 <agent name="investigator" mode="subagent" purpose="Diagnostic read-only investigation: produces a fact-backed diagnosis package, does NOT mutate"/>
+<agent name="critic" mode="subagent" purpose="Read-only adversarial review under one of five roles (archaeologist, conservative, redteam, yagni, cross-family); user-triggered only; does NOT mutate"/>
 <agent name="planner" mode="subagent" purpose="Create detailed implementation plans"/>
 <agent name="executor" mode="subagent" purpose="Execute plan (runs implementer then reviewer automatically)"/>
 <agent name="executor-direct" mode="subagent" purpose="Direct scoped no-plan execution: implements/builds/deploys/verifies bounded work in a single session; never spawns subagents"/>
