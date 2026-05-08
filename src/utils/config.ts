@@ -222,6 +222,13 @@ export const config = {
       logEvents: true,
       includeInOutput: true,
     },
+    readGuard: {
+      /** Extra reads after the first when assistant output is empty (total attempts = 1 + this). */
+      maxExtraReads: 2,
+      /** Per-retry sleep durations (ms). The last entry is reused if maxExtraReads exceeds length. */
+      // eslint-disable-next-line @typescript-eslint/no-magic-numbers -- Read guard retry schedule is an intentional config literal.
+      backoffMs: [200, 500] as readonly number[],
+    },
   },
 
   /**

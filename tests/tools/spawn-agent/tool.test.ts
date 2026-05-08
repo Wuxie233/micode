@@ -73,6 +73,40 @@ function createCtx(output: string, deleteSession: ReturnType<typeof mock>): Plug
   } as never;
 }
 
+function createAssistantMessages(output: string) {
+  return {
+    data: [
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: output }],
+      },
+    ],
+  };
+}
+
+function createEmptyThenFilledMessages(output: string): ReturnType<typeof mock> {
+  let calls = 0;
+  return mock(async () => {
+    calls += 1;
+    return createAssistantMessages(calls === 1 ? "" : output);
+  });
+}
+
+function createAlwaysEmptyMessages(): ReturnType<typeof mock> {
+  return mock(async () => createAssistantMessages(""));
+}
+
+function createCtxWithMessages(messages: ReturnType<typeof mock>, deleteSession: ReturnType<typeof mock>): PluginInput {
+  const create = mock(async () => ({ data: { id: SESSION_ID } }));
+  const prompt = mock(async () => ({}));
+  const update = mock(async () => ({}));
+
+  return {
+    client: { session: { create, prompt, messages, update, delete: deleteSession } },
+    directory: DIRECTORY,
+  } as never;
+}
+
 describe("spawn-agent tool internal sessions", () => {
   let consoleLogSpy: ReturnType<typeof spyOn>;
 
@@ -103,6 +137,35 @@ describe("spawn-agent tool internal sessions", () => {
     expect(deleteSession).toHaveBeenCalledTimes(2);
     expect(ctx.client.session.update.mock.calls).toHaveLength(0);
     expect(registry.size()).toBe(0);
+  });
+
+  it("recovers when the first assistant read is empty and a reread has output", async () => {
+    const deleteSession = mock(async () => ({}));
+    const messages = createEmptyThenFilledMessages(SUCCESS_OUTPUT);
+    const ctx = createCtxWithMessages(messages, deleteSession);
+    const registry = createRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry });
+
+    const output = await tool.execute({ agents: [TASK] }, { metadata: () => {} } as never);
+
+    expect(output).toContain(SPAWN_OUTCOMES.SUCCESS);
+    expect(output).toContain(SUCCESS_OUTPUT);
+    expect(messages.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns hard_failure when assistant output stays empty after rereads", async () => {
+    const deleteSession = mock(async () => ({}));
+    const messages = createAlwaysEmptyMessages();
+    const ctx = createCtxWithMessages(messages, deleteSession);
+    const registry = createRegistry();
+    const tool = createSpawnAgentTool(ctx, { registry });
+
+    const output = await tool.execute({ agents: [TASK] }, { metadata: () => {} } as never);
+
+    expect(output).toContain(SPAWN_OUTCOMES.HARD_FAILURE);
+    expect(output).toContain("empty assistant output after");
+    expect(output).not.toContain("empty response");
+    expect(messages.mock.calls).toHaveLength(3);
   });
 
   it("deletes task_error sessions without preserving them", async () => {

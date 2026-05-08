@@ -5,6 +5,7 @@ import { config } from "@/utils/config";
 import { updateInternalSession } from "@/utils/internal-session";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./spawn-agent/classify";
 import { buildSpawnCompletionTitle } from "./spawn-agent/naming";
+import { readAssistantTextWithRetry } from "./spawn-agent/read-guard";
 import type { PreservedRecord, PreservedRegistry } from "./spawn-agent/registry";
 import { buildSubagentResumePrompt } from "./spawn-agent/resume-prompt";
 import { type ResumeSubagentResult, SPAWN_OUTCOMES, type SpawnOutcome } from "./spawn-agent/types";
@@ -45,6 +46,11 @@ const ABSENT_REASON = "Session not preserved or expired.";
 const MAX_RESUMES_REASON = "Maximum resume count reached.";
 const MISSING_SESSION = "-";
 const RESULT_HEADER = "## resume_subagent Result";
+const EMPTY_OUTPUT_REASON_PREFIX = "empty assistant output after";
+
+function buildEmptyReadReason(totalAttempts: number): string {
+  return `${EMPTY_OUTPUT_REASON_PREFIX} ${totalAttempts} read attempt(s)`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -141,9 +147,22 @@ async function resumeSession(ctx: PluginInput, sessionId: string, prompt: string
   try {
     await ctx.client.session.prompt({ path: { id: sessionId }, body: { parts: [{ type: "text", text: prompt }] } });
     const response = (await ctx.client.session.messages({ path: { id: sessionId } })) as SessionMessagesResponse;
-    const output = readAssistantText(response.data ?? []);
-    const classification = classifySpawnError({ assistantText: output });
-    return { class: classification.class, output: output || classification.reason };
+    const firstOutput = readAssistantText(response.data ?? []);
+    const guarded = await readAssistantTextWithRetry(
+      firstOutput,
+      async () => {
+        const reread = (await ctx.client.session.messages({ path: { id: sessionId } })) as SessionMessagesResponse;
+        return readAssistantText(reread.data ?? []);
+      },
+      config.subagent.readGuard,
+    );
+    if (guarded.exhausted) {
+      const reason = buildEmptyReadReason(1 + guarded.extraReads);
+      const classification = classifySpawnError({ thrown: new Error(reason), httpStatus: null });
+      return { class: classification.class, output: classification.reason };
+    }
+    const classification = classifySpawnError({ assistantText: guarded.output });
+    return { class: classification.class, output: guarded.output || classification.reason };
   } catch (error) {
     const classification = classifySpawnError({ thrown: error, httpStatus: getStatus(error) });
     return { class: classification.class, output: classification.reason };

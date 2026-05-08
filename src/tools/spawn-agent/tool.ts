@@ -20,6 +20,7 @@ import { buildDiagnosticLine, type DiagnosticFields } from "./diagnostics";
 import { formatSpawnResults } from "./format";
 import { evaluateFence, FENCE_DECISIONS, type FenceResult } from "./generation-fence";
 import { buildSpawnRunningTitle } from "./naming";
+import { readAssistantTextWithRetry } from "./read-guard";
 import type { PreservedRegistry } from "./registry";
 import { retryOnTransient } from "./retry";
 import { createSpawnSessionRegistry, type SpawnSessionRegistry } from "./spawn-session-registry";
@@ -147,6 +148,7 @@ const DIAGNOSTICS_EVENT = "spawn-agent.diagnostics";
 const UNKNOWN_CALLER = "unknown";
 const UNKNOWN_SESSION_ID = "unknown-session";
 const DEFAULT_PARENT_SESSION_ID = "";
+const EMPTY_OUTPUT_REASON_PREFIX = "empty assistant output after";
 
 const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.allSettled.
@@ -251,6 +253,10 @@ function readAssistantText(messages: readonly SessionMessage[]): string {
   );
 }
 
+function buildEmptyReadReason(totalAttempts: number): string {
+  return `${EMPTY_OUTPUT_REASON_PREFIX} ${totalAttempts} read attempt(s)`;
+}
+
 function getStatus(error: unknown): number | null {
   if (!isRecord(error)) return null;
   if (typeof error.status === "number") return error.status;
@@ -280,6 +286,25 @@ function buildPromptBody(
   return model ? { ...base, model } : base;
 }
 
+async function readSessionAssistantText(ctx: PluginInput, sessionId: string): Promise<string> {
+  const messagesResp = (await ctx.client.session.messages({
+    path: { id: sessionId },
+    query: { directory: ctx.directory },
+  })) as SessionMessagesResponse;
+  return readAssistantText(messagesResp.data ?? []);
+}
+
+async function readGuardedAssistantOutput(ctx: PluginInput, sessionId: string): Promise<string> {
+  const firstOutput = await readSessionAssistantText(ctx, sessionId);
+  const guard = await readAssistantTextWithRetry(
+    firstOutput,
+    () => readSessionAssistantText(ctx, sessionId),
+    config.subagent.readGuard,
+  );
+  if (guard.exhausted) throw new Error(buildEmptyReadReason(1 + guard.extraReads));
+  return guard.output;
+}
+
 async function executeAgentSessionWith(
   ctx: PluginInput,
   task: AgentTask,
@@ -307,12 +332,7 @@ async function executeAgentSessionWith(
       query: { directory: ctx.directory },
     });
 
-    const messagesResp = (await ctx.client.session.messages({
-      path: { id: sessionId },
-      query: { directory: ctx.directory },
-    })) as SessionMessagesResponse;
-
-    return { sessionId, output: readAssistantText(messagesResp.data ?? []) };
+    return { sessionId, output: await readGuardedAssistantOutput(ctx, sessionId) };
   } catch (error) {
     throw createSessionError(error, sessionId);
   }
