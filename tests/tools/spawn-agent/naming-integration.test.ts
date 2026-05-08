@@ -90,12 +90,12 @@ describe("spawn-agent naming integration", () => {
 
     await tool.execute(
       {
-        agents: [{ agent: "implementer-frontend", prompt: "tweak ui", description: "" }],
+        agents: [{ agent: "implementer-frontend-ui", prompt: "tweak ui", description: "" }],
       },
       { metadata: () => {} } as never,
     );
 
     const createCall = stubs.create.mock.calls[0]?.[0] as CreateRequest | undefined;
-    expect(createCall?.body.title).toBe("执行中: 前端实现");
+    expect(createCall?.body.title).toBe("执行中: 前端UI实现");
   });
 });

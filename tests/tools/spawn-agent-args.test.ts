@@ -4,7 +4,7 @@ import { describe, expect, it } from "bun:test";
 import { INVALID_ARGS_MESSAGE, NO_AGENTS_MESSAGE, normalizeSpawnAgentArgs } from "../../src/tools/spawn-agent-args";
 
 const sampleTask = {
-  agent: "implementer-frontend",
+  agent: "implementer-frontend-ui",
   prompt: "Build the login form.",
   description: "Login form scaffolding",
 };
@@ -167,7 +167,7 @@ describe("normalizeSpawnAgentArgs", () => {
   describe("invalid task shapes", () => {
     it("rejects canonical task missing description", () => {
       const outcome = normalizeSpawnAgentArgs({
-        agents: [{ agent: "implementer-frontend", prompt: "Hello." }],
+        agents: [{ agent: "implementer-frontend-ui", prompt: "Hello." }],
       });
 
       expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
@@ -175,7 +175,7 @@ describe("normalizeSpawnAgentArgs", () => {
 
     it("rejects top-level task missing prompt", () => {
       const outcome = normalizeSpawnAgentArgs({
-        agent: "implementer-frontend",
+        agent: "implementer-frontend-ui",
         description: "No prompt.",
       });
 

@@ -56,7 +56,7 @@ describe("createSpawnSessionRegistry", () => {
     const registry = createSpawnSessionRegistry(baseOptions);
     registry.registerRunning({
       sessionId: "s1",
-      agent: "implementer-frontend",
+      agent: "implementer-frontend-ui",
       description: "ui",
       ownerSessionId: "owner",
       runId: "run-A",

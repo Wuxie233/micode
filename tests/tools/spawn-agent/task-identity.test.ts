@@ -20,7 +20,7 @@ describe("deriveTaskIdentity", () => {
 
   it("falls back to hash and owner-derived run id when metadata absent", () => {
     const id = deriveTaskIdentity({
-      agent: "implementer-frontend",
+      agent: "implementer-frontend-ui",
       description: "ui card",
       prompt: "do the thing",
       ownerSessionId: "owner-xyz",

@@ -67,7 +67,7 @@ TEST FAILED: expected pass.`);
       {
         outcome: SPAWN_OUTCOMES.BLOCKED,
         description: "Blocked task",
-        agent: "implementer-frontend",
+        agent: "implementer-frontend-ui",
         elapsedMs: 3456,
         output: "BLOCKED: contract mismatch.",
       },
@@ -89,7 +89,9 @@ TEST FAILED: expected pass.`);
     expect(output).toContain(
       "| Task error task | implementer-backend | task_error | 2.3s | TEST FAILED: unit test rejected the change. |",
     );
-    expect(output).toContain("| Blocked task | implementer-frontend | blocked | 3.5s | BLOCKED: contract mismatch. |");
+    expect(output).toContain(
+      "| Blocked task | implementer-frontend-ui | blocked | 3.5s | BLOCKED: contract mismatch. |",
+    );
     expect(output).toContain("| Hard failure task | general | hard_failure | 4.6s | Failed to create session |");
     expect(output).toContain("## Successful task (1.0s)");
     expect(output).toContain("## Task error task (2.3s)");

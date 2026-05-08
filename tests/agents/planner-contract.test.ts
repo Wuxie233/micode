@@ -9,12 +9,13 @@ describe("planner contract generation", () => {
     expect(source).toContain("</contract-generation>");
   });
 
-  it("triggers contract only when plan spans both frontend and backend", async () => {
+  it("triggers contract when plan spans any frontend variant and backend", async () => {
     const fs = await import("node:fs/promises");
     const source = await fs.readFile("src/agents/planner.ts", "utf-8");
 
     expect(source).toContain("<contract-trigger>");
-    expect(source).toContain("Domain: frontend");
+    expect(source).toContain("Domain: frontend-ui");
+    expect(source).toContain("Domain: frontend-code");
     expect(source).toContain("Domain: backend");
   });
 
@@ -39,6 +40,13 @@ describe("planner contract generation", () => {
     const source = await fs.readFile("src/agents/planner.ts", "utf-8");
 
     expect(source).toContain("<contract-self-check>");
+  });
+
+  it("self-check explicitly mentions both frontend variants", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain("frontend-ui or frontend-code task");
   });
 
   it("declares the contract as frozen once the plan is handed off", async () => {

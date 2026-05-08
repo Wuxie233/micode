@@ -3,33 +3,41 @@ import { describe, expect, it } from "bun:test";
 import { DEFAULT_MODEL } from "../../src/utils/config";
 
 describe("domain-specific implementers", () => {
-  it("registers implementer-frontend, implementer-backend, implementer-general", async () => {
+  it("registers implementer-frontend-ui, implementer-frontend-code, implementer-backend, implementer-general", async () => {
     const module = await import("../../src/agents/index");
 
-    expect(module.agents["implementer-frontend"]).toBeDefined();
+    expect(module.agents["implementer-frontend-ui"]).toBeDefined();
+    expect(module.agents["implementer-frontend-code"]).toBeDefined();
     expect(module.agents["implementer-backend"]).toBeDefined();
     expect(module.agents["implementer-general"]).toBeDefined();
   });
 
-  it("removes the unsuffixed implementer from the registry", async () => {
+  it("removes the unsuffixed implementer and the old single implementer-frontend from the registry", async () => {
     const module = await import("../../src/agents/index");
 
     expect(module.agents.implementer).toBeUndefined();
+    expect(module.agents["implementer-frontend"]).toBeUndefined();
   });
 
-  it("configures all three domain implementers as subagents with DEFAULT_MODEL", async () => {
+  it("configures all four domain implementers as subagents with DEFAULT_MODEL", async () => {
     const module = await import("../../src/agents/index");
 
-    for (const name of ["implementer-frontend", "implementer-backend", "implementer-general"]) {
+    for (const name of [
+      "implementer-frontend-ui",
+      "implementer-frontend-code",
+      "implementer-backend",
+      "implementer-general",
+    ]) {
       const agent = module.agents[name];
       expect(agent.mode).toBe("subagent");
       expect(agent.model).toBe(DEFAULT_MODEL);
     }
   });
 
-  it("shares the base implementer prompt across all three variants", async () => {
+  it("shares the base implementer prompt across all four variants", async () => {
     const module = await import("../../src/agents/implementer");
-    const frontendModule = await import("../../src/agents/implementer-frontend");
+    const uiModule = await import("../../src/agents/implementer-frontend-ui");
+    const codeModule = await import("../../src/agents/implementer-frontend-code");
     const backendModule = await import("../../src/agents/implementer-backend");
     const generalModule = await import("../../src/agents/implementer-general");
 
@@ -37,7 +45,8 @@ describe("domain-specific implementers", () => {
     expect(basePrompt.length).toBeGreaterThan(0);
 
     for (const agent of [
-      frontendModule.implementerFrontendAgent,
+      uiModule.implementerFrontendUiAgent,
+      codeModule.implementerFrontendCodeAgent,
       backendModule.implementerBackendAgent,
       generalModule.implementerGeneralAgent,
     ]) {
@@ -45,13 +54,24 @@ describe("domain-specific implementers", () => {
     }
   });
 
-  it("frontend variant includes UI-specific constraints", async () => {
-    const module = await import("../../src/agents/implementer-frontend");
-    const prompt = module.implementerFrontendAgent.prompt ?? "";
+  it("frontend-ui variant emphasises UI/UX, design system, and accessibility", async () => {
+    const module = await import("../../src/agents/implementer-frontend-ui");
+    const prompt = module.implementerFrontendUiAgent.prompt ?? "";
 
-    expect(prompt).toContain("Frontend");
+    expect(prompt).toContain("Frontend UI");
+    expect(prompt).toContain("design-system");
+    expect(prompt).toContain("accessibility");
     expect(prompt).toContain(".tsx");
-    expect(prompt).toContain("components/");
+  });
+
+  it("frontend-code variant emphasises logic, state, types, and minimal scoped change", async () => {
+    const module = await import("../../src/agents/implementer-frontend-code");
+    const prompt = module.implementerFrontendCodeAgent.prompt ?? "";
+
+    expect(prompt).toContain("Frontend code-logic");
+    expect(prompt).toContain("state");
+    expect(prompt).toContain("type safety");
+    expect(prompt).toContain("Minimal, scoped");
   });
 
   it("backend variant includes server-side constraints", async () => {
@@ -71,13 +91,15 @@ describe("domain-specific implementers", () => {
     expect(prompt).toContain("src/shared/");
   });
 
-  it("all three variants enforce the contract-read-first rule", async () => {
-    const frontendModule = await import("../../src/agents/implementer-frontend");
+  it("all four variants enforce the contract-read-first rule", async () => {
+    const uiModule = await import("../../src/agents/implementer-frontend-ui");
+    const codeModule = await import("../../src/agents/implementer-frontend-code");
     const backendModule = await import("../../src/agents/implementer-backend");
     const generalModule = await import("../../src/agents/implementer-general");
 
     for (const agent of [
-      frontendModule.implementerFrontendAgent,
+      uiModule.implementerFrontendUiAgent,
+      codeModule.implementerFrontendCodeAgent,
       backendModule.implementerBackendAgent,
       generalModule.implementerGeneralAgent,
     ]) {

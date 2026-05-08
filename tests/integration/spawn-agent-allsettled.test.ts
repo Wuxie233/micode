@@ -12,7 +12,7 @@ const SUCCESS_TASK = {
 };
 
 const TASK_ERROR_TASK = {
-  agent: "implementer-frontend",
+  agent: "implementer-frontend-ui",
   prompt: "run the focused test",
   description: "Task error task",
 };
@@ -106,7 +106,7 @@ describe("spawn_agent allSettled integration", () => {
     });
 
     expect(spawnOutput).toContain("| Successful task | implementer-general | success |");
-    expect(spawnOutput).toContain("| Task error task | implementer-frontend | task_error |");
+    expect(spawnOutput).toContain("| Task error task | implementer-frontend-ui | task_error |");
     expect(spawnOutput).toContain("| Hard failure task | reviewer | hard_failure |");
     expect(spawnOutput).not.toContain("SessionID");
     expect(registry.size()).toBe(0);

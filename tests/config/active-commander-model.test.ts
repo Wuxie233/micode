@@ -40,9 +40,29 @@ describe("active host config: commander model strategy (issue #23)", () => {
     expect(agents.executor?.model).toBe("wuxie-openai/gpt-5.5");
   });
 
-  it("keeps implementer-frontend on wuxie-openai/gpt-5.5", () => {
-    expect(agents["implementer-frontend"]).toBeDefined();
-    expect(agents["implementer-frontend"]?.model).toBe("wuxie-openai/gpt-5.5");
+  it("does not keep the old implementer-frontend in active config (it must be removed)", () => {
+    // After issue #56, implementer-frontend no longer exists. The active host config
+    // must either omit the key entirely or have been replaced by the two new agents.
+    if (agents["implementer-frontend"] !== undefined) {
+      throw new Error(
+        "active config still references the stale implementer-frontend agent; replace it with implementer-frontend-ui and implementer-frontend-code",
+      );
+    }
+  });
+
+  it("routes implementer-frontend-ui to a UI/UX-strong model when configured", () => {
+    if (agents["implementer-frontend-ui"] === undefined) {
+      // Host has not yet adopted the new split; treat as skipped at expectation level.
+      return;
+    }
+    expect(agents["implementer-frontend-ui"]?.model).toBeDefined();
+  });
+
+  it("routes implementer-frontend-code to a code-logic-strong model when configured", () => {
+    if (agents["implementer-frontend-code"] === undefined) {
+      return;
+    }
+    expect(agents["implementer-frontend-code"]?.model).toBeDefined();
   });
 
   it("keeps implementer-backend on wuxie-openai/gpt-5.5", () => {

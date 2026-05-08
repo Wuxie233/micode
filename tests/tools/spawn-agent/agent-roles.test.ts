@@ -5,7 +5,8 @@ import { AGENT_ROLE_LABELS, agentRoleLabel } from "@/tools/spawn-agent/agent-rol
 describe("agent-roles", () => {
   it("returns Chinese label for known agent", () => {
     expect(agentRoleLabel("implementer-backend")).toBe("后端实现");
-    expect(agentRoleLabel("implementer-frontend")).toBe("前端实现");
+    expect(agentRoleLabel("implementer-frontend-ui")).toBe("前端UI实现");
+    expect(agentRoleLabel("implementer-frontend-code")).toBe("前端代码实现");
     expect(agentRoleLabel("implementer-general")).toBe("通用实现");
     expect(agentRoleLabel("reviewer")).toBe("代码审查");
     expect(agentRoleLabel("planner")).toBe("规划");
@@ -16,6 +17,13 @@ describe("agent-roles", () => {
     expect(agentRoleLabel("codebase-locator")).toBe("代码定位");
     expect(agentRoleLabel("pattern-finder")).toBe("模式查找");
     expect(agentRoleLabel("critic")).toBe("对抗审查");
+  });
+
+  it("does not silently label the old implementer-frontend (must surface as raw name)", () => {
+    // After the split, the old name should NOT be in the friendly-label map.
+    // It still passes through as the raw name because the function falls back to the cleaned input.
+    expect(agentRoleLabel("implementer-frontend")).toBe("implementer-frontend");
+    expect(AGENT_ROLE_LABELS["implementer-frontend"]).toBeUndefined();
   });
 
   it("strips spawn-agent. technical prefix from unknown agent name", () => {
@@ -34,6 +42,8 @@ describe("agent-roles", () => {
   it("exposes the label map as readonly record", () => {
     expect(AGENT_ROLE_LABELS.reviewer).toBe("代码审查");
     expect(AGENT_ROLE_LABELS.critic).toBe("对抗审查");
+    expect(AGENT_ROLE_LABELS["implementer-frontend-ui"]).toBe("前端UI实现");
+    expect(AGENT_ROLE_LABELS["implementer-frontend-code"]).toBe("前端代码实现");
   });
 
   it("returns Chinese labels for the five specialist agents", () => {
@@ -55,5 +65,10 @@ describe("agent-roles", () => {
   it("strips the spawn-agent. prefix from a specialist agent name", () => {
     expect(agentRoleLabel("spawn-agent.product-manager")).toBe("产品经理");
     expect(agentRoleLabel("spawn-agent.rubric-reviewer")).toBe("Rubric 评审");
+  });
+
+  it("strips the spawn-agent. prefix from the new frontend variants", () => {
+    expect(agentRoleLabel("spawn-agent.implementer-frontend-ui")).toBe("前端UI实现");
+    expect(agentRoleLabel("spawn-agent.implementer-frontend-code")).toBe("前端代码实现");
   });
 });

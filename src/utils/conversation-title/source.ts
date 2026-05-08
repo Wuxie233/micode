@@ -27,7 +27,8 @@ const EDGE_END_PATTERN = /[\p{P}\s]+$/u;
 const TOOL_AND_AGENT_NAMES = [
   "spawn-agent",
   "spawn_agent",
-  "implementer-frontend",
+  "implementer-frontend-ui",
+  "implementer-frontend-code",
   "implementer-backend",
   "implementer-general",
   "executor",
