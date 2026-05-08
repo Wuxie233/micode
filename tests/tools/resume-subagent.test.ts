@@ -29,12 +29,14 @@ interface UpdateCall {
 
 interface FakeRecorder {
   readonly promptCalls: PromptCall[];
+  readonly messagesCalls: unknown[];
   readonly updateCalls: UpdateCall[];
   readonly deleteCalls: string[];
 }
 
 interface FakeOptions {
   readonly assistantText?: string;
+  readonly assistantTextSequence?: readonly string[];
   readonly promptError?: Error;
   readonly updateError?: Error;
 }
@@ -62,6 +64,7 @@ function buildExpectedTitle(outcome: SpawnOutcome): string {
 }
 
 function buildSession(recorder: FakeRecorder, options: FakeOptions) {
+  let messagesIndex = 0;
   return {
     prompt: async (input: {
       readonly path: { readonly id: string };
@@ -73,14 +76,22 @@ function buildSession(recorder: FakeRecorder, options: FakeOptions) {
         text: input.body.parts[0]?.text ?? "",
       });
     },
-    messages: async () => ({
-      data: [
-        {
-          info: { role: "assistant" as const },
-          parts: [{ type: "text", text: options.assistantText ?? SUCCESS_OUTPUT }],
-        },
-      ],
-    }),
+    messages: async (input: unknown) => {
+      recorder.messagesCalls.push(input);
+      const sequence = options.assistantTextSequence;
+      const text = sequence
+        ? sequence[Math.min(messagesIndex, sequence.length - 1)]
+        : (options.assistantText ?? SUCCESS_OUTPUT);
+      messagesIndex += 1;
+      return {
+        data: [
+          {
+            info: { role: "assistant" as const },
+            parts: [{ type: "text", text }],
+          },
+        ],
+      };
+    },
     delete: async (input: { readonly path: { readonly id: string } }) => {
       recorder.deleteCalls.push(input.path.id);
     },
@@ -95,7 +106,7 @@ function buildSession(recorder: FakeRecorder, options: FakeOptions) {
 }
 
 function createCtx(options: FakeOptions = {}): { readonly ctx: PluginInput; readonly recorder: FakeRecorder } {
-  const recorder: FakeRecorder = { promptCalls: [], updateCalls: [], deleteCalls: [] };
+  const recorder: FakeRecorder = { promptCalls: [], messagesCalls: [], updateCalls: [], deleteCalls: [] };
   const ctx = {
     directory: "/tmp/resume-subagent-test",
     client: { session: buildSession(recorder, options) },
@@ -185,6 +196,48 @@ describe("createResumeSubagentTool", () => {
       {
         id: SESSION_ID,
         title: buildExpectedTitle(SPAWN_OUTCOMES.SUCCESS),
+      },
+    ]);
+    expect(recorder.deleteCalls).toEqual([SESSION_ID]);
+    expect(registry.size()).toBe(0);
+  });
+
+  it("recovers when the first messages read is empty and a reread has output", async () => {
+    const registry = createRegistry();
+    preserveSession(registry);
+    const { ctx, recorder } = createCtx({ assistantTextSequence: ["", SUCCESS_OUTPUT] });
+    const toolDef = createResumeSubagentTool(ctx, { registry });
+
+    const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+    expect(output).toContain("**Outcome**: success");
+    expect(output).toContain(SUCCESS_OUTPUT);
+    expect(recorder.messagesCalls).toEqual([{ path: { id: SESSION_ID } }, { path: { id: SESSION_ID } }]);
+    expect(output).not.toContain("empty response");
+    expect(recorder.deleteCalls).toEqual([SESSION_ID]);
+    expect(registry.size()).toBe(0);
+  });
+
+  it("classifies persistently empty resume output with a read-guard reason", async () => {
+    const registry = createRegistry();
+    preserveSession(registry);
+    const { ctx, recorder } = createCtx({ assistantTextSequence: ["", "", ""] });
+    const toolDef = createResumeSubagentTool(ctx, { registry });
+
+    const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+    expect(output).toContain("**Outcome**: hard_failure");
+    expect(output).toContain("empty assistant output after");
+    expect(output).not.toContain("empty response");
+    expect(recorder.messagesCalls).toEqual([
+      { path: { id: SESSION_ID } },
+      { path: { id: SESSION_ID } },
+      { path: { id: SESSION_ID } },
+    ]);
+    expect(recorder.updateCalls).toEqual([
+      {
+        id: SESSION_ID,
+        title: buildExpectedTitle(SPAWN_OUTCOMES.HARD_FAILURE),
       },
     ]);
     expect(recorder.deleteCalls).toEqual([SESSION_ID]);

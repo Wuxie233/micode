@@ -214,6 +214,10 @@ describe("config utility", () => {
           logEvents: true,
           includeInOutput: true,
         },
+        readGuard: {
+          maxExtraReads: 2,
+          backoffMs: [200, 500],
+        },
       });
     });
   });
@@ -286,6 +290,13 @@ describe("subagent spawn-registry, verifier, fence config", () => {
   it("defines diagnostics flags as boolean", () => {
     expect(typeof config.subagent.diagnostics.logEvents).toBe("boolean");
     expect(typeof config.subagent.diagnostics.includeInOutput).toBe("boolean");
+  });
+
+  it("defines readGuard retry defaults", () => {
+    expect(Number.isInteger(config.subagent.readGuard.maxExtraReads)).toBe(true);
+    expect(config.subagent.readGuard.maxExtraReads).toBeGreaterThanOrEqual(0);
+    expect(config.subagent.readGuard.maxExtraReads).toBe(2);
+    expect(config.subagent.readGuard.backoffMs).toEqual([200, 500]);
   });
 
   it("preserves prior keys without modification", () => {
