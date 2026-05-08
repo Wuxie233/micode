@@ -20,7 +20,7 @@ const BLOCKED_TASK = {
 };
 
 const TASK_ERROR_TASK = {
-  agent: "implementer-frontend",
+  agent: "implementer-frontend-ui",
   prompt: "run the tests",
   description: "Task error task",
 };
@@ -74,7 +74,7 @@ describe("spawn_agent integration", () => {
       agents: [SUCCESS_TASK, TASK_ERROR_TASK, BLOCKED_TASK, HARD_FAILURE_TASK],
     });
     expect(output).toContain("| Successful task | implementer-general | success |");
-    expect(output).toContain("| Task error task | implementer-frontend | task_error |");
+    expect(output).toContain("| Task error task | implementer-frontend-ui | task_error |");
     expect(output).toContain("| Blocked task | implementer-backend | blocked |");
     expect(output).toContain("| Hard failure task | reviewer | hard_failure |");
     expect(output).toContain("Spawned session exploded");

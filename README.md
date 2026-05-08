@@ -3,8 +3,8 @@
 > Independent OpenCode plugin adding **domain-routed implementers** and **auto-generated API contracts** for the cross-domain plan case.
 >
 > Current focus:
-> - `implementer` is split into `implementer-frontend` / `implementer-backend` / `implementer-general`, so each can run on a model that is strong in that domain (frontend-strong model for UI, backend-strong model for APIs, etc).
-> - `planner` tags every task with a `Domain` field, and when a plan spans both frontend and backend it emits a frozen API contract document the concurrent implementers must conform to.
+> - `implementer` is split into `implementer-frontend-ui` / `implementer-frontend-code` / `implementer-backend` / `implementer-general`, so each can run on a model that is strong in that domain (UI-strong model for design and accessibility work, code-strong model for state and types, backend-strong model for APIs, etc).
+> - `planner` tags every task with a `Domain` field (`frontend-ui`, `frontend-code`, `backend`, or `general`), and when a plan spans both frontend (ui or code) and backend it emits a frozen API contract document the concurrent implementers must conform to.
 > - `executor` dispatches each task to the matching specialist implementer and injects the contract path into implementer and reviewer spawn prompts.
 
 OpenCode plugin with structured Brainstorm → Plan → Implement workflow and session continuity.
@@ -35,12 +35,12 @@ Brainstorm → Plan → Implement
 Refine ideas into designs through collaborative questioning. Two entry points: `brainstormer` (text-based) and `octto` (browser UI with 16 question types, bundled). Fires research subagents in parallel. Output: `thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md`
 
 ### Plan
-Transform designs into implementation plans with bite-sized tasks (2-5 min each), exact file paths, and TDD workflow. Every task is tagged with a `Domain` (frontend, backend, or general). When the plan spans both frontend and backend tasks, the planner additionally emits a **frozen API contract document** that concurrent implementers must conform to. Outputs:
+Transform designs into implementation plans with bite-sized tasks (2-5 min each), exact file paths, and TDD workflow. Every task is tagged with a `Domain` (`frontend-ui`, `frontend-code`, `backend`, or `general`). When the plan spans both frontend (ui or code) and backend tasks, the planner additionally emits a **frozen API contract document** that concurrent implementers must conform to. Outputs:
 - `thoughts/shared/plans/YYYY-MM-DD-{topic}.md`
 - `thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md` (cross-domain plans only)
 
 ### Implement
-Execute in git worktree for isolation. The **Executor** reads each task's `Domain` and dispatches to the matching specialist implementer (`implementer-frontend`, `implementer-backend`, or `implementer-general`), injecting the contract path into every implementer and reviewer spawn prompt. Runs implementer → reviewer cycles with parallel execution via fire-and-check pattern. Implementers that detect a contract mismatch escalate; they do not edit the contract.
+Execute in git worktree for isolation. The **Executor** reads each task's `Domain` and dispatches to the matching specialist implementer (`implementer-frontend-ui`, `implementer-frontend-code`, `implementer-backend`, or `implementer-general`), injecting the contract path into every implementer and reviewer spawn prompt. The literal stale `Domain: frontend` value (from plans generated before the split) is treated as a stale-plan error and stops execution with a clear instruction to re-run the planner. Runs implementer → reviewer cycles with parallel execution via fire-and-check pattern. Implementers that detect a contract mismatch escalate; they do not edit the contract.
 
 ### Session Continuity
 Maintain context across sessions with structured compaction. Run `/ledger` to create/update `thoughts/ledgers/CONTINUITY_{session}.md`.
@@ -62,7 +62,8 @@ Maintain context across sessions with structured compaction. Run `/ledger` to cr
 | octto | Design exploration (browser UI with 16 question types) |
 | planner | Implementation plans with Domain tags and optional API contracts |
 | executor | Dispatches by Domain, orchestrates implement→review cycles |
-| **implementer-frontend** | Executes frontend tasks (React/Vue/Svelte, CSS, UI) |
+| **implementer-frontend-ui** | Executes frontend UI/UX tasks (layout, styling, design-system, accessibility, motion) |
+| **implementer-frontend-code** | Executes frontend code-logic tasks (state, data flow, forms, type fixes, frontend tests) |
 | **implementer-backend** | Executes backend tasks (APIs, DB, middleware, services) |
 | **implementer-general** | Executes cross-cutting tasks (configs, shared types, scripts) |
 | reviewer | Check correctness, verify contract conformance |
@@ -131,9 +132,10 @@ This project's main value is routing each agent to a model that fits its role. C
     "octto":        { "model": "<YOUR_STRONG_REASONING_MODEL>" },
 
     // Domain specialists
-    "implementer-frontend": { "model": "<YOUR_FRONTEND_MODEL>" },
-    "implementer-backend":  { "model": "<YOUR_BACKEND_MODEL>" },
-    "implementer-general":  { "model": "<YOUR_BACKEND_MODEL>" }
+    "implementer-frontend-ui":   { "model": "<YOUR_FRONTEND_UI_MODEL>" },
+    "implementer-frontend-code": { "model": "<YOUR_FRONTEND_CODE_MODEL>" },
+    "implementer-backend":       { "model": "<YOUR_BACKEND_MODEL>" },
+    "implementer-general":       { "model": "<YOUR_BACKEND_MODEL>" }
   }
 }
 ```

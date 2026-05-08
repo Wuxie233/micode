@@ -35,7 +35,8 @@ const LOW_INFORMATION_MESSAGES = [
 const TOOL_NAMES = [
   "spawn-agent",
   "spawn_agent",
-  "implementer-frontend",
+  "implementer-frontend-ui",
+  "implementer-frontend-code",
   "implementer-backend",
   "implementer-general",
   "executor",

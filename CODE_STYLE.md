@@ -20,7 +20,7 @@ Follow these files before inferring style from memory:
 | Factory functions | `createX` | `createOcttoTools`, `createPTYManager`, `createContextInjectorHook` |
 | Interfaces and schemas | PascalCase | `SessionStore`, `MicodeConfig`, `RawMicodeConfigSchema` |
 | Runtime constant maps | UPPER_SNAKE members in `as const` objects | `STATUSES.PENDING`, `QUESTIONS.PICK_ONE` |
-| Agent registry keys | kebab-case strings when exposed to OpenCode | `codebase-locator`, `implementer-frontend` |
+| Agent registry keys | kebab-case strings when exposed to OpenCode | `codebase-locator`, `implementer-frontend-ui`, `implementer-frontend-code` |
 | Unused parameters | Leading underscore | `_ctx`, `_output` |
 
 Avoid generic names such as `data`, `result`, and `temp` when a domain name is available. Avoid Hungarian-style suffixes like `Map`, `List`, `Dict`, `Fn`, `Func`, and `Callback` in identifiers.
@@ -263,7 +263,7 @@ Run targeted tests with `bun test path/to/file.test.ts`. Run the full gate with 
 - Do not call `console.*` outside `src/utils/logger.ts` or tests.
 - Do not add nested ternaries.
 - Do not leave floating promises.
-- Do not skip contract propagation for cross-domain frontend and backend plans.
+- Do not skip contract propagation for plans spanning frontend-ui or frontend-code plus backend.
 - Do not edit generated or build output in `dist/` unless the task explicitly targets release artifacts.
 
 ## Quality Gate

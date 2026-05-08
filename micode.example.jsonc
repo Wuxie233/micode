@@ -11,9 +11,17 @@
 //     planning, review, and brainstorm surfaces. Pay extra here; the downstream
 //     implementers amplify its decisions.
 //
-//   <YOUR_FRONTEND_MODEL>
-//     A model that is strong at UI, styling, component design, and modern
-//     frontend framework idioms (React / Vue / Svelte, CSS-in-JS, etc).
+//   <YOUR_FRONTEND_UI_MODEL>
+//     A model that is strong at UI/UX work: layout, styling, accessibility,
+//     interaction design, motion, and design-system use. Recommended for
+//     implementer-frontend-ui. Pair this with a model that produces visually
+//     coherent UI from prompt-driven specs (Gemini 3.1 Pro tier or similar).
+//
+//   <YOUR_FRONTEND_CODE_MODEL>
+//     A model that is strong at frontend engineering: state machines, data
+//     flow, form validation, type fixes, and frontend tests. Recommended for
+//     implementer-frontend-code. Pair this with a model strong at TypeScript
+//     and small scoped engineering changes (gpt-5.5 tier or similar).
 //
 //   <YOUR_BACKEND_MODEL>
 //     A model that is strong at server-side code, APIs, databases, type systems,
@@ -51,9 +59,10 @@
     "octto": { "model": "<YOUR_STRONG_REASONING_MODEL>" },
 
     // --- Domain-specialist implementers (the point of this fork) ---
-    "implementer-frontend": { "model": "<YOUR_FRONTEND_MODEL>" },
-    "implementer-backend": { "model": "<YOUR_BACKEND_MODEL>" },
-    "implementer-general": { "model": "<YOUR_BACKEND_MODEL>" },
+    "implementer-frontend-ui":   { "model": "<YOUR_FRONTEND_UI_MODEL>" },
+    "implementer-frontend-code": { "model": "<YOUR_FRONTEND_CODE_MODEL>" },
+    "implementer-backend":       { "model": "<YOUR_BACKEND_MODEL>" },
+    "implementer-general":       { "model": "<YOUR_BACKEND_MODEL>" },
 
     // --- Diagnostic read-only investigator ---
     "investigator": { "model": "<YOUR_DIAGNOSTIC_MODEL>" },
@@ -77,6 +86,6 @@
   //
   // "fragments": {
   //   "commander": ["Prefer TypeScript over plain JavaScript in examples"],
-  //   "implementer-frontend": ["This project uses Tailwind; no CSS modules"]
+  //   "implementer-frontend-ui": ["This project uses Tailwind; no CSS modules"]
   // }
 }

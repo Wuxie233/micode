@@ -20,7 +20,8 @@ import { executorAgent } from "./executor";
 import { executorDirectAgent } from "./executor-direct";
 import { implementerAgent } from "./implementer";
 import { implementerBackendAgent } from "./implementer-backend";
-import { implementerFrontendAgent } from "./implementer-frontend";
+import { implementerFrontendCodeAgent } from "./implementer-frontend-code";
+import { implementerFrontendUiAgent } from "./implementer-frontend-ui";
 import { implementerGeneralAgent } from "./implementer-general";
 import { investigatorAgent } from "./investigator";
 import { ledgerCreatorAgent } from "./ledger-creator";
@@ -63,7 +64,8 @@ export const agents: Record<string, AgentConfig> = {
   "rubric-reviewer": { ...rubricReviewerAgent, model: DEFAULT_MODEL },
   "pattern-finder": { ...patternFinderAgent, model: DEFAULT_MODEL },
   planner: { ...plannerAgent, model: DEFAULT_MODEL },
-  "implementer-frontend": { ...implementerFrontendAgent, model: DEFAULT_MODEL },
+  "implementer-frontend-ui": { ...implementerFrontendUiAgent, model: DEFAULT_MODEL },
+  "implementer-frontend-code": { ...implementerFrontendCodeAgent, model: DEFAULT_MODEL },
   "implementer-backend": { ...implementerBackendAgent, model: DEFAULT_MODEL },
   "implementer-general": { ...implementerGeneralAgent, model: DEFAULT_MODEL },
   reviewer: { ...reviewerAgent, model: DEFAULT_MODEL },
@@ -114,7 +116,8 @@ export {
   patternFinderAgent,
   plannerAgent,
   implementerAgent,
-  implementerFrontendAgent,
+  implementerFrontendUiAgent,
+  implementerFrontendCodeAgent,
   implementerBackendAgent,
   implementerGeneralAgent,
   reviewerAgent,

@@ -227,15 +227,27 @@ Explicit dependency annotation for each micro-task:
 </micro-task-design>
 
 <domain-classification priority="critical">
-EVERY micro-task MUST carry a Domain field with one of: frontend | backend | general.
+EVERY micro-task MUST carry a Domain field with one of: frontend-ui | frontend-code | backend | general.
 The executor uses this tag to dispatch the task to the right specialist implementer.
 
 <classification-rules>
-  <frontend description="UI layer, visual and interactive surfaces, client-side code">
-    <signal>File extension: .tsx, .jsx, .vue, .svelte, .css, .scss, .sass, .module.css</signal>
-    <signal>Path contains: components/, styles/, ui/, pages/, or app/ (when client-facing)</signal>
-    <signal>Responsibility: UI rendering, styling, animation, client-side state, browser APIs, user interaction</signal>
-  </frontend>
+  <frontend-ui description="Page, layout, styling, visual hierarchy, accessibility polish, animation, interaction design, design-system use">
+    <signal>File extension: .tsx, .jsx, .vue, .svelte (when the task is UI/layout/visual)</signal>
+    <signal>File extension: .css, .scss, .sass, .module.css, *.styled.ts</signal>
+    <signal>Path contains: components/, styles/, ui/, pages/, app/ (when client-facing), design-system/, theme/, tokens/</signal>
+    <signal>Responsibility: visual hierarchy, layout, styling, accessibility polish, motion/animation, interaction design, responsive behavior</signal>
+  </frontend-ui>
+
+  <frontend-code description="Frontend logic, state, data flow, events, type fixes, frontend tests, small engineering changes">
+    <signal>File extension: .ts, .tsx, .js, .jsx, .vue, .svelte (when the task is logic/state/types/tests, not visual)</signal>
+    <signal>Path contains: hooks/, stores/, state/, contexts/, utils/ (client-side), lib/ (client-side), tests/components/, tests/hooks/, tests/frontend/</signal>
+    <signal>Responsibility: client-side logic, state and data flow, forms, event behavior, type safety, frontend tests, bug fixes that do not alter visible UI</signal>
+  </frontend-code>
+
+  <frontend-tiebreaker>
+    <rule>When a frontend task is ambiguous, prefer frontend-code if correctness or type safety is the main risk; prefer frontend-ui if user-visible design quality is the main goal</rule>
+    <rule>If one task bundles both UI/UX changes and code-logic changes, SPLIT it into two tasks (one frontend-ui, one frontend-code) rather than choosing one domain</rule>
+  </frontend-tiebreaker>
 
   <backend description="Server-side code, data layer, infrastructure, auth">
     <signal>Path contains: src/api/, src/server/, src/routes/, src/handlers/, middleware/, services/, repositories/, controllers/</signal>
@@ -251,17 +263,17 @@ The executor uses this tag to dispatch the task to the right specialist implemen
   </general>
 </classification-rules>
 
-<rule>Every Task node in the output MUST contain a "**Domain:**" line with exactly one of: frontend, backend, general</rule>
+<rule>Every Task node in the output MUST contain a "**Domain:**" line with exactly one of: frontend-ui, frontend-code, backend, general</rule>
 <rule>Domain is determined by the PRIMARY file created or modified by the task, not by adjacent concerns</rule>
 <rule>When in doubt, prefer general over guessing</rule>
 </domain-classification>
 
 <contract-generation priority="critical">
-When the plan contains BOTH at least one Domain: frontend task AND at least one Domain: backend task,
+When the plan contains BOTH at least one Domain: frontend-ui or Domain: frontend-code task AND at least one Domain: backend task,
 you MUST produce a companion CONTRACT document alongside the plan.
 
 <contract-trigger>
-  <condition>Plan has >= 1 Domain: frontend task AND >= 1 Domain: backend task</condition>
+  <condition>Plan has >= 1 task with Domain: frontend-ui or Domain: frontend-code, AND >= 1 task with Domain: backend</condition>
   <when-triggered>Write contract to thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md</when-triggered>
   <when-not-triggered>Write "none" in the plan's **Contract:** field; do not create a contract file</when-triggered>
 </contract-trigger>
@@ -340,21 +352,21 @@ interface User {
 <contract-self-check>
 After writing the contract, verify these invariants. If any fails, fix the contract or the plan:
 
-<check>Every API path or fetch URL referenced in any frontend task exists as an endpoint in the contract</check>
+<check>Every API path or fetch URL referenced in any frontend-ui or frontend-code task exists as an endpoint in the contract</check>
 <check>Every handler route created in any backend task has a matching entry in the contract's HTTP Endpoints table</check>
-<check>Every request body type referenced by frontend tasks matches the request schema in the contract</check>
+<check>Every request body type referenced by frontend-ui or frontend-code tasks matches the request schema in the contract</check>
 <check>Every response body shape returned by backend tasks matches the response schema in the contract</check>
-<check>Field names, types, and optionality are consistent across frontend usage, backend implementation, and the contract</check>
+<check>Field names, types, and optionality are consistent across frontend (ui or code) usage, backend implementation, and the contract</check>
 <on-fail>Stop. Report the specific mismatch in the plan header. Do not hand off to the executor with an inconsistent contract</on-fail>
 </contract-self-check>
 
 <contract-shared-types-task priority="judgment">
-If the contract defines 3 or more shared types used by both frontend and backend tasks, ADD one extra task:
+If the contract defines 3 or more shared types used by both frontend (ui or code) and backend tasks, ADD one extra task:
 
 - File: src/shared/contracts.ts (or equivalent path matching project conventions)
 - Domain: general
 - Content: TypeScript interfaces mirroring the contract's Shared Types section, exported as named exports
-- Placed in Batch 1 (foundation), so frontend and backend tasks in later batches can import from it
+- Placed in Batch 1 (foundation), so frontend (ui or code) and backend tasks in later batches can import from it
 
 This is a judgment call. If the contract has only 1-2 shared types, inline them in the relevant tasks instead.
 </contract-shared-types-task>
@@ -448,7 +460,7 @@ Tasks: 4.1, 4.2
 **File:** \`exact/path/to/file.ts\`
 **Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for low-risk tasks: prompt-only, pure config, glue code, agent strings — see semantic-risk rule)
 **Depends:** none | 1.1, 1.2 (imports types from these)
-**Domain:** frontend | backend | general
+**Domain:** frontend-ui | frontend-code | backend | general
 
 \`\`\`typescript
 // COMPLETE test code - copy-paste ready
@@ -596,8 +608,8 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <principle name="exact-paths">Every file path is absolute from project root</principle>
   <principle name="tdd-semantic-risk">TDD is required only when the task's Test field is not "none". The test field is "none" for low-risk tasks (prompt-only, pure config, glue code, agent strings). Emit a real test path when the task introduces meaningful behavioral risk: exported reusable logic, validation/parsing/normalization, state/lifecycle transitions, concurrency/retry/cache, error handling branches, bug fixes, or cross-module contracts. This decision is a semantic-risk judgment, not file-name or path matching.</principle>
   <principle name="verify-everything">Every task has a verification command</principle>
-  <principle name="domain-tagged">Every task carries a Domain tag (frontend, backend, or general); the executor dispatches based on this tag</principle>
-  <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both frontend and backend</principle>
+  <principle name="domain-tagged">Every task carries a Domain tag (frontend-ui, frontend-code, backend, or general); the executor dispatches based on this tag</principle>
+  <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both a frontend domain (frontend-ui or frontend-code) and backend</principle>
   <principle name="skeleton-first">The plan file is created via a small skeleton Write before any task content is filled in</principle>
   <principle name="one-edit-per-batch">Each batch's tasks are filled in via a single Edit call replacing the BATCH-N-TASKS marker, sequentially</principle>
 </principles>

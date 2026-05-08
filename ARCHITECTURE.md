@@ -2,7 +2,7 @@
 
 ## Overview
 
-`micode` is a TypeScript OpenCode plugin that installs a structured Brainstorm -> Plan -> Implement workflow, project-aware hooks, agent tooling, browser brainstorming, and searchable session artifacts. This fork adds domain-routed implementers (`implementer-frontend`, `implementer-backend`, `implementer-general`) and frozen API contract documents for cross-domain plans.
+`micode` is a TypeScript OpenCode plugin that installs a structured Brainstorm -> Plan -> Implement workflow, project-aware hooks, agent tooling, browser brainstorming, and searchable session artifacts. This fork adds domain-routed implementers (`implementer-frontend-ui`, `implementer-frontend-code`, `implementer-backend`, `implementer-general`) and frozen API contract documents for cross-domain plans.
 
 Primary runtime entry point: `src/index.ts`. Package entry points: `package.json` `module` and `main` point to `dist/index.js`, built from `src/index.ts`.
 
@@ -76,7 +76,8 @@ Primary runtime entry point: `src/index.ts`. Package entry points: `package.json
 | `octto` | `src/agents/octto.ts` | Browser-assisted design exploration |
 | `planner` | `src/agents/planner.ts` | Exact micro-task plans with dependency batches |
 | `executor` | `src/agents/executor.ts` | Batch-first implementer and reviewer orchestration |
-| `implementer-frontend` | `src/agents/implementer-frontend.ts` | UI, styling, browser-facing work |
+| `implementer-frontend-ui` | `src/agents/implementer-frontend-ui.ts` | UI/UX, layout, styling, accessibility, motion, design-system use |
+| `implementer-frontend-code` | `src/agents/implementer-frontend-code.ts` | Frontend code-logic, state, data flow, type fixes, frontend tests |
 | `implementer-backend` | `src/agents/implementer-backend.ts` | APIs, data layer, server-side work |
 | `implementer-general` | `src/agents/implementer-general.ts` | Config, tooling, shared types, cross-cutting files |
 | `reviewer` | `src/agents/reviewer.ts` | Read-only review of one micro-task |
@@ -149,7 +150,7 @@ Primary runtime entry point: `src/index.ts`. Package entry points: `package.json
 1. User invokes the primary `commander`, or slash commands such as `/init`, `/ledger`, `/search`, and `/mindmodel`.
 2. `brainstormer` or `octto` creates a design in `thoughts/shared/designs/`.
 3. `planner` reads the design and writes `thoughts/shared/plans/YYYY-MM-DD-topic.md`.
-4. If a plan has both frontend and backend tasks, `planner` also writes `thoughts/shared/plans/YYYY-MM-DD-topic-contract.md`.
+4. If a plan has at least one frontend task (frontend-ui or frontend-code) and at least one backend task, `planner` also writes `thoughts/shared/plans/YYYY-MM-DD-topic-contract.md`.
 5. `executor` parses task batches and `Domain` tags, then spawns domain implementers in parallel.
 6. `reviewer` checks each micro-task, including contract conformance when a contract path exists.
 7. Ledgers and auto-compaction preserve state in `thoughts/ledgers/`.

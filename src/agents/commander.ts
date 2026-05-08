@@ -322,8 +322,8 @@ emit exactly one line at the very top of your response:
   Requested output is a changed system: applied code, applied config, deployed
   artifact, completed lifecycle task. Anything that requires writing files,
   committing, pushing, restarting, or deploying. The executor remains the sole
-  delivery orchestrator and dispatches implementer-frontend / implementer-backend
-  / implementer-general / reviewer per the existing workflow. This is the
+  delivery orchestrator and dispatches implementer-frontend-ui / implementer-frontend-code
+  / implementer-backend / implementer-general / reviewer per the existing workflow. This is the
   PLAN-DRIVEN lane: a plan file under thoughts/shared/plans/ MUST exist; if not,
   route to executor-direct (no-plan bounded scope), planner (broad/design-heavy),
   or investigator (unknown cause).

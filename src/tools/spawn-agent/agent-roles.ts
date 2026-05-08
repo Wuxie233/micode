@@ -3,7 +3,8 @@ const GENERIC_FALLBACK = "子任务";
 
 export const AGENT_ROLE_LABELS: Readonly<Record<string, string>> = {
   "implementer-backend": "后端实现",
-  "implementer-frontend": "前端实现",
+  "implementer-frontend-ui": "前端UI实现",
+  "implementer-frontend-code": "前端代码实现",
   "implementer-general": "通用实现",
   reviewer: "代码审查",
   planner: "规划",
