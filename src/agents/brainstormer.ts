@@ -1,5 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+
 export const brainstormerAgent: AgentConfig = {
   description: "Refines rough ideas into fully-formed designs through decisive collaboration",
   mode: "primary",
@@ -545,6 +547,8 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 <anti-pattern>把 reviewer 详细报告或 implementer 报告原文贴进 primary 汇报。它们是过程材料，已经在 thoughts / lifecycle issue 里留档。</anti-pattern>
 </anti-patterns>
 </effect-first-reporting>
+
+${ATLAS_MENTAL_MODEL_PROTOCOL}
 
 <output-format path="thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md">
 <frontmatter>

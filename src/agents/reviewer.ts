@@ -1,5 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+
 export const reviewerAgent: AgentConfig = {
   description: "Reviews ONE micro-task: verifies file + test match plan, test passes",
   mode: "subagent",
@@ -108,6 +110,14 @@ When Test has an actual path:
 - The test file MUST exist and MUST pass. Fail closed as before.
 - Do NOT approve when a required test is absent or failing.
 </test-policy>
+
+${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+<atlas-detect-role priority="medium">
+<rule>You are a leaf agent. You do NOT write atlas deltas, do NOT call atlas_lookup, do NOT modify atlas/ vault.</rule>
+<rule>If you detect a contradiction between atlas-context (or atlas excerpts in your spawn prompt) and the implementation under review, include a one-line "Atlas observation: stale-detected — <node> — <reason>" in your reviewer report so executor can surface it.</rule>
+<rule>If atlas-context is missing or empty, do not block the review; this is informational only.</rule>
+</atlas-detect-role>
 
 <process>
 <step>Parse prompt for: task ID, file path, test path (may be "none")</step>

@@ -1,3 +1,25 @@
+/**
+ * Atlas-compiler spawn helpers.
+ *
+ * These helpers are USER-TRIGGERED ONLY. They are NOT invoked by
+ * lifecycle_finish or any other lifecycle-owned event. The earlier design
+ * sketched a "lifecycle finish auto-spawns atlas-compiler" path; that path
+ * was never wired and is now explicitly forbidden. See the
+ * "Atlas Shared Mental Model Maintenance" design (2026-05-10) and AGENTS.md.
+ *
+ * Valid callers:
+ *   - /atlas-refresh slash command (user-typed)
+ *   - explicit user request to run atlas-compiler against an existing
+ *     thoughts/shared/atlas-deltas/*.md file
+ *
+ * Forbidden callers:
+ *   - src/lifecycle/runner.ts
+ *   - src/lifecycle/transitions.ts
+ *   - src/tools/lifecycle/*
+ *   - any hook invoked from chat.params / event.tool / event.message
+ *
+ * The grep-based lifecycle boundary test (Batch 4) enforces this rule.
+ */
 import { ATLAS_SPAWN_OUTCOMES, type AtlasHandoff, type AtlasSpawnReceipt } from "./types";
 
 export interface SpawnGate {
@@ -5,6 +27,10 @@ export interface SpawnGate {
   readonly terminal: boolean;
 }
 
+/**
+ * @deprecated for use as a lifecycle-finish gate. Retained for user-triggered
+ * /atlas-refresh and manual atlas-compiler runs only. See module doc above.
+ */
 export function shouldSpawnAgent2(gate: SpawnGate): boolean {
   return gate.terminal && !gate.quickMode;
 }
