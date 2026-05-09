@@ -1,3 +1,44 @@
+export interface MessagePart {
+  readonly type: string;
+  readonly text?: string;
+}
+
+export interface SessionMessage {
+  readonly info?: { readonly role?: "user" | "assistant" };
+  readonly parts?: readonly MessagePart[];
+}
+
+export interface SessionMessagesResponse {
+  readonly data?: readonly SessionMessage[];
+}
+
+/**
+ * Returns the concatenated text of the latest assistant message that has at
+ * least one non-empty text part, scanning the message list from newest to
+ * oldest. Returns "" when no assistant message contains text content.
+ *
+ * Why reverse-scan instead of `.pop()`:
+ *   A subagent can finish with a terminal tool-call-only or whitespace-only
+ *   assistant message appended after the real substantive output. Picking the
+ *   absolute last assistant message would silently drop the real text. The
+ *   read-guard (`readAssistantTextWithRetry`) only fires when this function
+ *   returns "", which now happens iff every assistant message is non-text —
+ *   the genuine empty-result case.
+ */
+export function readAssistantText(messages: readonly SessionMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.info?.role !== "assistant") continue;
+    const textParts = (message.parts ?? []).filter(
+      (part) => part.type === "text" && typeof part.text === "string" && part.text.trim().length > 0,
+    );
+    if (textParts.length > 0) {
+      return textParts.map((part) => part.text ?? "").join("\n");
+    }
+  }
+  return "";
+}
+
 export interface ReadGuardOptions {
   /** Number of extra reads after the first. Total attempts = 1 + maxExtraReads. */
   readonly maxExtraReads: number;

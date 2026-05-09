@@ -330,4 +330,84 @@ describe("createResumeSubagentTool", () => {
     expect(recorder.deleteCalls).toEqual([SESSION_ID]);
     expect(registry.size()).toBe(0);
   });
+
+  interface MultiMessageOptions {
+    readonly messages: readonly {
+      readonly role: "user" | "assistant";
+      readonly parts: readonly { readonly type: string; readonly text?: string }[];
+    }[];
+  }
+
+  function buildMultiMessageSession(recorder: FakeRecorder, options: MultiMessageOptions) {
+    return {
+      prompt: async (input: {
+        readonly path: { readonly id: string };
+        readonly body: { readonly parts: readonly { readonly text: string }[] };
+      }) => {
+        recorder.promptCalls.push({ id: input.path.id, text: input.body.parts[0]?.text ?? "" });
+      },
+      messages: async (input: unknown) => {
+        recorder.messagesCalls.push(input);
+        return { data: options.messages.map((m) => ({ info: { role: m.role }, parts: m.parts })) };
+      },
+      delete: async (input: { readonly path: { readonly id: string } }) => {
+        recorder.deleteCalls.push(input.path.id);
+      },
+      update: async (input: { readonly path: { readonly id: string }; readonly body: { readonly title: string } }) => {
+        recorder.updateCalls.push({ id: input.path.id, title: input.body.title });
+      },
+    };
+  }
+
+  describe("resume-subagent reverse-scan extraction (issue #59)", () => {
+    it("returns the prior text when the terminal assistant message only contains tool calls", async () => {
+      const registry = createRegistry();
+      preserveSession(registry);
+      const recorder: FakeRecorder = { promptCalls: [], messagesCalls: [], updateCalls: [], deleteCalls: [] };
+      const ctx = {
+        directory: "/tmp/resume-subagent-test",
+        client: {
+          session: buildMultiMessageSession(recorder, {
+            messages: [
+              { role: "user", parts: [{ type: "text", text: "Please resume the task." }] },
+              { role: "assistant", parts: [{ type: "text", text: SUCCESS_OUTPUT }] },
+              { role: "assistant", parts: [{ type: "tool", text: "" }] },
+            ],
+          }),
+        },
+      } as unknown as PluginInput;
+      const toolDef = createResumeSubagentTool(ctx, { registry });
+
+      const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+      expect(output).toContain(`**Outcome**: ${SPAWN_OUTCOMES.SUCCESS}`);
+      expect(output).toContain(SUCCESS_OUTPUT);
+      expect(recorder.messagesCalls.length).toBe(1);
+    });
+
+    it("returns the prior text when the terminal assistant message is whitespace only", async () => {
+      const registry = createRegistry();
+      preserveSession(registry);
+      const recorder: FakeRecorder = { promptCalls: [], messagesCalls: [], updateCalls: [], deleteCalls: [] };
+      const ctx = {
+        directory: "/tmp/resume-subagent-test",
+        client: {
+          session: buildMultiMessageSession(recorder, {
+            messages: [
+              { role: "user", parts: [{ type: "text", text: "Please resume the task." }] },
+              { role: "assistant", parts: [{ type: "text", text: SUCCESS_OUTPUT }] },
+              { role: "assistant", parts: [{ type: "text", text: " \n\t " }] },
+            ],
+          }),
+        },
+      } as unknown as PluginInput;
+      const toolDef = createResumeSubagentTool(ctx, { registry });
+
+      const output = await callExecute(toolDef, { session_id: SESSION_ID });
+
+      expect(output).toContain(`**Outcome**: ${SPAWN_OUTCOMES.SUCCESS}`);
+      expect(output).toContain(SUCCESS_OUTPUT);
+      expect(recorder.messagesCalls.length).toBe(1);
+    });
+  });
 });

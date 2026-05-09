@@ -20,7 +20,7 @@ import { buildDiagnosticLine, type DiagnosticFields } from "./diagnostics";
 import { formatSpawnResults } from "./format";
 import { evaluateFence, FENCE_DECISIONS, type FenceResult } from "./generation-fence";
 import { buildSpawnRunningTitle } from "./naming";
-import { readAssistantTextWithRetry } from "./read-guard";
+import { readAssistantText, readAssistantTextWithRetry, type SessionMessagesResponse } from "./read-guard";
 import type { PreservedRegistry } from "./registry";
 import { retryOnTransient } from "./retry";
 import { createSpawnSessionRegistry, type SpawnSessionRegistry } from "./spawn-session-registry";
@@ -33,20 +33,6 @@ type ExtendedContext = ToolContext & {
   sessionID?: string;
   metadata?: (input: { title?: string; metadata?: Record<string, unknown> }) => void;
 };
-
-interface MessagePart {
-  readonly type: string;
-  readonly text?: string;
-}
-
-interface SessionMessage {
-  readonly info?: { readonly role?: "user" | "assistant" };
-  readonly parts?: readonly MessagePart[];
-}
-
-interface SessionMessagesResponse {
-  readonly data?: readonly SessionMessage[];
-}
 
 interface NamedAgent {
   readonly name?: string;
@@ -241,16 +227,6 @@ function logModelOverride(ctx: PluginInput, task: AgentTask, model: ModelReferen
   } catch {
     // Logging must never change spawn execution.
   }
-}
-
-function readAssistantText(messages: readonly SessionMessage[]): string {
-  const lastAssistant = messages.filter((message) => message.info?.role === "assistant").pop();
-  return (
-    lastAssistant?.parts
-      ?.filter((part) => part.type === "text" && part.text)
-      .map((part) => part.text)
-      .join("\n") ?? ""
-  );
 }
 
 function buildEmptyReadReason(totalAttempts: number): string {

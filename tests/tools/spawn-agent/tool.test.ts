@@ -420,4 +420,117 @@ describe("spawn-agent tool internal sessions", () => {
     const createCall = ctx.client.session.create.mock.calls[0]?.[0] as CreateRequest | undefined;
     expect(createCall?.body.title).toBe("执行中: 代码审查");
   });
+
+  function createCtxWithTrailingToolCall(realText: string): PluginInput {
+    const create = mock(async () => ({ data: { id: SESSION_ID } }));
+    const prompt = mock(async () => ({}));
+    const update = mock(async () => ({}));
+    const deleteSession = mock(async () => ({}));
+    const messages = mock(async () => ({
+      data: [
+        {
+          info: { role: "assistant" },
+          parts: [{ type: "text", text: realText }],
+        },
+        {
+          info: { role: "assistant" },
+          parts: [{ type: "tool_call" }],
+        },
+      ],
+    }));
+
+    return {
+      client: { session: { create, prompt, messages, update, delete: deleteSession } },
+      directory: DIRECTORY,
+    } as never;
+  }
+
+  function createCtxWithTrailingWhitespace(realText: string): PluginInput {
+    const create = mock(async () => ({ data: { id: SESSION_ID } }));
+    const prompt = mock(async () => ({}));
+    const update = mock(async () => ({}));
+    const deleteSession = mock(async () => ({}));
+    const messages = mock(async () => ({
+      data: [
+        {
+          info: { role: "assistant" },
+          parts: [{ type: "text", text: realText }],
+        },
+        {
+          info: { role: "assistant" },
+          parts: [{ type: "text", text: "   \n  " }],
+        },
+      ],
+    }));
+
+    return {
+      client: { session: { create, prompt, messages, update, delete: deleteSession } },
+      directory: DIRECTORY,
+    } as never;
+  }
+
+  describe("spawn-agent reverse-scan extraction (issue #59)", () => {
+    it("returns success with the prior assistant text when the last assistant is tool-call-only", async () => {
+      const ctx = createCtxWithTrailingToolCall(SUCCESS_OUTPUT);
+      const registry = createRegistry();
+      const spawnRegistry = createSpawnRegistry();
+      const tool = createSpawnAgentTool(ctx, { registry, spawnRegistry });
+
+      const output = await tool.execute({ agents: [TASK] }, {
+        metadata: () => {},
+        sessionID: PARENT_SESSION_ID,
+      } as never);
+
+      expect(output).toContain(SPAWN_OUTCOMES.SUCCESS);
+      expect(output).toContain(SUCCESS_OUTPUT);
+      expect(ctx.client.session.messages.mock.calls).toHaveLength(1);
+    });
+
+    it("returns success with the prior assistant text when the last assistant is whitespace-only", async () => {
+      const ctx = createCtxWithTrailingWhitespace(SUCCESS_OUTPUT);
+      const registry = createRegistry();
+      const spawnRegistry = createSpawnRegistry();
+      const tool = createSpawnAgentTool(ctx, { registry, spawnRegistry });
+
+      const output = await tool.execute({ agents: [TASK] }, {
+        metadata: () => {},
+        sessionID: PARENT_SESSION_ID,
+      } as never);
+
+      expect(output).toContain(SPAWN_OUTCOMES.SUCCESS);
+      expect(output).toContain(SUCCESS_OUTPUT);
+      expect(ctx.client.session.messages.mock.calls).toHaveLength(1);
+    });
+
+    it("still triggers the read-guard when all assistant messages are non-text", async () => {
+      const create = mock(async () => ({ data: { id: SESSION_ID } }));
+      const prompt = mock(async () => ({}));
+      const update = mock(async () => ({}));
+      const deleteSession = mock(async () => ({}));
+      const messages = mock(async () => ({
+        data: [
+          {
+            info: { role: "assistant" },
+            parts: [{ type: "tool_call" }],
+          },
+        ],
+      }));
+      const ctx = {
+        client: { session: { create, prompt, messages, update, delete: deleteSession } },
+        directory: DIRECTORY,
+      } as never;
+      const registry = createRegistry();
+      const spawnRegistry = createSpawnRegistry();
+      const tool = createSpawnAgentTool(ctx, { registry, spawnRegistry });
+
+      const output = await tool.execute({ agents: [TASK] }, {
+        metadata: () => {},
+        sessionID: PARENT_SESSION_ID,
+      } as never);
+
+      expect(output).toContain(SPAWN_OUTCOMES.HARD_FAILURE);
+      expect(output).toContain("empty assistant output after");
+      expect(messages.mock.calls.length).toBeGreaterThan(1);
+    });
+  });
 });
