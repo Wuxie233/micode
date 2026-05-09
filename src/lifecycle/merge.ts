@@ -2,9 +2,10 @@ import * as v from "valibot";
 
 import { config } from "@/utils/config";
 
+import { runCleanup } from "./cleanup-policy";
 import { postOnceSummaryComment, upsertPullRequest, writeReviewSummaryToPrBody } from "./pr";
 import type { LifecycleRunner, RunResult } from "./runner";
-import type { FinishInput, FinishOutcome } from "./types";
+import type { CleanupOutcome, FinishInput, FinishOutcome } from "./types";
 
 export const PR_CHECK_POLL_MS = 30_000;
 
@@ -65,10 +66,11 @@ const GIT_MERGE = "merge";
 const GIT_NO_FF_FLAG = "--no-ff";
 const GIT_PUSH = "push";
 const GIT_ORIGIN = "origin";
-const GIT_WORKTREE = "worktree";
-const GIT_REMOVE = "remove";
 const GIT_BRANCH = "branch";
 const GIT_DELETE_FLAG = "-d";
+
+const CLEANUP_BLOCK_PREFIX = "cleanup_blocked";
+const CLEANUP_FAIL_PREFIX = "cleanup_failed";
 
 const CheckSchema = v.object({
   name: v.string(),
@@ -82,11 +84,6 @@ type CheckOutcome =
   | { readonly status: typeof CHECK_OUTCOME.SUCCESS }
   | { readonly status: typeof CHECK_OUTCOME.FAILED; readonly note: string }
   | { readonly status: typeof CHECK_OUTCOME.PENDING };
-
-interface CleanupOutcome {
-  readonly worktreeRemoved: boolean;
-  readonly note: string | null;
-}
 
 interface InjectOutcome {
   readonly ok: boolean;
@@ -103,18 +100,37 @@ const getBaseBranch = (input: FinishLifecycleInput): string => {
   return input.baseBranch;
 };
 
+const cleanupNote = (outcome: CleanupOutcome): string | null => {
+  if (outcome.kind === "removed" || outcome.kind === "already-missing") return null;
+  if (outcome.kind === "failed") return `${CLEANUP_FAIL_PREFIX}: ${outcome.reason}`;
+  return `${CLEANUP_BLOCK_PREFIX}(${outcome.kind}): ${outcome.reason}`;
+};
+
+const worktreeRemovedFromCleanup = (outcome: CleanupOutcome): boolean =>
+  outcome.kind === "removed" || outcome.kind === "already-missing";
+
 const createOutcome = (
   merged: boolean,
   prUrl: string | null,
-  worktreeRemoved: boolean,
+  cleanupOutcome: CleanupOutcome,
   note: string | null,
 ): FinishOutcome => ({
   merged,
   prUrl,
   closedAt: null,
-  worktreeRemoved,
+  worktreeRemoved: worktreeRemovedFromCleanup(cleanupOutcome),
+  cleanupOutcome,
   note,
 });
+
+const NOT_ATTEMPTED: CleanupOutcome = {
+  kind: "failed",
+  reason: "cleanup not attempted (merge did not complete)",
+  retried: false,
+};
+
+const createPreCleanupOutcome = (merged: boolean, prUrl: string | null, note: string | null): FinishOutcome =>
+  createOutcome(merged, prUrl, NOT_ATTEMPTED, note);
 
 const mergeNotes = (...notes: readonly (string | null | undefined)[]): string | null => {
   const present = notes.filter((note): note is string => note !== undefined && note !== null && note.length > 0);
@@ -215,19 +231,19 @@ const waitForPrChecks = async (runner: LifecycleRunner, input: FinishLifecycleIn
   return createPrChecksNote(CHECK_TIMEOUT_DETAIL);
 };
 
-const cleanupPr = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<CleanupOutcome> => {
-  const removed = await runner.git([GIT_WORKTREE, GIT_REMOVE, input.worktree]);
-  if (completed(removed)) return { worktreeRemoved: true, note: null };
-  return { worktreeRemoved: false, note: formatCommandFailure("git_worktree_remove", removed) };
-};
-
-const cleanupLocal = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<CleanupOutcome> => {
-  const removed = await runner.git([GIT_WORKTREE, GIT_REMOVE, input.worktree]);
-  const deleted = await runner.git([GIT_BRANCH, GIT_DELETE_FLAG, input.branch], { cwd: input.cwd });
-  if (!completed(removed))
-    return { worktreeRemoved: false, note: formatCommandFailure("git_worktree_remove", removed) };
-  if (!completed(deleted)) return { worktreeRemoved: true, note: formatCommandFailure("git_branch_delete", deleted) };
-  return { worktreeRemoved: true, note: null };
+const runPostMergeCleanup = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<CleanupOutcome> => {
+  // After a successful merge we know branchMerged=true. The lifecycle issue is
+  // closed in index.ts after this returns; we treat issueClosed=true here because
+  // the merge has effectively committed to closing it. The classifier still
+  // protects against dirty/untracked content.
+  return runCleanup(runner, {
+    cwd: input.cwd,
+    worktree: input.worktree,
+    branch: input.branch,
+    baseBranch: getBaseBranch(input),
+    issueClosed: true,
+    branchMerged: true,
+  });
 };
 
 const injectAndCommentIfNeeded = async (
@@ -261,25 +277,24 @@ const finishViaPr = async (runner: LifecycleRunner, input: FinishLifecycleInput)
     branch: input.branch,
     baseBranch: getBaseBranch(input),
   });
-  if (upserted.kind === "failed") return createOutcome(false, null, false, upserted.note);
+  if (upserted.kind === "failed") return createPreCleanupOutcome(false, null, upserted.note);
 
   const injected = await injectAndCommentIfNeeded(runner, input, upserted.url);
-  if (!injected.ok) return createOutcome(false, injected.prUrl, false, injected.note);
+  if (!injected.ok) return createPreCleanupOutcome(false, injected.prUrl, injected.note);
 
   const checksNote = input.waitForChecks ? await waitForPrChecks(runner, input) : null;
-  if (checksNote) return createOutcome(false, injected.prUrl, false, mergeNotes(injected.note, checksNote));
+  if (checksNote) return createPreCleanupOutcome(false, injected.prUrl, mergeNotes(injected.note, checksNote));
 
   const merged = await runner.gh([GH_PR, GH_MERGE, input.branch, GH_SQUASH_FLAG], { cwd: input.cwd });
   if (!completed(merged))
-    return createOutcome(
+    return createPreCleanupOutcome(
       false,
       injected.prUrl,
-      false,
       mergeNotes(injected.note, formatCommandFailure("gh_pr_merge", merged)),
     );
 
-  const cleanup = await cleanupPr(runner, input);
-  return createOutcome(true, injected.prUrl, cleanup.worktreeRemoved, mergeNotes(injected.note, cleanup.note));
+  const cleanup = await runPostMergeCleanup(runner, input);
+  return createOutcome(true, injected.prUrl, cleanup, mergeNotes(injected.note, cleanupNote(cleanup)));
 };
 
 const runGitStep = async (
@@ -296,16 +311,28 @@ const runGitStep = async (
 const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
   const baseBranch = getBaseBranch(input);
   const checkoutNote = await runGitStep(runner, [GIT_CHECKOUT, baseBranch], input.cwd, "git_checkout");
-  if (checkoutNote) return createOutcome(false, null, false, checkoutNote);
+  if (checkoutNote) return createPreCleanupOutcome(false, null, checkoutNote);
 
   const mergeNote = await runGitStep(runner, [GIT_MERGE, GIT_NO_FF_FLAG, input.branch], input.cwd, "git_merge");
-  if (mergeNote) return createOutcome(false, null, false, mergeNote);
+  if (mergeNote) return createPreCleanupOutcome(false, null, mergeNote);
 
   const pushNote = await runGitStep(runner, [GIT_PUSH, GIT_ORIGIN, baseBranch], input.cwd, "git_push");
-  if (pushNote) return createOutcome(false, null, false, pushNote);
+  if (pushNote) return createPreCleanupOutcome(false, null, pushNote);
 
-  const cleanup = await cleanupLocal(runner, input);
-  return createOutcome(true, null, cleanup.worktreeRemoved, cleanup.note);
+  const cleanup = await runPostMergeCleanup(runner, input);
+  // Only attempt branch deletion when the worktree actually went away; deleting the
+  // branch while the worktree still references it would fail and add noise.
+  let branchDeleteNote: string | null = null;
+  if (worktreeRemovedFromCleanup(cleanup)) {
+    branchDeleteNote = await runGitStep(
+      runner,
+      [GIT_BRANCH, GIT_DELETE_FLAG, input.branch],
+      input.cwd,
+      "git_branch_delete",
+    );
+  }
+
+  return createOutcome(true, null, cleanup, mergeNotes(cleanupNote(cleanup), branchDeleteNote));
 };
 
 export async function finishLifecycle(runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> {

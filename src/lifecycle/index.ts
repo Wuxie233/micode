@@ -394,6 +394,15 @@ const annotateWithResolvedBranch = (
 
 const buildExecutorBlockedNote = (blocked: readonly string[]): string => `${EXECUTOR_BLOCKED}: ${blocked.join(",")}`;
 
+const buildExecutorBlockedOutcome = (note: string): FinishOutcome => ({
+  merged: false,
+  prUrl: null,
+  closedAt: null,
+  worktreeRemoved: false,
+  cleanupOutcome: { kind: "failed", reason: "cleanup not attempted (executor blocked)", retried: false },
+  note,
+});
+
 const safeEmit = async (
   context: LifecycleContext,
   issueNumber: number,
@@ -668,7 +677,7 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
     const blocked = detectBlockedTasks(events);
     if (blocked.length > 0) {
       const note = buildExecutorBlockedNote(blocked);
-      const outcome = { merged: false, prUrl: null, closedAt: null, worktreeRemoved: false, note };
+      const outcome = buildExecutorBlockedOutcome(note);
       const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
       await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
       return outcome;
