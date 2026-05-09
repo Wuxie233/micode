@@ -5,27 +5,13 @@ import { config } from "@/utils/config";
 import { updateInternalSession } from "@/utils/internal-session";
 import { classifySpawnError, INTERNAL_CLASSES, type InternalClass } from "./spawn-agent/classify";
 import { buildSpawnCompletionTitle } from "./spawn-agent/naming";
-import { readAssistantTextWithRetry } from "./spawn-agent/read-guard";
+import { readAssistantText, readAssistantTextWithRetry, type SessionMessagesResponse } from "./spawn-agent/read-guard";
 import type { PreservedRecord, PreservedRegistry } from "./spawn-agent/registry";
 import { buildSubagentResumePrompt } from "./spawn-agent/resume-prompt";
 import { type ResumeSubagentResult, SPAWN_OUTCOMES, type SpawnOutcome } from "./spawn-agent/types";
 
 export interface ResumeSubagentToolOptions {
   readonly registry: PreservedRegistry;
-}
-
-interface MessagePart {
-  readonly type: string;
-  readonly text?: string;
-}
-
-interface SessionMessage {
-  readonly info?: { readonly role?: "user" | "assistant" };
-  readonly parts?: readonly MessagePart[];
-}
-
-interface SessionMessagesResponse {
-  readonly data?: readonly SessionMessage[];
 }
 
 interface SessionDeleteClient {
@@ -66,16 +52,6 @@ function getStatus(error: unknown): number | null {
   if (typeof error.statusCode === "number") return error.statusCode;
   if (!isRecord(error.response)) return null;
   return typeof error.response.status === "number" ? error.response.status : null;
-}
-
-function readAssistantText(messages: readonly SessionMessage[]): string {
-  const assistant = messages.filter((message) => message.info?.role === "assistant").pop();
-  return (
-    assistant?.parts
-      ?.filter((part) => part.type === "text" && part.text)
-      .map((part) => part.text)
-      .join("\n") ?? ""
-  );
 }
 
 function toPublicOutcome(kind: InternalClass): SpawnOutcome {

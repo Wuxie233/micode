@@ -101,6 +101,7 @@ import {
   type SpawnSessionRegistry,
 } from "@/tools/spawn-agent";
 import { cleanupGeneration } from "@/tools/spawn-agent/cleanup";
+import { readAssistantText, type SessionMessagesResponse } from "@/tools/spawn-agent/read-guard";
 import { verifyMarker } from "@/tools/spawn-agent/verifier";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
@@ -433,20 +434,6 @@ interface AutoResumeClientAdapter {
   };
 }
 
-interface MessagePart {
-  readonly type: string;
-  readonly text?: string;
-}
-
-interface SessionMessage {
-  readonly info?: { readonly role?: string };
-  readonly parts?: readonly MessagePart[];
-}
-
-interface SessionMessagesResponse {
-  readonly data?: readonly SessionMessage[];
-}
-
 interface ReleasableHandle {
   readonly unref?: () => void;
 }
@@ -514,16 +501,6 @@ function startResumeSweep(registry: PreservedRegistry): void {
     registry.sweep(Date.now());
   }, config.subagent.resumeSweepIntervalMs);
   releaseInterval(handle);
-}
-
-function readAssistantText(messages: readonly SessionMessage[]): string {
-  const assistant = messages.filter((message) => message.info?.role === "assistant").pop();
-  return (
-    assistant?.parts
-      ?.filter((part) => part.type === "text" && part.text)
-      .map((part) => part.text)
-      .join("\n") ?? ""
-  );
 }
 
 function buildVerifierPromptBody(prompt: string): {

@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 
-import { readAssistantTextWithRetry } from "@/tools/spawn-agent/read-guard";
+import { readAssistantText, readAssistantTextWithRetry, type SessionMessage } from "@/tools/spawn-agent/read-guard";
 
 const NO_SLEEP = async (_ms: number): Promise<void> => {};
 
@@ -111,5 +111,86 @@ describe("readAssistantTextWithRetry", () => {
       sleep,
     });
     expect(sleeps).toEqual([200, 500]);
+  });
+});
+
+describe("readAssistantText (reverse-scan)", () => {
+  it("returns text from the only assistant text part", () => {
+    const messages: SessionMessage[] = [{ info: { role: "assistant" }, parts: [{ type: "text", text: "hello" }] }];
+
+    expect(readAssistantText(messages)).toBe("hello");
+  });
+
+  it("skips terminal tool-call-only assistant message and returns prior text", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "substantive output" }] },
+      { info: { role: "assistant" }, parts: [{ type: "tool_call" }] },
+    ];
+
+    expect(readAssistantText(messages)).toBe("substantive output");
+  });
+
+  it("skips terminal whitespace-only assistant message and returns prior text", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "actual output" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "  \n\t  " }] },
+    ];
+
+    expect(readAssistantText(messages)).toBe("actual output");
+  });
+
+  it("skips multiple trailing non-text assistant messages", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "kept output" }] },
+      { info: { role: "assistant" }, parts: [{ type: "tool_call" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "   " }] },
+      { info: { role: "assistant" }, parts: [{ type: "summary" }] },
+    ];
+
+    expect(readAssistantText(messages)).toBe("kept output");
+  });
+
+  it("returns empty string when every assistant message is non-text", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "tool_call" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "   " }] },
+    ];
+
+    expect(readAssistantText(messages)).toBe("");
+  });
+
+  it("returns empty string when there are no assistant messages", () => {
+    const messages: SessionMessage[] = [{ info: { role: "user" }, parts: [{ type: "text", text: "prompt" }] }];
+
+    expect(readAssistantText(messages)).toBe("");
+  });
+
+  it("joins multiple text parts in the chosen assistant message with newlines", () => {
+    const messages: SessionMessage[] = [
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "line one" }, { type: "tool_call" }, { type: "text", text: "line two" }],
+      },
+    ];
+
+    expect(readAssistantText(messages)).toBe("line one\nline two");
+  });
+
+  it("ignores trailing non-assistant messages while reverse scanning", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "assistant output" }] },
+      { info: { role: "user" }, parts: [{ type: "text", text: "follow-up" }] },
+    ];
+
+    expect(readAssistantText(messages)).toBe("assistant output");
+  });
+
+  it("skips assistant messages with missing parts array", () => {
+    const messages: SessionMessage[] = [
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "previous output" }] },
+      { info: { role: "assistant" } },
+    ];
+
+    expect(readAssistantText(messages)).toBe("previous output");
   });
 });
