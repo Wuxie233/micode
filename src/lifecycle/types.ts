@@ -68,10 +68,26 @@ export interface FinishInput {
   readonly waitForChecks: boolean;
 }
 
+export type CleanupOutcomeKind =
+  | "removed"
+  | "already-missing"
+  | "blocked-dirty"
+  | "blocked-user-work"
+  | "blocked-ambiguous"
+  | "blocked-external"
+  | "failed";
+
+export interface CleanupOutcome {
+  readonly kind: CleanupOutcomeKind;
+  readonly reason: string;
+  readonly retried: boolean;
+}
+
 export interface FinishOutcome {
   readonly merged: boolean;
   readonly prUrl: string | null;
   readonly closedAt: number | null;
   readonly worktreeRemoved: boolean;
+  readonly cleanupOutcome: CleanupOutcome;
   readonly note: string | null;
 }

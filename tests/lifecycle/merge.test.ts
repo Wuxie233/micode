@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { ISSUE_BODY_MARKERS } from "@/lifecycle/issue-body-markers";
 import { finishLifecycle, PR_CHECK_POLL_MS } from "@/lifecycle/merge";
@@ -354,5 +357,208 @@ describe("finishLifecycle", () => {
 describe("PR_CHECK_POLL_MS", () => {
   it("is exported as a positive number for waitForPrChecks scheduling", () => {
     expect(PR_CHECK_POLL_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("finishLifecycle autonomy-first cleanup", () => {
+  const createExistingWorktree = (): string => mkdtempSync(join(tmpdir(), "micode-issue-1-"));
+
+  const removeFixture = (path: string): void => {
+    rmSync(path, { recursive: true, force: true });
+  };
+
+  const createWorktreePorcelain = (worktree: string): RunResult =>
+    createRun(`worktree ${worktree}\nbranch refs/heads/${BRANCH}\n`);
+
+  const gitCall = (runner: FakeRunner, args: readonly string[]): RunnerCall | undefined =>
+    runner.calls.find((call) => call.bin === "git" && call.args.join(" ") === args.join(" "));
+
+  const gitCalls = (runner: FakeRunner, args: readonly string[]): readonly RunnerCall[] =>
+    runner.calls.filter((call) => call.bin === "git" && call.args.join(" ") === args.join(" "));
+
+  it("auto-removes a clean PR merge worktree and reports cleanupOutcome kind=removed", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        gh: [createPrView(), createRun()],
+        git: [createWorktreePorcelain(worktree), createRun(), createRun(), createRun()],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "pr",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("removed");
+      expect(outcome.cleanupOutcome.retried).toBe(false);
+      expect(outcome.worktreeRemoved).toBe(true);
+      expect(gitCall(runner, ["worktree", "remove", worktree])).toEqual({
+        bin: "git",
+        args: ["worktree", "remove", worktree],
+        cwd: CWD,
+      });
+    } finally {
+      removeFixture(worktree);
+    }
+  });
+
+  it("retries clean worktree remove with git worktree prune once and reports retried=true", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        gh: [createPrView(), createRun()],
+        git: [
+          createWorktreePorcelain(worktree),
+          createRun(),
+          createRun(),
+          createFailure("locked"),
+          createRun(),
+          createRun(),
+        ],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "pr",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("removed");
+      expect(outcome.cleanupOutcome.retried).toBe(true);
+      expect(outcome.worktreeRemoved).toBe(true);
+      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(2);
+      expect(gitCalls(runner, ["worktree", "prune"])).toHaveLength(1);
+    } finally {
+      removeFixture(worktree);
+    }
+  });
+
+  it("does not force-delete a dirty worktree and reports cleanup_blocked(blocked-dirty)", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        gh: [createPrView(), createRun()],
+        git: [createWorktreePorcelain(worktree), createRun(" M src/foo.ts\n"), createRun()],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "pr",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("blocked-dirty");
+      expect(outcome.worktreeRemoved).toBe(false);
+      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(0);
+      expect(outcome.note).toContain("cleanup_blocked(blocked-dirty)");
+    } finally {
+      removeFixture(worktree);
+    }
+  });
+
+  it("does not auto-delete an ambiguous untracked-only worktree", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        gh: [createPrView(), createRun()],
+        git: [
+          createWorktreePorcelain(worktree),
+          createRun("?? thoughts/shared/plans/scratch.md\n"),
+          createRun("thoughts/shared/plans/scratch.md\n"),
+        ],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "pr",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("blocked-ambiguous");
+      expect(outcome.worktreeRemoved).toBe(false);
+      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(0);
+    } finally {
+      removeFixture(worktree);
+    }
+  });
+
+  it("does not delete an unknown external clone", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        gh: [createPrView(), createRun()],
+        git: [createRun(`worktree ${WORKTREE}\nbranch refs/heads/${BRANCH}\n`), createRun(), createRun()],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "pr",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("blocked-external");
+      expect(outcome.worktreeRemoved).toBe(false);
+      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(0);
+    } finally {
+      removeFixture(worktree);
+    }
+  });
+
+  it("routes local-merge cleanup through cleanup-policy and skips git branch -d when cleanup is blocked", async () => {
+    const worktree = createExistingWorktree();
+    try {
+      const runner = createRunner({
+        git: [
+          createRun(),
+          createRun(),
+          createRun(),
+          createWorktreePorcelain(worktree),
+          createRun(" M src/foo.ts\n"),
+          createRun(),
+        ],
+      });
+
+      const outcome = await finishLifecycle(runner, {
+        cwd: CWD,
+        branch: BRANCH,
+        worktree,
+        mergeStrategy: "local-merge",
+        waitForChecks: false,
+        baseBranch: "main",
+      });
+
+      expect(outcome.merged).toBe(true);
+      expect(outcome.cleanupOutcome.kind).toBe("blocked-dirty");
+      expect(outcome.worktreeRemoved).toBe(false);
+      expect(gitCall(runner, ["worktree", "list", "--porcelain"])).toEqual({
+        bin: "git",
+        args: ["worktree", "list", "--porcelain"],
+        cwd: CWD,
+      });
+      expect(gitCalls(runner, ["branch", "-d", BRANCH])).toHaveLength(0);
+    } finally {
+      removeFixture(worktree);
+    }
   });
 });

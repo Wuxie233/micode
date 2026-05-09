@@ -162,6 +162,11 @@ describe("lifecycle handle", () => {
       prUrl: null,
       closedAt: expect.any(Number),
       worktreeRemoved: true,
+      cleanupOutcome: {
+        kind: "already-missing",
+        reason: "worktree path does not exist on disk",
+        retried: false,
+      },
       note: null,
     });
     expect(record?.state).toBe(LIFECYCLE_STATES.CLEANED);
