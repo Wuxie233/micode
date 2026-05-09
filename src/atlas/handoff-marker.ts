@@ -1,3 +1,10 @@
+/**
+ * USER-TRIGGERED ONLY. These markers describe atlas-compiler spawn receipts /
+ * lifecycle handoffs. They are NOT written or read by lifecycle_finish or any
+ * lifecycle-owned event. Valid callers: /atlas-refresh, manual atlas-compiler
+ * runs. See plan thoughts/shared/plans/2026-05-10-atlas-shared-mental-model.md
+ * Batch 1.5 / 3.4 and the lifecycle boundary test in Batch 4.2.
+ */
 import { extractBetween, replaceBetween } from "@/lifecycle/issue-body-markers";
 import { ATLAS_HANDOFF_MARKER_BEGIN, ATLAS_HANDOFF_MARKER_END } from "./config";
 import type { AtlasHandoff } from "./types";

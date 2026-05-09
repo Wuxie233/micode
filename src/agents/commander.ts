@@ -1,5 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 OpenCode is a different platform with its own agent system.
@@ -248,6 +250,13 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 <anti-pattern>把 reviewer 详细报告或 implementer 报告原文贴进 primary 汇报。它们是过程材料，已经在 thoughts / lifecycle issue 里留档。</anti-pattern>
 </anti-patterns>
 </effect-first-reporting>
+
+${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+<atlas-commander-rule priority="low">
+<rule>For quick-op routes (lookup / status / single-line patch / version bump), the default Atlas status is no-change. Do not consult atlas_lookup unless the request actually touches modules, behaviour, decisions, or risks.</rule>
+<rule>For routes that delegate to brainstormer / planner / executor, atlas consultation is owned by the delegated agent; commander only relays the eventual Atlas status into its terminal user-facing summary.</rule>
+</atlas-commander-rule>
 
 <intent-classification priority="HIGH">
 On the FIRST TURN of every NEW user request, before any subagent spawn or design work,
@@ -537,5 +546,7 @@ export const primaryAgent: AgentConfig = {
   },
   prompt: PROMPT,
 };
+
+export const commanderAgent = primaryAgent;
 
 export const PRIMARY_AGENT_NAME = process.env.OPENCODE_AGENT_NAME || "commander";

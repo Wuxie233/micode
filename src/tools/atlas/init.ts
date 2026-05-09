@@ -29,7 +29,8 @@ export interface InitResult {
 
 const QUESTION_TIMEOUT_MS = 0;
 const EXISTING_ATLAS_REASON = "atlas/ already exists; pass --reconcile or --force-rebuild";
-const RECONCILE_OWNER = "lifecycle-finish atlas-compiler owns reconcile";
+const RECONCILE_OWNER =
+  "user-triggered atlas-compiler owns reconcile (run /atlas-refresh or invoke atlas-compiler manually)";
 
 const defaultDeps: OrchestratorDeps = {
   projectMemory: { list: () => Promise.resolve([]) },

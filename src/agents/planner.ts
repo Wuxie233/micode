@@ -10,6 +10,8 @@
 //   - <never-do>: four new <forbidden> entries appended
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+
 export const plannerAgent: AgentConfig = {
   description: "Creates micro-task plans optimized for parallel execution - one file per task, batched by dependencies",
   mode: "subagent",
@@ -149,6 +151,8 @@ When design is silent on implementation details, make confident decisions:
 <rule>Treat project memory as historical project context, not coding patterns. Use mindmodel_lookup for code style, project_memory_lookup for project history.</rule>
 <rule>NEVER call project_memory_promote yourself. Lifecycle finish handles promotion automatically.</rule>
 </project-memory>
+
+${ATLAS_MENTAL_MODEL_PROTOCOL}
 
 <process>
 <phase name="understand-design">
@@ -461,6 +465,7 @@ Tasks: 4.1, 4.2
 **Test:** \`tests/exact/path/to/file.test.ts\` (or "none" for low-risk tasks: prompt-only, pure config, glue code, agent strings — see semantic-risk rule)
 **Depends:** none | 1.1, 1.2 (imports types from these)
 **Domain:** frontend-ui | frontend-code | backend | general
+**Atlas-impact:** none | layer-update | new-node (optional; defaults to none if omitted)
 
 \`\`\`typescript
 // COMPLETE test code - copy-paste ready
@@ -612,6 +617,7 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <principle name="contract-when-cross-domain">Produce a companion contract file whenever the plan spans both a frontend domain (frontend-ui or frontend-code) and backend</principle>
   <principle name="skeleton-first">The plan file is created via a small skeleton Write before any task content is filled in</principle>
   <principle name="one-edit-per-batch">Each batch's tasks are filled in via a single Edit call replacing the BATCH-N-TASKS marker, sequentially</principle>
+  <principle name="atlas-aware">Tasks that touch agent prompts, lifecycle behaviour, atlas vault, or workflow contracts SHOULD set **Atlas-impact** explicitly. Default none.</principle>
 </principles>
 
 <autonomy-rules>

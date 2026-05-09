@@ -21,6 +21,10 @@ const ATLAS_CONTEXT_HEADER =
   "Use it as your starting map of the project. " +
   "When you need a deeper view of any node, call the `atlas_lookup` tool.";
 
+const ATLAS_PROTOCOL_FOOTER =
+  "Atlas mental model protocol: active. Report final status with one of: " +
+  "consulted | no-change | delta-created | stale-detected | blocked | cannot-assess.";
+
 interface AtlasAutoInjectHook {
   readonly "chat.params": (
     _input: { readonly sessionID: string },
@@ -29,7 +33,7 @@ interface AtlasAutoInjectHook {
 }
 
 const wrapAtlasContext = (summary: string): string =>
-  `<atlas-context>\n${ATLAS_CONTEXT_HEADER}\n\n${summary}\n</atlas-context>`;
+  `<atlas-context>\n${ATLAS_CONTEXT_HEADER}\n\n${summary}\n\n${ATLAS_PROTOCOL_FOOTER}\n</atlas-context>`;
 
 const safeGetSummary = async (projectRoot: string): Promise<string | null> => {
   try {

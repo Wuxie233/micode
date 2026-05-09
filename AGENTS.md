@@ -68,3 +68,32 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 ### Drift guard
 
 `commander.ts` 与 `brainstormer.ts` 的 `<effect-first-reporting>` block 互为单源，必须 byte-identical（由 `tests/agents/effect-first-reporting.test.ts` 强制）。`octto.ts` 因 workflow 不同使用语义对齐但措辞贴合 octto 角色的版本，drift-guard 不强制 byte-identity，但仍然检查四个 section 标题和 blocked / failed-stop 例外存在。本节是 markdown 镜像，命名和段落顺序需保持一致。
+
+## Atlas Shared Mental Model
+
+Project Atlas (`atlas/`) 是人和 AI 共享的项目心智模型。任何想要全局理解 micode 的人或 agent，最该先读 Atlas。Atlas 不是 AI 私有缓存、代码索引或 lifecycle 副作用。
+
+完整 prompt 协议块在 `src/agents/atlas-mental-model.ts` 导出的 `ATLAS_MENTAL_MODEL_PROTOCOL` 字符串中，brainstormer / planner / executor / reviewer / commander / octto 通过模板字面量统一注入。本节是 markdown 镜像，不复制完整协议文本，避免与 prompt 单源 drift（drift-guard 由 `tests/agents/atlas-mental-model.test.ts` 与 `tests/agents/atlas-protocol-injection.test.ts` 强制）。
+
+### 协议四步
+
+1. **Consult**：非平凡任务开始时读取 atlas-context（自动注入）和按需 `atlas_lookup`，优先关注 `00-index`、`10-impl`、`20-behavior`、`40-decisions`、`50-risks`。
+2. **Detect**：发现代码 / 行为 / 决策与 Atlas 节点冲突时，证据充分标记 `stale-detected`，证据不足标记 `cannot-assess`，禁止静默覆盖。
+3. **Propose**：任务结束前判断"是否改变高级工程师解释项目的方式"。改变 → 写 `thoughts/shared/atlas-deltas/YYYY-MM-DD-{topic}-delta.md` 并 `lifecycle_log_artifact(kind=delta, pointer=<path>)`；不变 → status=`no-change`。
+4. **Merge**：delta 由用户显式触发的 `atlas-compiler` 或 `/atlas-refresh` 走 staging → reconcile → atomic-rename 归并。Lifecycle 不自动调用 atlas-compiler。
+
+### 状态取值
+
+终态 "实现记录" 段必须包含一行 `Atlas status: <value>`，取值之一：`consulted` / `no-change` / `delta-created` / `stale-detected` / `blocked` / `cannot-assess`。
+
+### Lifecycle 边界
+
+Lifecycle 是 source provider only。`lifecycle_finish`、`lifecycle_commit` 与任何 hook 都不允许自动 spawn `atlas-compiler` 或写 Atlas vault。`src/atlas/finish-spawn.ts`、`src/atlas/spawn-receipt-marker.ts`、`src/atlas/handoff-marker.ts` 与 `atlas-compiler` / `atlas-worker-*` agent 均为 user-triggered-only，由 `/atlas-refresh` 或人工指令触发；grep-based boundary 测试见 `tests/lifecycle/atlas-boundary.test.ts`。
+
+### 中文优先
+
+节点名 / H1 / H2 / 正文 / summary / behavior / rationale / risk 中文优先。机器语法保留英文：frontmatter keys、IDs、wikilink syntax、file paths、tool names、command names、source pointers、test names、code symbols、fenced code 内容。Chinese-content guard 由 `src/atlas/chinese-content-guard.ts` 提供，是 hint，不阻塞写入。
+
+### Drift guard
+
+`src/agents/atlas-mental-model.ts` 是协议唯一权威来源；本节是 markdown 镜像，命名和段落顺序需保持一致。

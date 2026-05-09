@@ -5,6 +5,10 @@ import { join } from "node:path";
 
 import { createAtlasAutoInjectHook } from "@/hooks/atlas-auto-inject";
 
+const ATLAS_PROTOCOL_FOOTER =
+  "Atlas mental model protocol: active. Report final status with one of: " +
+  "consulted | no-change | delta-created | stale-detected | blocked | cannot-assess.";
+
 const writeAtlasIndex = (root: string, body: string): void => {
   mkdirSync(join(root, "atlas"), { recursive: true });
   writeFileSync(join(root, "atlas", "00-index.md"), body);
@@ -36,7 +40,14 @@ describe("createAtlasAutoInjectHook", () => {
     expect(output.system).toContain("<atlas-context>");
     expect(output.system).toContain("</atlas-context>");
     expect(output.system).toContain("# micode Atlas Index");
+    expect(output.system).toContain(ATLAS_PROTOCOL_FOOTER);
     expect(output.system).toContain("EXISTING_SYSTEM");
+    expect((output.system ?? "").indexOf("# micode Atlas Index")).toBeLessThan(
+      (output.system ?? "").indexOf(ATLAS_PROTOCOL_FOOTER),
+    );
+    expect((output.system ?? "").indexOf(ATLAS_PROTOCOL_FOOTER)).toBeLessThan(
+      (output.system ?? "").indexOf("</atlas-context>"),
+    );
     // injected block should be prepended (visible before existing content)
     expect((output.system ?? "").indexOf("<atlas-context>")).toBeLessThan(
       (output.system ?? "").indexOf("EXISTING_SYSTEM"),
@@ -55,6 +66,7 @@ describe("createAtlasAutoInjectHook", () => {
     expect(output.system).toBeDefined();
     expect(output.system).toContain("<atlas-context>");
     expect(output.system).toContain("# micode Atlas Index");
+    expect(output.system).toContain(ATLAS_PROTOCOL_FOOTER);
   });
 
   it("does NOT inject for commander", async () => {

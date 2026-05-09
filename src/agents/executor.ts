@@ -1,5 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+
 export const executorAgent: AgentConfig = {
   description: "Executes plan with batch-first parallelism - groups independent tasks, spawns all in parallel",
   mode: "subagent",
@@ -167,6 +169,15 @@ When spawning, append to the implementer or reviewer prompt:
   Do NOT modify the contract; it is frozen.
 </prompt-snippet>
 </contract-propagation>
+
+${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+<atlas-propagation priority="high">
+<rule>leaf agents (implementer-*, reviewer) do NOT have access to the atlas_lookup tool. They receive atlas excerpts only when you (executor) decide a task touches module boundaries, user-visible behaviour, decisions, or risks.</rule>
+<rule>When a plan task has **Atlas-impact:** layer-update or new-node, append a ≤500-char excerpt from atlas-context to the implementer spawn prompt. The excerpt MUST be a verbatim slice; do not paraphrase.</rule>
+<rule>When implementer/reviewer reports back with a stale-detected observation, surface it in your terminal report under "Atlas observations". Do NOT auto-write a delta.</rule>
+<rule>Atlas delta proposal is the responsibility of the primary agent that called you (brainstormer / planner / commander), not yours.</rule>
+</atlas-propagation>
 
 <pty-tools description="For background bash processes">
 PTY tools manage background terminal sessions:
