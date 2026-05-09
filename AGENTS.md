@@ -12,7 +12,7 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 
 | Agent id | 中文角色 | 用途 |
 |---|---|---|
-| `product-manager` | 产品经理 | 需求模糊时把请求收敛成 PRD（用户故事 / Given-When-Then / Non-Goals）。最多 3 个澄清问题，每个带 A/B/C/D/E 选项与推荐默认。 |
+| `product-manager` | 产品经理 | 需求模糊时用产品经理判断把请求收敛成 PRD：问题框定（Problem/Opportunity）、利益相关者、成功度量、范围边界（In/Out of Scope）、风险与假设、决策建议（build / build with adjustments / do not build 或 defer），保留 user stories 与 Given-When-Then 验收。最多 3 个澄清问题，每个带 A/B/C/D/E 选项与推荐默认；证据不足处显式 Cannot Assess。 |
 | `software-architect` | 软件架构师 | 架构 / 数据模型 / 跨模块决策时给出 2-3 个备选方案、显式权衡和推荐选项；强制走 mindmodel_lookup / atlas_lookup 锚定耦合面。 |
 | `ux-designer` | UX 设计师 | UI/UX 不满或新 UI 设计时按 WCAG 2.2 / Material Design 3 / Apple HIG / Core Web Vitals / Nielsen 10 / AI 透明性原则评审，按 severity (0-4) × frequency × business impact 排序。 |
 | `architecture-quality-inspector` | 架构质检 | 对架构方案做质检：SOLID、循环依赖、抗模式、耦合约束；输出 P0/P1/P2/P3 finding 与三种终态判定（APPROVED / APPROVED with required fixes / CHANGES REQUESTED）。 |

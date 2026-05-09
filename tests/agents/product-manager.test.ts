@@ -75,4 +75,67 @@ describe("product-manager agent", () => {
     const lower = (productManagerAgent.prompt ?? "").toLowerCase();
     expect(lower).toContain("user-triggered");
   });
+
+  // ---- Upgrade assertions (issue #57) ----
+
+  it("prompt anchors product-manager as a professional PM, not a template", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("professional");
+    expect(lower).toContain("product manager");
+    // The 6 PM judgment dimensions called out in <purpose> / <pm-judgment>
+    expect(lower).toContain("problem framing");
+    expect(lower).toContain("stakeholder");
+    expect(lower).toContain("success");
+    expect(lower).toContain("scope");
+    expect(lower).toContain("risk");
+    expect(lower).toContain("recommendation");
+  });
+
+  it("prompt PRD requires Problem/Opportunity, Stakeholders, Success Metrics sections", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    // Problem/Opportunity heading
+    expect(prompt).toMatch(/Problem\s*\/?\s*Opportunity|Problem & Opportunity/);
+    // Stakeholders heading (case-sensitive PRD section header)
+    expect(prompt).toContain("Stakeholders");
+    // Success Metrics heading
+    expect(prompt).toMatch(/Success Metric/);
+  });
+
+  it("prompt PRD requires explicit Scope Boundary with In Scope / Out of Scope", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    expect(prompt).toContain("Scope Boundary");
+    expect(prompt).toContain("In Scope");
+    expect(prompt).toContain("Out of Scope");
+  });
+
+  it("prompt PRD requires Risks & Assumptions section", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    expect(prompt).toContain("Risks");
+    expect(prompt).toContain("Assumptions");
+  });
+
+  it("prompt PRD requires mandatory Decision Recommendation with three outcomes", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    expect(prompt).toContain("Decision Recommendation");
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("build as proposed");
+    expect(lower).toContain("build with adjustments");
+    // "do not build" or "defer" — accept either since design lists both
+    expect(lower).toMatch(/do not build|defer/);
+  });
+
+  it("prompt has evidence discipline: cite source or mark Cannot Assess", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    const lower = prompt.toLowerCase();
+    expect(lower).toMatch(/evidence|证据/);
+    expect(prompt).toContain("Cannot Assess");
+  });
+
+  it("prompt forbids omitting Decision Recommendation in never-do block", () => {
+    const prompt = productManagerAgent.prompt ?? "";
+    // The never-do block must explicitly forbid omitting Decision Recommendation.
+    // Match within ~120 chars after a NEVER keyword to ensure the forbid is bound to "Decision Recommendation".
+    expect(prompt).toMatch(/NEVER[^\n]{0,120}Decision Recommendation/);
+  });
 });
