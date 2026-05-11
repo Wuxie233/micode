@@ -24,6 +24,7 @@ import { implementerFrontendCodeAgent } from "./implementer-frontend-code";
 import { implementerFrontendUiAgent } from "./implementer-frontend-ui";
 import { implementerGeneralAgent } from "./implementer-general";
 import { investigatorAgent } from "./investigator";
+import { knowledgeBootstrapOrchestratorAgent } from "./knowledge-bootstrap-orchestrator";
 import { ledgerCreatorAgent } from "./ledger-creator";
 import {
   antiPatternDetectorAgent,
@@ -73,6 +74,7 @@ export const agents: Record<string, AgentConfig> = {
   executor: { ...executorAgent, model: DEFAULT_MODEL },
   "executor-direct": { ...executorDirectAgent, model: DEFAULT_MODEL },
   "ledger-creator": { ...ledgerCreatorAgent, model: DEFAULT_MODEL },
+  "knowledge-bootstrap-orchestrator": { ...knowledgeBootstrapOrchestratorAgent, model: DEFAULT_MODEL },
   "artifact-searcher": { ...artifactSearcherAgent, model: DEFAULT_MODEL },
   "atlas-compiler": { ...atlasCompilerAgent, model: DEFAULT_MODEL },
   "atlas-cold-build": { ...atlasColdBuildAgent, model: DEFAULT_MODEL },
@@ -122,6 +124,7 @@ export {
   implementerGeneralAgent,
   reviewerAgent,
   investigatorAgent,
+  knowledgeBootstrapOrchestratorAgent,
   executorAgent,
   executorDirectAgent,
   ledgerCreatorAgent,
