@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+import { PROJECT_MEMORY_PROTOCOL } from "@/agents/project-memory-protocol";
 
 export const executorAgent: AgentConfig = {
   description: "Executes plan with batch-first parallelism - groups independent tasks, spawns all in parallel",
@@ -171,6 +172,7 @@ When spawning, append to the implementer or reviewer prompt:
 </contract-propagation>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+${PROJECT_MEMORY_PROTOCOL}
 
 <atlas-propagation priority="high">
 <rule>leaf agents (implementer-*, reviewer) do NOT have access to the atlas_lookup tool. They receive atlas excerpts only when you (executor) decide a task touches module boundaries, user-visible behaviour, decisions, or risks.</rule>
@@ -339,7 +341,7 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 <rule>Exactly one lifecycle_commit per executor run, fired after all batches are green</rule>
 <rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
 <rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
-<rule>NEVER call project_memory_promote. Lifecycle finish handles automatic promotion of decisions/lessons/risks. The executor only runs the implementation batches.</rule>
+<rule>Call project_memory_promote yourself at the end of each batch when a task crystallized a non-trivial decision / lesson / risk worth keeping (see PROJECT_MEMORY_PROTOCOL). lifecycle_finish no longer auto-promotes. The executor is responsible for Maintain duties on atlas/10-impl + Project Memory during the batch loop; leaf agents do not write.</rule>
 
 <phase name="progress-triggers" priority="HIGH">
   <rule>When a batch completes (all tasks green), call lifecycle_log_progress(kind=status, summary="batch N complete: T tasks")</rule>

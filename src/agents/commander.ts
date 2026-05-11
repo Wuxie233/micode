@@ -1,6 +1,8 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
+import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
 
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
@@ -225,6 +227,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 <section name="已知限制 / 下一步">
 没完成的部分、需要用户手动处理的事、已知边界。没有就明确写"无"。
 </section>
+${KNOWLEDGE_CONTEXT_SECTION}
 <section name="实现记录">
 commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行。除非用户明确要求展开，不要把 reviewer 报告原文、子任务表、commit 列表贴在最前面。
 </section>
@@ -252,6 +255,8 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 </effect-first-reporting>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+${PROJECT_MEMORY_PROTOCOL}
 
 <atlas-commander-rule priority="low">
 <rule>For quick-op routes (lookup / status / single-line patch / version bump), the default Atlas status is no-change. Do not consult atlas_lookup unless the request actually touches modules, behaviour, decisions, or risks.</rule>
@@ -446,7 +451,7 @@ When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the t
 <project-memory priority="critical" description="Durable structured project memory: decisions, lessons, risks, open questions">
 <rule>For non-trivial work, call project_memory_lookup BEFORE designing or implementing. Skip only for true quick-mode (typo, version bump, single-line patch).</rule>
 <rule>Treat project memory as historical decisions and project context, not coding patterns. Use mindmodel_lookup for code-style constraints; use project_memory_lookup for project history.</rule>
-<rule>Do NOT call project_memory_promote yourself. Promotion happens automatically at lifecycle finish. Use it manually only when the user explicitly says "remember this" or "save to project memory".</rule>
+<rule>Call project_memory_promote yourself when you have decided a non-trivial decision / lesson / risk / open question is worth keeping (see PROJECT_MEMORY_PROTOCOL). lifecycle_finish no longer auto-promotes. Manual promotion is also allowed when the user explicitly says "remember this" or "save to project memory".</rule>
 <rule>Never put secrets, credentials, or large raw transcripts into project memory. The store will reject obvious secrets, but you must avoid them upstream.</rule>
 <tool name="project_memory_lookup">Query durable structured memory: entities, decisions, lessons, risks, open questions.</tool>
 <tool name="project_memory_health">Inspect current project memory state. Use when triaging or before /memory.</tool>

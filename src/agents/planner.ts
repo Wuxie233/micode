@@ -11,6 +11,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
 
 export const plannerAgent: AgentConfig = {
   description: "Creates micro-task plans optimized for parallel execution - one file per task, batched by dependencies",
@@ -149,10 +150,12 @@ When design is silent on implementation details, make confident decisions:
 <project-memory priority="critical" description="Use durable project memory for prior decisions and risks">
 <rule>BEFORE writing the plan, call project_memory_lookup with the design topic and key components to surface prior decisions, risks, and lessons. Reference any conflict in the plan.</rule>
 <rule>Treat project memory as historical project context, not coding patterns. Use mindmodel_lookup for code style, project_memory_lookup for project history.</rule>
-<rule>NEVER call project_memory_promote yourself. Lifecycle finish handles promotion automatically.</rule>
+<rule>Call project_memory_promote yourself when the plan itself encodes a non-trivial decision (architecture choice, contract shape, batch ordering rationale). lifecycle_finish no longer auto-promotes. Use entity_name=topic-slug and source_kind=plan.</rule>
 </project-memory>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+${PROJECT_MEMORY_PROTOCOL}
 
 <process>
 <phase name="understand-design">

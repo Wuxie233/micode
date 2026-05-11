@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+import { PROJECT_MEMORY_PROTOCOL } from "@/agents/project-memory-protocol";
 
 export const reviewerAgent: AgentConfig = {
   description: "Reviews ONE micro-task: verifies file + test match plan, test passes",
@@ -112,6 +113,7 @@ When Test has an actual path:
 </test-policy>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+${PROJECT_MEMORY_PROTOCOL}
 
 <atlas-detect-role priority="medium">
 <rule>You are a leaf agent. You do NOT write atlas deltas, do NOT call atlas_lookup, do NOT modify atlas/ vault.</rule>
