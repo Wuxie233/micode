@@ -52,6 +52,7 @@ import {
   type ClientPromptRequest,
   createAutoResumeDispatcher,
 } from "@/octto/auto-resume/dispatcher";
+import { createOwnerModelLookup, type OwnerModelClient } from "@/octto/auto-resume/model-lookup";
 import { buildContinuePrompt } from "@/octto/auto-resume/prompt";
 import { type AutoResumeRegistry, createAutoResumeRegistry } from "@/octto/auto-resume/registry";
 import {
@@ -621,7 +622,10 @@ function createAutoResumeClient(client: PluginInput["client"]): AutoResumeClient
         Promise.resolve(
           client.session.prompt({
             path: request.path,
-            body: { parts: request.body.parts.map((part) => ({ type: part.type, text: part.text })) },
+            body: {
+              parts: request.body.parts.map((part) => ({ type: part.type, text: part.text })),
+              ...(request.body.model ? { model: request.body.model } : {}),
+            },
           }),
         ),
     },
@@ -910,10 +914,13 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
   const persistedSessionStore = createPersistedSessionStore({});
   const persistenceListener = createPersistenceListener({ persistedStore: persistedSessionStore });
   const autoResumeRegistry = createAutoResumeRegistry();
+  const ownerModelLookup = createOwnerModelLookup({ client: ctx.client as unknown as OwnerModelClient });
   const autoResumeDispatcher = createAutoResumeDispatcher({
     client: createAutoResumeClient(ctx.client),
     registry: autoResumeRegistry,
-    buildPrompt: buildContinuePrompt,
+    buildPrompt: (input) =>
+      buildContinuePrompt({ conversationId: input.conversationId, questionIds: [...input.questionIds] }),
+    modelLookup: ownerModelLookup,
   });
   const octtoSessionStore = createSessionStore({
     listeners: createOcttoListeners({ persistenceListener, autoResumeRegistry, autoResumeDispatcher }),
