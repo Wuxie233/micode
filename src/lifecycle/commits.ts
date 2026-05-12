@@ -3,6 +3,7 @@ import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 import { buildLifecycleCommitMessage, type CommitMessageInput } from "./commit-message";
+import { buildHint, type LifecycleRecoveryHint } from "./recovery/hint";
 import type { LifecycleRunner, RunResult } from "./runner";
 import type { CommitOutcome } from "./types";
 
@@ -50,12 +51,13 @@ const uncommittedOutcome = (): CommitOutcome => ({
   note: null,
 });
 
-const failureOutcome = (note: string): CommitOutcome => ({
+const failureOutcome = (note: string, recoveryHint?: LifecycleRecoveryHint): CommitOutcome => ({
   committed: false,
   sha: null,
   pushed: false,
   retried: false,
   note,
+  recoveryHint,
 });
 
 const completedOutcome = (sha: string, pushed: boolean, retried: boolean): CommitOutcome => ({
@@ -66,13 +68,39 @@ const completedOutcome = (sha: string, pushed: boolean, retried: boolean): Commi
   note: null,
 });
 
-const retainedOutcome = (sha: string | null, retried: boolean, note: string): CommitOutcome => ({
+const retainedOutcome = (
+  sha: string | null,
+  retried: boolean,
+  note: string,
+  recoveryHint?: LifecycleRecoveryHint,
+): CommitOutcome => ({
   committed: true,
   sha,
   pushed: false,
   retried,
   note,
+  recoveryHint,
 });
+
+const unknownFailureHint = (input: CommitAndPushInput, summary: string): LifecycleRecoveryHint =>
+  buildHint({
+    failureKind: "unknown",
+    recommendedNextAction: "ask_user",
+    summary,
+    issueNumber: input.issueNumber,
+    branch: input.branch,
+    safeToRetry: false,
+  });
+
+const pushFailureHint = (input: CommitAndPushInput, summary: string): LifecycleRecoveryHint =>
+  buildHint({
+    failureKind: "push_failed",
+    recommendedNextAction: "retry_finish",
+    summary,
+    issueNumber: input.issueNumber,
+    branch: input.branch,
+    safeToRetry: true,
+  });
 
 const succeeded = (run: RunResult): boolean => run.exitCode === SUCCESS_EXIT_CODE;
 
@@ -141,19 +169,19 @@ const runPrePushHook = async (
 
 const pushWithRetry = async (
   runner: LifecycleRunner,
-  cwd: string,
-  branch: string,
+  input: CommitAndPushInput,
   sha: string,
 ): Promise<CommitOutcome> => {
-  const pushArgs = buildPushArgs(branch);
-  const pushed = await runGit(runner, pushArgs, cwd);
+  const pushArgs = buildPushArgs(input.branch);
+  const pushed = await runGit(runner, pushArgs, input.cwd);
   if (succeeded(pushed)) return completedOutcome(sha, true, false);
 
   await Bun.sleep(config.lifecycle.pushRetryBackoffMs);
 
-  const retried = await runGit(runner, pushArgs, cwd);
+  const retried = await runGit(runner, pushArgs, input.cwd);
   if (succeeded(retried)) return completedOutcome(sha, true, true);
-  return retainedOutcome(sha, true, noteFor(PUSH_FAILED_NOTE, retried));
+  const note = noteFor(PUSH_FAILED_NOTE, retried);
+  return retainedOutcome(sha, true, note, pushFailureHint(input, note));
 };
 
 export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPushInput): Promise<CommitOutcome> {
@@ -161,22 +189,29 @@ export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPus
   try {
     message = buildLifecycleCommitMessage({ ...input, marker: input.marker });
   } catch (error) {
-    return failureOutcome(extractErrorMessage(error));
+    const note = extractErrorMessage(error);
+    return failureOutcome(note, unknownFailureHint(input, note));
   }
 
   await runPreStageHook(input);
 
   const staged = await runGit(runner, STAGE_ARGS, input.cwd);
-  if (!succeeded(staged)) return failureOutcome(noteFor(STAGING_FAILED_NOTE, staged));
+  if (!succeeded(staged)) {
+    const note = noteFor(STAGING_FAILED_NOTE, staged);
+    return failureOutcome(note, unknownFailureHint(input, note));
+  }
 
   const committed = await runGit(runner, [COMMIT_COMMAND, MESSAGE_FLAG, message], input.cwd);
   if (isNothingToCommit(committed)) return uncommittedOutcome();
-  if (!succeeded(committed)) return failureOutcome(noteFor(COMMIT_FAILED_NOTE, committed));
+  if (!succeeded(committed)) {
+    const note = noteFor(COMMIT_FAILED_NOTE, committed);
+    return failureOutcome(note, unknownFailureHint(input, note));
+  }
 
   const sha = await readSha(runner, input.cwd);
-  if (sha === null) return retainedOutcome(null, false, SHA_FAILED_NOTE);
+  if (sha === null) return retainedOutcome(null, false, SHA_FAILED_NOTE, unknownFailureHint(input, SHA_FAILED_NOTE));
   if (!input.push) return completedOutcome(sha, false, false);
   const blocked = await runPrePushHook(runner, input, sha);
-  if (blocked !== null) return retainedOutcome(sha, false, blocked);
-  return pushWithRetry(runner, input.cwd, input.branch, sha);
+  if (blocked !== null) return retainedOutcome(sha, false, blocked, unknownFailureHint(input, blocked));
+  return pushWithRetry(runner, input, sha);
 }

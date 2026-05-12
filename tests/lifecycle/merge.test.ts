@@ -154,10 +154,10 @@ describe("finishLifecycle", () => {
     });
   });
 
-  it("local merge checks out and pushes the resolved master branch", async () => {
+  it("local merge uses a temp worktree and pushes the resolved master branch", async () => {
     const runner = createRunner({
       gh: [createRun("[]")],
-      git: [createRun(), createRun(), createRun(), createRun(), createRun()],
+      git: [createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun()],
     });
 
     const outcome = await finishLifecycle(runner, {
@@ -172,12 +172,22 @@ describe("finishLifecycle", () => {
 
     expect(outcome.merged).toBe(true);
     const gitCalls = runner.calls.filter((call) => call.bin === "git");
-    expect(gitCalls[0]).toEqual({ bin: "git", args: ["checkout", "master"], cwd: CWD });
-    expect(gitCalls[1]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: CWD });
-    expect(gitCalls[2]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: CWD });
+    expect(gitCalls[0]).toEqual({
+      bin: "git",
+      args: ["worktree", "add", "/tmp/micode-merge-issue-1", "master"],
+      cwd: CWD,
+    });
+    expect(gitCalls[1]).toEqual({ bin: "git", args: ["fetch", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls[2]).toEqual({
+      bin: "git",
+      args: ["merge", "--ff-only", "origin/master"],
+      cwd: "/tmp/micode-merge-issue-1",
+    });
+    expect(gitCalls[3]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls[4]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
   });
 
-  it("returns an actionable error when checkout of the resolved base branch fails", async () => {
+  it("returns an actionable recovery hint when temp worktree creation fails", async () => {
     const runner = createRunner({
       gh: [createRun("[]")],
       git: [{ stdout: "", stderr: "error: pathspec 'master' did not match any file(s)", exitCode: FAILURE_EXIT_CODE }],
@@ -194,8 +204,10 @@ describe("finishLifecycle", () => {
     });
 
     expect(outcome.merged).toBe(false);
-    expect(outcome.note).toContain("git_checkout");
+    expect(outcome.note).toContain("temp_worktree_create_failed");
     expect(outcome.note).toContain("master");
+    expect(outcome.recoveryHint?.failureKind).toBe("dirty_base_worktree");
+    expect(outcome.recoveryHint?.recommendedNextAction).toBe("use_temp_merge_worktree");
   });
 
   it("reuses existing PR, injects summary into body, then merges", async () => {
@@ -488,12 +500,15 @@ describe("finishLifecycle autonomy-first cleanup", () => {
         mergeStrategy: "pr",
         waitForChecks: false,
         baseBranch: "main",
+        artifactPointers: [],
+        fsOps: { mkdir: () => {}, rename: () => {} },
       });
 
       expect(outcome.merged).toBe(true);
-      expect(outcome.cleanupOutcome.kind).toBe("blocked-ambiguous");
-      expect(outcome.worktreeRemoved).toBe(false);
-      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(0);
+      expect(outcome.cleanupOutcome.kind).toBe("removed");
+      expect(outcome.cleanupOutcome.reason).toContain("quarantined 1");
+      expect(outcome.worktreeRemoved).toBe(true);
+      expect(gitCalls(runner, ["worktree", "remove", worktree])).toHaveLength(1);
     } finally {
       removeFixture(worktree);
     }
@@ -530,6 +545,9 @@ describe("finishLifecycle autonomy-first cleanup", () => {
     try {
       const runner = createRunner({
         git: [
+          createRun(),
+          createRun(),
+          createRun(),
           createRun(),
           createRun(),
           createRun(),

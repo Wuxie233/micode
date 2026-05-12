@@ -37,6 +37,8 @@ const baseInput = (overrides: Partial<CleanupPolicyInput> = {}): CleanupPolicyIn
   baseBranch: "main",
   issueClosed: true,
   branchMerged: true,
+  issueNumber: 1,
+  artifactPointers: [],
   worktreeExistsOnDisk: true,
   ...overrides,
 });
@@ -142,12 +144,12 @@ describe("runCleanup", () => {
     expect(outcome.kind).toBe("blocked-user-work");
   });
 
-  it("returns blocked-ambiguous when only untracked files are present", async () => {
+  it("returns blocked-ambiguous when only unknown untracked files are present", async () => {
     const { runner, calls } = fakeRunner(
       new Map([
         ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n")]],
         ["status --porcelain", [ok("")]],
-        ["ls-files --others --exclude-standard", [ok("thoughts/shared/notes/scratch.md\n")]],
+        ["ls-files --others --exclude-standard", [ok("scratch.md\n")]],
       ]),
     );
 
@@ -158,12 +160,12 @@ describe("runCleanup", () => {
     expect(calls.some((c) => c.args[0] === "worktree" && c.args[1] === "remove")).toBe(false);
   });
 
-  it("filters ?? status lines so untracked-only worktrees are ambiguous, not dirty", async () => {
+  it("filters ?? status lines so unknown untracked-only worktrees are ambiguous, not dirty", async () => {
     const { runner, calls } = fakeRunner(
       new Map([
         ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n")]],
-        ["status --porcelain", [ok("?? thoughts/shared/notes/scratch.md\n")]],
-        ["ls-files --others --exclude-standard", [ok("thoughts/shared/notes/scratch.md\n")]],
+        ["status --porcelain", [ok("?? scratch.md\n")]],
+        ["ls-files --others --exclude-standard", [ok("scratch.md\n")]],
       ]),
     );
 

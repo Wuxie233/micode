@@ -1,15 +1,21 @@
+import { existsSync } from "node:fs";
+
 import * as v from "valibot";
 
 import { LifecycleRecordSchema } from "@/lifecycle/schemas";
 import { parseIssueBody } from "./issue-body";
+import type { LifecycleCandidateSummary } from "./recovery/hint";
+import { classifyStale } from "./recovery/stale-classifier";
 import type { LifecycleRunner } from "./runner";
 import type { LifecycleStore } from "./store";
 import { ARTIFACT_KINDS, type ArtifactKind, LIFECYCLE_STATES, type LifecycleRecord } from "./types";
 
+export type { LifecycleCandidateSummary } from "./recovery/hint";
+
 export type ResolverResult =
   | { readonly kind: "resolved"; readonly record: LifecycleRecord }
   | { readonly kind: "none" }
-  | { readonly kind: "ambiguous"; readonly candidates: readonly number[] };
+  | { readonly kind: "ambiguous"; readonly candidates: readonly LifecycleCandidateSummary[] };
 
 export interface ResolverDeps {
   readonly runner: LifecycleRunner;
@@ -20,6 +26,15 @@ export interface ResolverDeps {
 export interface Resolver {
   readonly current: () => Promise<ResolverResult>;
   readonly resume: (issueNumber: number) => Promise<LifecycleRecord>;
+  readonly forceRefresh: (issueNumber: number) => Promise<LifecycleRecord>;
+  readonly resolveExplicit: (issueNumber: number) => Promise<LifecycleRecord>;
+}
+
+export class StaleRecordError extends Error {
+  constructor(readonly summary: LifecycleCandidateSummary) {
+    super(`stale_record: #${summary.issueNumber} ${summary.staleReason ?? "stale"}`);
+    this.name = "StaleRecordError";
+  }
 }
 
 const BRANCH_PATTERN = /^issue\/(\d+)-/;
@@ -30,6 +45,18 @@ const ISSUE_NOT_FOUND = "issue_not_found";
 const BRANCH_ARGS = ["rev-parse", "--abbrev-ref", "HEAD"] as const;
 const TOPLEVEL_ARGS = ["rev-parse", "--show-toplevel"] as const;
 const ISSUE_VIEW_FIELDS = "body";
+const GIT_SHOW_REF = "show-ref";
+const GIT_VERIFY = "--verify";
+const GIT_QUIET = "--quiet";
+const GIT_MERGE_BASE = "merge-base";
+const GIT_IS_ANCESTOR = "--is-ancestor";
+const GIT_WORKTREE = "worktree";
+const GIT_LIST = "list";
+const GIT_PORCELAIN = "--porcelain";
+const LOCAL_REF_PREFIX = "refs/heads/";
+const REMOTE_REF_PREFIX = "refs/remotes/origin/";
+const WORKTREE_PREFIX = "worktree ";
+const CURRENT_HEAD = "HEAD";
 
 const readBranch = async (deps: ResolverDeps): Promise<string | null> => {
   const run = await deps.runner.git(BRANCH_ARGS, { cwd: deps.cwd });
@@ -100,6 +127,97 @@ const extractIssueBody = (stdout: string): string => {
   }
 };
 
+const viewIssueBody = async (deps: ResolverDeps, issueNumber: number): Promise<string> => {
+  const view = await deps.runner.gh(["issue", "view", String(issueNumber), "--json", ISSUE_VIEW_FIELDS], {
+    cwd: deps.cwd,
+  });
+  if (view.exitCode !== OK_EXIT_CODE) throw new Error(`${ISSUE_NOT_FOUND}: #${issueNumber}`);
+  return extractIssueBody(view.stdout);
+};
+
+const refreshFromIssueBody = async (deps: ResolverDeps, issueNumber: number): Promise<LifecycleRecord> => {
+  const body = await viewIssueBody(deps, issueNumber);
+  const record = await reconstructFromBody(deps, issueNumber, body);
+  await deps.store.save(record);
+  return record;
+};
+
+const branchRefExists = async (deps: ResolverDeps, ref: string): Promise<boolean> => {
+  const run = await deps.runner.git([GIT_SHOW_REF, GIT_VERIFY, GIT_QUIET, ref], { cwd: deps.cwd });
+  return run.exitCode === OK_EXIT_CODE;
+};
+
+const branchExists = async (deps: ResolverDeps, branch: string): Promise<boolean> => {
+  if (await branchRefExists(deps, `${LOCAL_REF_PREFIX}${branch}`)) return true;
+  return branchRefExists(deps, `${REMOTE_REF_PREFIX}${branch}`);
+};
+
+const resolveBranchRef = async (deps: ResolverDeps, branch: string): Promise<string | null> => {
+  const localRef = `${LOCAL_REF_PREFIX}${branch}`;
+  if (await branchRefExists(deps, localRef)) return localRef;
+  const remoteRef = `${REMOTE_REF_PREFIX}${branch}`;
+  if (await branchRefExists(deps, remoteRef)) return remoteRef;
+  return null;
+};
+
+const branchMergedIntoHead = async (deps: ResolverDeps, branch: string): Promise<boolean> => {
+  const ref = await resolveBranchRef(deps, branch);
+  if (ref === null) return false;
+  const run = await deps.runner.git([GIT_MERGE_BASE, GIT_IS_ANCESTOR, ref, CURRENT_HEAD], { cwd: deps.cwd });
+  return run.exitCode === OK_EXIT_CODE;
+};
+
+const readRegisteredWorktrees = async (deps: ResolverDeps): Promise<readonly string[] | null> => {
+  const run = await deps.runner.git([GIT_WORKTREE, GIT_LIST, GIT_PORCELAIN], { cwd: deps.cwd });
+  if (run.exitCode !== OK_EXIT_CODE) return null;
+  const trimmed = run.stdout.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(WORKTREE_PREFIX))
+    .map((line) => line.slice(WORKTREE_PREFIX.length).trim())
+    .filter((path) => path.length > 0);
+};
+
+const worktreeIsRegistered = async (deps: ResolverDeps, worktree: string): Promise<boolean> => {
+  const registered = await readRegisteredWorktrees(deps);
+  if (registered === null) return true;
+  return registered.includes(worktree);
+};
+
+const summarizeRecord = async (deps: ResolverDeps, record: LifecycleRecord): Promise<LifecycleCandidateSummary> => {
+  const exists = await branchExists(deps, record.branch);
+  const classification = classifyStale({
+    issueNumber: record.issueNumber,
+    state: record.state,
+    worktreeExists: existsSync(record.worktree),
+    worktreeIsRegistered: await worktreeIsRegistered(deps, record.worktree),
+    branchExists: exists,
+    branchMergedIntoBase: exists ? await branchMergedIntoHead(deps, record.branch) : false,
+    issueClosedOnGithub: false,
+  });
+
+  return {
+    issueNumber: record.issueNumber,
+    branch: record.branch,
+    worktree: record.worktree,
+    state: record.state,
+    stale: classification.stale,
+    staleReason: classification.reason,
+  };
+};
+
+const loadOpenRecords = async (deps: ResolverDeps): Promise<readonly LifecycleRecord[]> => {
+  const open = await deps.store.listOpen();
+  const records: LifecycleRecord[] = [];
+  for (const issueNumber of open) {
+    const record = await deps.store.load(issueNumber);
+    if (record !== null) records.push(record);
+  }
+  return records;
+};
+
 const resolveFromBranch = async (deps: ResolverDeps): Promise<ResolverResult | null> => {
   const branch = await readBranch(deps);
   if (branch === null) return null;
@@ -116,30 +234,37 @@ export function createResolver(deps: ResolverDeps): Resolver {
       const fromBranch = await resolveFromBranch(deps);
       if (fromBranch !== null) return fromBranch;
 
-      const open = await deps.store.listOpen();
-      if (open.length === 0) return { kind: "none" };
-      if (open.length === 1) {
-        const [first] = open;
-        if (first === undefined) return { kind: "none" };
-        const record = await deps.store.load(first);
-        if (record === null) return { kind: "none" };
-        return { kind: "resolved", record };
+      const records = await loadOpenRecords(deps);
+      if (records.length === 0) return { kind: "none" };
+
+      const summaries = await Promise.all(records.map((record) => summarizeRecord(deps, record)));
+      const fresh = records.filter(
+        (record) => !summaries.some((summary) => summary.issueNumber === record.issueNumber && summary.stale),
+      );
+
+      if (fresh.length === 1) {
+        const [record] = fresh;
+        if (record !== undefined) return { kind: "resolved", record };
       }
-      return { kind: "ambiguous", candidates: open };
+      if (fresh.length === 0 && summaries.length === 0) return { kind: "none" };
+      return { kind: "ambiguous", candidates: summaries };
     },
 
     async resume(issueNumber: number): Promise<LifecycleRecord> {
       const local = await deps.store.load(issueNumber);
       if (local) return local;
 
-      const view = await deps.runner.gh(["issue", "view", String(issueNumber), "--json", ISSUE_VIEW_FIELDS], {
-        cwd: deps.cwd,
-      });
-      if (view.exitCode !== OK_EXIT_CODE) throw new Error(`${ISSUE_NOT_FOUND}: #${issueNumber}`);
+      return refreshFromIssueBody(deps, issueNumber);
+    },
 
-      const body = extractIssueBody(view.stdout);
-      const record = await reconstructFromBody(deps, issueNumber, body);
-      await deps.store.save(record);
+    async forceRefresh(issueNumber: number): Promise<LifecycleRecord> {
+      return refreshFromIssueBody(deps, issueNumber);
+    },
+
+    async resolveExplicit(issueNumber: number): Promise<LifecycleRecord> {
+      const record = (await deps.store.load(issueNumber)) ?? (await refreshFromIssueBody(deps, issueNumber));
+      const summary = await summarizeRecord(deps, record);
+      if (summary.stale) throw new StaleRecordError(summary);
       return record;
     },
   };

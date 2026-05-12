@@ -1,3 +1,5 @@
+import type { LifecycleRecoveryHint } from "./recovery/hint";
+
 export const LIFECYCLE_STATES = {
   PROPOSED: "proposed",
   ISSUE_OPEN: "issue_open",
@@ -61,6 +63,7 @@ export interface CommitOutcome {
   readonly pushed: boolean;
   readonly retried: boolean;
   readonly note: string | null;
+  readonly recoveryHint?: LifecycleRecoveryHint;
 }
 
 export interface FinishInput {
@@ -90,4 +93,5 @@ export interface FinishOutcome {
   readonly worktreeRemoved: boolean;
   readonly cleanupOutcome: CleanupOutcome;
   readonly note: string | null;
+  readonly recoveryHint?: LifecycleRecoveryHint;
 }

@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 
-import type { LifecycleRunner } from "@/lifecycle/runner";
+import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 
 export interface TempWorktreePathInput {
   readonly repoRoot: string;
@@ -26,6 +26,7 @@ export type CreateTempResult =
   | { readonly kind: "failed"; readonly path: string; readonly reason: string };
 
 const OK = 0;
+const GIT_STATUS_PATH_OFFSET = 3;
 const CONFLICT_PREFIXES: readonly string[] = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
 
 export async function createTempMergeWorktree(
@@ -48,9 +49,9 @@ export async function readMergeConflicts(runner: LifecycleRunner, worktreePath: 
   return status.stdout
     .split("\n")
     .map((line) => line.replace(/\r$/, ""))
-    .filter((line) => line.length >= 3)
+    .filter((line) => line.length >= GIT_STATUS_PATH_OFFSET)
     .filter((line) => CONFLICT_PREFIXES.some((p) => line.startsWith(p)))
-    .map((line) => line.slice(3).trim())
+    .map((line) => line.slice(GIT_STATUS_PATH_OFFSET).trim())
     .filter((p) => p.length > 0);
 }
 
@@ -59,6 +60,6 @@ export interface RemoveTempInput {
   readonly path: string;
 }
 
-export async function removeTempMergeWorktree(runner: LifecycleRunner, input: RemoveTempInput): Promise<void> {
-  await runner.git(["worktree", "remove", "--force", input.path], { cwd: input.repoRoot });
+export async function removeTempMergeWorktree(runner: LifecycleRunner, input: RemoveTempInput): Promise<RunResult> {
+  return runner.git(["worktree", "remove", "--force", input.path], { cwd: input.repoRoot });
 }

@@ -113,9 +113,10 @@ describe("createResolver.current", () => {
 
     const result = await resolver.current();
 
-    expect(result.kind).toBe("resolved");
-    if (result.kind === "resolved") {
-      expect(result.record.issueNumber).toBe(ISSUE_5);
+    expect(result.kind).toBe("ambiguous");
+    if (result.kind === "ambiguous") {
+      expect(result.candidates.map((candidate) => candidate.issueNumber)).toEqual([ISSUE_5]);
+      expect(result.candidates[0]?.stale).toBe(true);
     }
   });
 
@@ -142,7 +143,7 @@ describe("createResolver.current", () => {
 
     expect(result.kind).toBe("ambiguous");
     if (result.kind === "ambiguous") {
-      expect([...result.candidates].sort()).toEqual([ISSUE_5, ISSUE_7]);
+      expect(result.candidates.map((candidate) => candidate.issueNumber).sort()).toEqual([ISSUE_5, ISSUE_7]);
     }
   });
 });
