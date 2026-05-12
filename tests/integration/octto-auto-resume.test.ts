@@ -84,7 +84,12 @@ function createDispatcherListener(input: AutoResumeInput): SessionListeners {
 function createHarness(): Harness {
   const client = createRecordedClient();
   const registry = createAutoResumeRegistry();
-  const dispatcher = createAutoResumeDispatcher({ client, registry, buildPrompt: buildContinuePrompt });
+  const dispatcher = createAutoResumeDispatcher({
+    client,
+    registry,
+    buildPrompt: buildContinuePrompt,
+    modelLookup: { resolve: async () => null },
+  });
   const listeners = createDispatcherListener({ registry, dispatcher });
 
   return {
@@ -95,7 +100,7 @@ function createHarness(): Harness {
 }
 
 function contractPrompt(conversationId: string, questionId: string): string {
-  return `你之前的会话有用户回答到达 (question_id=${questionId})。请调用 \`get_next_answer({session_id: "${conversationId}"})\` 取出答案,然后继续原任务。`;
+  return buildContinuePrompt({ conversationId, questionIds: [questionId] });
 }
 
 async function startConversation(store: SessionStore): Promise<Conversation> {
