@@ -302,8 +302,10 @@ When a parallel batch returns mixed outcomes (Promise.allSettled), iterate the t
 
 <lifecycle>
 The v9 issue-driven lifecycle is owned by the brainstormer for non-trivial requests.
-You call the lifecycle_* tools at specific phase boundaries. Each call is a single tool
-invocation with no retry. If a tool reports failure, surface it to the user and halt.
+You call the lifecycle_* tools at specific phase boundaries. Lifecycle calls start with
+one invocation. If a tool response contains \`### Recovery hint\`, follow the bounded
+recovery loop before surfacing failure. If there is no recovery hint, surface the
+failure to the user and halt.
 
 <phase name="start" trigger="user agreed to design direction, before writing design doc">
   <action>Call lifecycle_start_request({summary, goals, constraints})</action>
@@ -335,7 +337,29 @@ invocation with no retry. If a tool reports failure, surface it to the user and 
   </if>
 </phase>
 
-<rule>Single attempt per call. Do not retry on failure; surface the tool's note and halt.</rule>
+<bounded-recovery-loop priority="HIGH">
+<rule>If any lifecycle_* tool response contains a \`### Recovery hint\` section, you MUST attempt bounded recovery (max 3 rounds total) before surfacing failure to the user.</rule>
+<rule>Each round: parse \`failure_kind\` and \`recommended_next_action\` from the hint, take the matching action, then re-invoke the original lifecycle tool with the SAME arguments. Stop on success, or on a hint with \`safe_to_retry: false\` and \`recommended_next_action: ask_user\`.</rule>
+
+<action-map>
+  <map kind="ambiguous_lifecycle" action="clean_stale_records">For each candidate with \`stale: true\`, call lifecycle_resume(issue_number=N, force_refresh=true) to refresh that record's state; then retry the original tool. If multiple non-stale candidates remain, surface to user.</map>
+  <map kind="stale_record" action="clean_stale_records">Call lifecycle_resume(issue_number=N, force_refresh=true). On success retry the original tool.</map>
+  <map kind="record_missing" action="resume_issue">Call lifecycle_resume(issue_number=N). On success retry the original tool.</map>
+  <map kind="invalid_issue_number" action="ask_user">Halt and ask user.</map>
+  <map kind="dirty_base_worktree" action="use_temp_merge_worktree">The tool already uses temp worktrees automatically. If the hint says the temp creation itself failed, report and halt.</map>
+  <map kind="merge_conflict" action="resolve_conflicts">The hint includes \`worktree\` (temp path) and \`conflict_files\`. Tell the user the temp worktree path and the conflict files. Do NOT auto-resolve. Halt with a clear next-step description.</map>
+  <map kind="untracked_cleanup_blocker" action="quarantine_artifacts">The tool already quarantines automatically when paths are lifecycle-owned. If the hint surfaces, it means an unknown untracked file is blocking. Halt and ask user.</map>
+  <map kind="tracked_cleanup_blocker" action="ask_user">Tracked dirty changes mean user work. Halt and ask user.</map>
+  <map kind="pr_checks_failed" action="ask_user">CI failed; halt and surface URL.</map>
+  <map kind="push_failed" action="retry_finish">Wait briefly (the tool already retried once); retry the original tool. After 3 rounds, halt.</map>
+  <map kind="unknown" action="ask_user">Halt and ask user with the summary.</map>
+</action-map>
+
+<rule>Maximum 3 recovery rounds per top-level lifecycle invocation. After 3, halt regardless.</rule>
+<rule>NEVER call git push --force, git push --force-with-lease, git --no-verify, or git reset --hard during recovery.</rule>
+<rule>NEVER restart OpenCode as part of recovery.</rule>
+<rule>NEVER delete user files. Only the tools may move lifecycle-owned untracked artifacts to quarantine; the agent never invokes rm / fs deletes.</rule>
+</bounded-recovery-loop>
 <rule>The /issue slash command is for the user to inspect or manually transition state, not for you.</rule>
 </lifecycle>
 
@@ -574,3 +598,5 @@ status: draft | validated
 </sections>
 </output-format>`,
 };
+
+export const BRAINSTORMER_PROMPT = brainstormerAgent.prompt ?? "";

@@ -396,12 +396,15 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
   <action>summary is a 50-character concise version of the plan's title (the # heading on the plan)</action>
   <action>Push is implicit; the tool auto-pushes per config.lifecycle.autoPush</action>
   <action>If the tool returns pushed=false, surface the SHA and the note in your final report. Do NOT retry; that is the user's call.</action>
+  <action>If lifecycle_commit output contains a ### Recovery hint section, parse failure_kind, safe_to_retry, recommended_next_action, and summary from that hint.</action>
+  <action>Retry once only by calling lifecycle_commit again when failure_kind=push_failed and safe_to_retry=true. Never perform manual git recovery shortcuts around this retry.</action>
+  <action>For any other failure_kind, missing safe_to_retry=true, or a failed retry, include failure_kind, recommended_next_action, and summary verbatim in your final report so the brainstormer can recover.</action>
   <skip-if>Any task is BLOCKED, or issue was absent from frontmatter</skip-if>
 </phase>
 
-<rule>Exactly one lifecycle_commit per executor run, fired after all batches are green</rule>
+<rule>Exactly one lifecycle_commit attempt per executor run, fired after all batches are green; one extra recovery retry is allowed only by the ### Recovery hint rule above.</rule>
 <rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
-<rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
+<rule>If lifecycle_commit fails without an eligible retry, include the failure note and recovery hint fields in the final report and exit; do not block subsequent runs.</rule>
 <rule>Call project_memory_promote yourself at the end of each batch when a task crystallized a non-trivial decision / lesson / risk worth keeping (see PROJECT_MEMORY_PROTOCOL). lifecycle_finish no longer auto-promotes. The executor is responsible for Maintain duties on atlas/10-impl + Project Memory during the batch loop; leaf agents do not write.</rule>
 
 <phase name="progress-triggers" priority="HIGH">
@@ -525,5 +528,6 @@ spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batc
 <forbidden>Never re-execute tasks that are already completed</forbidden>
 <forbidden>NEVER spawn agent="implementer" (unsuffixed) or agent="implementer-frontend" (the old single-frontend agent) - those names no longer exist in the registry; always dispatch by the explicit Domain value</forbidden>
 <forbidden>NEVER edit the contract file on behalf of an implementer; if an implementer escalates a contract mismatch, mark the task BLOCKED and report</forbidden>
+<forbidden>NEVER push --force, --force-with-lease, --no-verify, or reset --hard as lifecycle recovery shortcuts</forbidden>
 </never-do>`,
 };

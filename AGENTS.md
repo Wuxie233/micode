@@ -130,6 +130,39 @@ executor 给 implementer / reviewer 派任务时 prompt 中固定含 `<context-b
 
 `src/agents/project-memory-protocol.ts` 是协议唯一权威来源；`tests/agents/project-memory-protocol.test.ts` 强制 6 个主 / 协调 agent 都注入该协议。本节是 markdown 镜像，命名和段落顺序需保持一致。
 
+## Autonomous Lifecycle Recovery
+
+Lifecycle 工具（`lifecycle_finish` / `lifecycle_commit` / `lifecycle_current` / `lifecycle_resume` / `lifecycle_recovery_decision`）在失败时输出结构化 `### Recovery hint` 段。primary agent（brainstormer / commander）按 hint 在最多 3 轮内自主恢复；planner / executor 在自身职责范围内最多 2 轮。
+
+### Failure kinds and recommended actions
+
+| failure_kind | recommended_next_action | 含义 |
+|---|---|---|
+| `ambiguous_lifecycle` | `clean_stale_records` / `ask_user` | 多个 active lifecycle，按 stale 标记分流 |
+| `stale_record` | `clean_stale_records` | record 与 GitHub / 仓库现状脱节 |
+| `record_missing` | `resume_issue` | 本地缺记录，从 issue body 重建 |
+| `invalid_issue_number` | `ask_user` | 编号非法或无法归一 |
+| `dirty_base_worktree` | `use_temp_merge_worktree` | 主 worktree dirty，工具已切临时 worktree |
+| `merge_conflict` | `resolve_conflicts` | 临时 worktree 内冲突待人工或 AI 解决 |
+| `untracked_cleanup_blocker` | `quarantine_artifacts` / `ask_user` | 未跟踪文件分类归属 |
+| `tracked_cleanup_blocker` | `ask_user` | tracked 改动疑似用户作品 |
+| `pr_checks_failed` | `ask_user` | CI 失败，需要改代码 |
+| `push_failed` | `retry_finish` | 网络/竞争，允许有界重试 |
+| `unknown` | `ask_user` | 工具未能归类 |
+
+### Hard safety rules (no exceptions during recovery)
+
+- 不 force push，禁止 `git push --force` / `--force-with-lease`（no force push）。
+- 不跳过 git hooks，禁止 `--no-verify`。
+- 不对主 worktree 执行 `git reset --hard`。
+- 不自动删除用户文件；只能 quarantine 明确归属 lifecycle 的 untracked artifacts 到 `thoughts/lifecycle/backups/issue-<N>/...`。
+- 不自动重启 OpenCode（no auto-restart）。
+- bounded recovery 最多 3 轮（primary）/ 2 轮（planner、executor）；超过即 halt。
+
+### Drift guard
+
+Drift guard: `src/agents/brainstormer.ts` 与 `src/agents/commander.ts` 的 `<bounded-recovery-loop>` 块是单源；`src/agents/planner.ts` 与 `src/agents/executor.ts` 的相应规则与之语义对齐但裁剪到本职范围。本节是 markdown 镜像，drift 由 `tests/agents/agents-md-lifecycle-recovery.test.ts` 强制。
+
 ## Knowledge Bootstrap Commands
 
 micode 提供三条零参数 orchestrator 命令，用单一入口建立 / 大更新 / 体检三层项目知识库 (`/init` → `ARCHITECTURE.md` + `CODE_STYLE.md`；`/mindmodel` → `.mindmodel/`；`/atlas-init` → `atlas/`)。三条命令均路由到 `knowledge-bootstrap-orchestrator` agent，由该 agent 按 mode 串行调度现有 `project-initializer` / `mm-orchestrator` / `atlas-initializer` 子流程。
