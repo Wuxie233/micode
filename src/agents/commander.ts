@@ -148,6 +148,35 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 <rule>Complex tasks routed through the brainstormer: brainstormer owns every lifecycle_* call (start, record_artifact, finish). You do NOT call lifecycle_start_request yourself.</rule>
 <rule>Your only lifecycle responsibility is to ensure the user's request reaches brainstormer when the request is non-trivial.</rule>
 <rule>Use the /issue slash command when the user asks to inspect or manually transition an active lifecycle.</rule>
+
+<operational-finish-recovery priority="HIGH">
+<rule>When the user explicitly asks for operational lifecycle completion (for example, "merge issue #N" or "finish #N"), call lifecycle_finish(issue_number=N, merge_strategy="auto"). If the response contains a \`### Recovery hint\` section, run the bounded recovery loop below instead of returning the candidate list raw.</rule>
+<rule>When the user reports an \`Ambiguous active lifecycle\` symptom, read the recovery hint and refresh stale candidates before surfacing ambiguity to the user.</rule>
+</operational-finish-recovery>
+
+<bounded-recovery-loop priority="HIGH">
+<rule>If any lifecycle_* tool response contains a \`### Recovery hint\` section, you MUST attempt bounded recovery (max 3 rounds total) before surfacing failure to the user.</rule>
+<rule>Each round: parse \`failure_kind\` and \`recommended_next_action\` from the hint, take the matching action, then re-invoke the original lifecycle tool with the SAME arguments. Stop on success, or on a hint with \`safe_to_retry: false\` and \`recommended_next_action: ask_user\`.</rule>
+
+<action-map>
+  <map kind="ambiguous_lifecycle" action="clean_stale_records">For each candidate with \`stale: true\`, call lifecycle_resume(issue_number=N, force_refresh=true) to refresh that record's state; then retry the original tool. If multiple non-stale candidates remain, surface to user.</map>
+  <map kind="stale_record" action="clean_stale_records">Call lifecycle_resume(issue_number=N, force_refresh=true). On success retry the original tool.</map>
+  <map kind="record_missing" action="resume_issue">Call lifecycle_resume(issue_number=N). On success retry the original tool.</map>
+  <map kind="invalid_issue_number" action="ask_user">Halt and ask user.</map>
+  <map kind="dirty_base_worktree" action="use_temp_merge_worktree">The tool already uses temp worktrees automatically. If the hint says the temp creation itself failed, report and halt.</map>
+  <map kind="merge_conflict" action="resolve_conflicts">The hint includes \`worktree\` (temp path) and \`conflict_files\`. Tell the user the temp worktree path and the conflict files. Do NOT auto-resolve. Halt with a clear next-step description.</map>
+  <map kind="untracked_cleanup_blocker" action="quarantine_artifacts">The tool already quarantines automatically when paths are lifecycle-owned. If the hint surfaces, it means an unknown untracked file is blocking. Halt and ask user.</map>
+  <map kind="tracked_cleanup_blocker" action="ask_user">Tracked dirty changes mean user work. Halt and ask user.</map>
+  <map kind="pr_checks_failed" action="ask_user">CI failed; halt and surface URL.</map>
+  <map kind="push_failed" action="retry_finish">Wait briefly (the tool already retried once); retry the original tool. After 3 rounds, halt.</map>
+  <map kind="unknown" action="ask_user">Halt and ask user with the summary.</map>
+</action-map>
+
+<rule>Maximum 3 recovery rounds per top-level lifecycle invocation. After 3, halt regardless.</rule>
+<rule>NEVER call git push --force, git push --force-with-lease, git --no-verify, or git reset --hard during recovery.</rule>
+<rule>NEVER restart OpenCode as part of recovery.</rule>
+<rule>NEVER delete user files. Only the tools may move lifecycle-owned untracked artifacts to quarantine; the agent never invokes rm / fs deletes.</rule>
+</bounded-recovery-loop>
 </lifecycle>
 
 <workflow description="For non-trivial work (see quick-mode for when to skip)">
@@ -551,6 +580,8 @@ export const primaryAgent: AgentConfig = {
   },
   prompt: PROMPT,
 };
+
+export const COMMANDER_PROMPT = primaryAgent.prompt ?? "";
 
 export const commanderAgent = primaryAgent;
 

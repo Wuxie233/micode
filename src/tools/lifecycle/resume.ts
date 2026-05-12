@@ -1,7 +1,8 @@
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-
-import type { Resolver } from "@/lifecycle/resolver";
+import { buildHint } from "@/lifecycle/recovery/hint";
+import { formatRecoveryHint } from "@/lifecycle/recovery/hint-format";
+import { type Resolver, StaleRecordError } from "@/lifecycle/resolver";
 import type { LifecycleRecord } from "@/lifecycle/types";
 import { extractErrorMessage } from "@/utils/errors";
 
@@ -22,19 +23,40 @@ const formatRecord = (record: LifecycleRecord): string => {
   return `${SUCCESS_HEADER}${DOUBLE_LINE_BREAK}${[TABLE_HEADER, TABLE_SEPARATOR, row].join(LINE_BREAK)}`;
 };
 
-export type ResolverResumeHandle = Pick<Resolver, "resume">;
+const formatStaleRecordFailure = (error: StaleRecordError): string => {
+  const summary = error.summary.staleReason ?? extractErrorMessage(error);
+  const hint = buildHint({
+    failureKind: "stale_record",
+    recommendedNextAction: "clean_stale_records",
+    summary,
+    issueNumber: error.summary.issueNumber,
+    branch: error.summary.branch,
+    worktree: error.summary.worktree,
+    candidates: [error.summary],
+  });
+  return `${FAILURE_HEADER}${DOUBLE_LINE_BREAK}${formatRecoveryHint(hint)}`;
+};
+
+export type ResolverResumeHandle = Pick<Resolver, "resume" | "forceRefresh">;
 
 export function createLifecycleResumeTool(resolver: ResolverResumeHandle): ToolDefinition {
   return tool({
     description: DESCRIPTION,
     args: {
       issue_number: tool.schema.number().describe("GitHub issue number to reconstruct"),
+      force_refresh: tool.schema
+        .boolean()
+        .optional()
+        .describe("Refresh from GitHub issue body even when a local record exists"),
     },
     execute: async (args) => {
       try {
-        const issueNumber = (args as { issue_number: number }).issue_number;
-        return formatRecord(await resolver.resume(issueNumber));
+        const issueNumber = args.issue_number;
+        const forceRefresh = args.force_refresh ?? false;
+        const record = forceRefresh ? await resolver.forceRefresh(issueNumber) : await resolver.resume(issueNumber);
+        return formatRecord(record);
       } catch (error) {
+        if (error instanceof StaleRecordError) return formatStaleRecordFailure(error);
         return `${FAILURE_HEADER}${DOUBLE_LINE_BREAK}${extractErrorMessage(error)}`;
       }
     },

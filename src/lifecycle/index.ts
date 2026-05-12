@@ -696,6 +696,8 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
       baseBranch: resolvedBranch.branch,
       reviewSummarySection,
       postSummaryComment: config.lifecycle.postPrSummaryComment,
+      issueNumber: merging.issueNumber,
+      artifactPointers: Object.values(merging.artifacts).flat(),
     });
     const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
     const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);

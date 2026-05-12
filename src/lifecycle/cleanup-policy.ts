@@ -1,8 +1,15 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { type CleanupClassification, classifyCleanup } from "./cleanup-classifier";
+import { classifyQuarantine, type QuarantineClassification } from "./recovery/quarantine-classifier";
 import type { LifecycleRunner, RunResult } from "./runner";
 import type { CleanupOutcome } from "./types";
+
+export interface CleanupFsOps {
+  readonly mkdir: (path: string) => void;
+  readonly rename: (from: string, to: string) => void;
+}
 
 export interface CleanupPolicyInput {
   /** Repository root (where lifecycle was started). */
@@ -17,6 +24,14 @@ export interface CleanupPolicyInput {
   readonly issueClosed: boolean;
   /** Caller-provided: true when `branch` has been merged into `baseBranch`. */
   readonly branchMerged: boolean;
+  /** Lifecycle issue number used to place quarantine backups. */
+  readonly issueNumber: number;
+  /** Known lifecycle artifact pointers that are safe to quarantine if untracked. */
+  readonly artifactPointers: readonly string[];
+  /** Optional clock override for deterministic backup directory names in tests. */
+  readonly now?: () => Date;
+  /** Optional filesystem adapter; defaults to mkdirSync(recursive) + renameSync. */
+  readonly fsOps?: CleanupFsOps;
   /**
    * Optional override for filesystem existence check. When omitted the policy
    * uses node:fs `existsSync(worktree)`. Tests inject this to avoid touching disk.
@@ -26,6 +41,11 @@ export interface CleanupPolicyInput {
 
 const OK = 0;
 const completed = (run: RunResult): boolean => run.exitCode === OK;
+
+const defaultFsOps: CleanupFsOps = {
+  mkdir: (path) => mkdirSync(path, { recursive: true }),
+  rename: (from, to) => renameSync(from, to),
+};
 
 const splitLines = (s: string): readonly string[] =>
   s
@@ -74,10 +94,86 @@ const blocked = (classification: CleanupClassification): CleanupOutcome => {
   }
 };
 
+const blockedAmbiguous = (reason: string): CleanupOutcome => ({
+  kind: "blocked-ambiguous",
+  reason,
+  retried: false,
+});
+
 const formatRunFailure = (run: RunResult): string => {
   const pieces = [run.stderr.trim(), run.stdout.trim()].filter((p) => p.length > 0);
   if (pieces.length === 0) return `exit ${run.exitCode}`;
   return pieces.join(" ");
+};
+
+const buildBackupBase = (cwd: string, issueNumber: number, timestamp: Date): string =>
+  join(cwd, "thoughts", "lifecycle", "backups", `issue-${issueNumber}`, timestamp.toISOString().replace(/[:.]/g, "-"));
+
+const quarantineUntracked = (
+  cwd: string,
+  worktree: string,
+  paths: readonly string[],
+  artifactPointers: readonly string[],
+  issueNumber: number,
+  timestamp: Date,
+  fsOps: CleanupFsOps,
+):
+  | { readonly kind: "ok"; readonly backupBase: string; readonly count: number }
+  | { readonly kind: "blocked"; readonly reason: string } => {
+  const decisions: readonly QuarantineClassification[] = paths.map((path) =>
+    classifyQuarantine({ untrackedPath: path, artifactPointers }),
+  );
+  const blockedDecision = decisions.find((decision) => decision.kind === "block");
+  if (blockedDecision !== undefined) return { kind: "blocked", reason: blockedDecision.reason };
+
+  const backupBase = buildBackupBase(cwd, issueNumber, timestamp);
+  for (const rel of paths) {
+    const from = join(worktree, rel);
+    const to = join(backupBase, rel);
+    fsOps.mkdir(dirname(to));
+    fsOps.rename(from, to);
+  }
+
+  return { kind: "ok", backupBase, count: paths.length };
+};
+
+const removeWorktree = async (
+  runner: LifecycleRunner,
+  input: CleanupPolicyInput,
+  reason: string,
+): Promise<CleanupOutcome> => {
+  const firstAttempt = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
+  if (completed(firstAttempt)) {
+    return removed(reason, false);
+  }
+
+  // Safe retry: prune stale registrations once, then retry remove exactly once.
+  await runner.git(["worktree", "prune"], { cwd: input.cwd });
+  const retry = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
+  if (completed(retry)) {
+    return removed(reason, true);
+  }
+
+  return failed(`git_worktree_remove: ${formatRunFailure(retry)}`, true);
+};
+
+const handleAmbiguousCleanup = async (
+  runner: LifecycleRunner,
+  input: CleanupPolicyInput,
+  untrackedPaths: readonly string[],
+): Promise<CleanupOutcome> => {
+  const quarantine = quarantineUntracked(
+    input.cwd,
+    input.worktree,
+    untrackedPaths,
+    input.artifactPointers,
+    input.issueNumber,
+    (input.now ?? (() => new Date()))(),
+    input.fsOps ?? defaultFsOps,
+  );
+  if (quarantine.kind === "blocked") return blockedAmbiguous(`quarantine_blocked: ${quarantine.reason}`);
+
+  return removeWorktree(runner, input, `quarantined ${quarantine.count} files to ${quarantine.backupBase}`);
 };
 
 export async function runCleanup(runner: LifecycleRunner, input: CleanupPolicyInput): Promise<CleanupOutcome> {
@@ -92,31 +188,21 @@ export async function runCleanup(runner: LifecycleRunner, input: CleanupPolicyIn
   const status = await runner.git(["status", "--porcelain"], { cwd: input.worktree });
   const untracked = await runner.git(["ls-files", "--others", "--exclude-standard"], { cwd: input.worktree });
 
+  const untrackedPaths = completed(untracked) ? splitLines(untracked.stdout) : [];
   const classification = classifyCleanup({
     worktreeExists: true,
     branchMerged: input.branchMerged,
     issueClosed: input.issueClosed,
     workingTreeStatus: completed(status) ? filterUntrackedStatus(status.stdout) : "",
-    untrackedPaths: completed(untracked) ? splitLines(untracked.stdout) : [],
+    untrackedPaths,
     worktreeIsRegistered: isRegistered,
     worktreeIsExternalClone: !isRegistered,
   });
 
   if (classification.kind !== "clean") {
+    if (classification.kind === "ambiguous") return handleAmbiguousCleanup(runner, input, untrackedPaths);
     return blocked(classification);
   }
 
-  const firstAttempt = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
-  if (completed(firstAttempt)) {
-    return removed(classification.reason, false);
-  }
-
-  // Safe retry: prune stale registrations once, then retry remove exactly once.
-  await runner.git(["worktree", "prune"], { cwd: input.cwd });
-  const retry = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
-  if (completed(retry)) {
-    return removed(classification.reason, true);
-  }
-
-  return failed(`git_worktree_remove: ${formatRunFailure(retry)}`, true);
+  return removeWorktree(runner, input, classification.reason);
 }

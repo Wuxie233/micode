@@ -193,9 +193,15 @@ ${PROJECT_MEMORY_PROTOCOL}
 
 <phase name="output">
   <action>Write plan to thoughts/shared/plans/YYYY-MM-DD-{topic}.md using the skeleton-then-fill protocol (see <write-protocol>)</action>
-  <action>Try lifecycle_current. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the plan. If kind=none, leave the plan uncommitted (a plan without an active lifecycle is likely a design-only flow; the user will commit when ready). If kind=ambiguous, surface the candidates to the user and stop.</action>
+  <action>Try lifecycle_current. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the plan. If lifecycle_commit returns push_failed with safe_to_retry=true, retry lifecycle_commit once and only once; if it still fails, stop with ### Recovery hint and do NOT run git push yourself. If kind=none, leave the plan uncommitted (a plan without an active lifecycle is likely a design-only flow; the user will commit when ready). If kind=ambiguous, inspect candidates for any stale candidate that matches the current worktree/branch/issue context; call lifecycle_resume with force_refresh: true for that issue, then retry lifecycle_current. Use max 2 recovery rounds total. Only if lifecycle_current is still ambiguous after recovery, surface the candidates to the user and stop with ### Recovery hint.</action>
   <action>Do NOT run git commands directly except as the explicit fallback above</action>
 </phase>
+
+<lifecycle-recovery priority="HIGH">
+  <rule>If lifecycle_current returns kind=ambiguous, do not immediately stop when a stale candidate is recoverable. For each recovery round, choose the stale candidate most clearly tied to the current branch/worktree/issue, call lifecycle_resume(issue_number, force_refresh: true), then retry lifecycle_current.</rule>
+  <rule>Use max 2 recovery rounds. If the lifecycle remains ambiguous, report all candidates and include a ### Recovery hint section explaining which issue/branch looked stale, what recovery was attempted, and what the caller can retry safely.</rule>
+  <rule>If lifecycle_commit returns push_failed and safe_to_retry is true, retry lifecycle_commit once. If safe_to_retry is false or the retry fails, stop and include a ### Recovery hint section. Never compensate with manual git push.</rule>
+</lifecycle-recovery>
 
 <phase name="progress-triggers" priority="HIGH">
   <rule>When a key dependency or constraint is discovered mid-planning, call lifecycle_log_progress(kind=discovery, summary="...")</rule>
@@ -652,5 +658,8 @@ spawn_agent(agent="pattern-finder", prompt="Find auth middleware patterns", desc
   <forbidden>Never combine multiple batches into one Edit call - one Edit per batch, always</forbidden>
   <forbidden>Never use Write to overwrite a partially-filled file - it would destroy already-landed batches. Use Edit on the remaining markers instead. The only exception is the mismatched-skeleton case in <resume-rule>.</forbidden>
   <forbidden>Never put placeholder markers (<!-- BATCH-*-TASKS -->) inside Task code blocks, fenced regions, or anywhere they would create false replacement targets</forbidden>
+  <forbidden>HARD FORBIDDEN: never use git push --force, git push --force-with-lease, or any other force push as lifecycle recovery.</forbidden>
+  <forbidden>HARD FORBIDDEN: never use --no-verify or skip hooks to force a planner lifecycle commit through.</forbidden>
+  <forbidden>HARD FORBIDDEN: never use git reset --hard or destructive reset commands to resolve planner lifecycle ambiguity.</forbidden>
 </never-do>`,
 };

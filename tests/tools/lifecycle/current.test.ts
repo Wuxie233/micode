@@ -44,11 +44,31 @@ describe("lifecycle_current tool", () => {
 
   it("renders ambiguous with candidates", async () => {
     const out = await exec({
-      current: async () => ({ kind: "ambiguous", candidates: [3, 9] }),
+      current: async () => ({
+        kind: "ambiguous",
+        candidates: [
+          {
+            issueNumber: 3,
+            branch: "issue/3-old",
+            worktree: null,
+            state: "in_progress",
+            stale: true,
+            staleReason: "branch missing",
+          },
+          {
+            issueNumber: 9,
+            branch: "issue/9-active",
+            worktree: "/tmp/issue-9-active",
+            state: "branch_ready",
+            stale: false,
+            staleReason: null,
+          },
+        ],
+      }),
     });
     expect(out).toContain("## Ambiguous");
-    expect(out).toContain("- #3");
-    expect(out).toContain("- #9");
+    expect(out).toContain("| 3 | `issue/3-old` | `-` | `in_progress` | `true` | branch missing |");
+    expect(out).toContain("| 9 | `issue/9-active` | `/tmp/issue-9-active` | `branch_ready` | `false` | - |");
   });
 
   it("renders failure header when resolver throws", async () => {

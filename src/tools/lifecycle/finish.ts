@@ -2,6 +2,8 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { FinishInput, FinishOutcome, LifecycleHandle } from "@/lifecycle";
+import { buildHint, type LifecycleRecoveryHint } from "@/lifecycle/recovery/hint";
+import { formatRecoveryHint } from "@/lifecycle/recovery/hint-format";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 
@@ -51,8 +53,13 @@ const formatNote = (note: string | null): string => {
   return `${LINE_BREAK}${LINE_BREAK}**Note**: ${note}`;
 };
 
-const formatReport = (header: string, table: string, note: string | null): string => {
-  return `${header}${LINE_BREAK}${LINE_BREAK}${table}${formatNote(note)}`;
+const formatHintSuffix = (hint: LifecycleRecoveryHint | undefined): string => {
+  if (!hint) return "";
+  return `${LINE_BREAK}${LINE_BREAK}${formatRecoveryHint(hint)}`;
+};
+
+const formatReport = (header: string, table: string, note: string | null, hint?: LifecycleRecoveryHint): string => {
+  return `${header}${LINE_BREAK}${LINE_BREAK}${table}${formatNote(note)}${formatHintSuffix(hint)}`;
 };
 
 const hasFailedChecks = (outcome: FinishOutcome): boolean => {
@@ -65,9 +72,9 @@ const hasExecutorBlocked = (outcome: FinishOutcome): boolean => {
 
 const formatOutcome = (issueNumber: number, outcome: FinishOutcome): string => {
   const table = formatTable(issueNumber, outcome);
-  if (hasExecutorBlocked(outcome)) return formatReport(BLOCKED_HEADER, table, outcome.note);
-  if (hasFailedChecks(outcome)) return formatReport(CHECKS_FAILED_HEADER, table, outcome.note);
-  if (!outcome.merged) return formatReport(FAILURE_HEADER, table, outcome.note);
+  if (hasExecutorBlocked(outcome)) return formatReport(BLOCKED_HEADER, table, outcome.note, outcome.recoveryHint);
+  if (hasFailedChecks(outcome)) return formatReport(CHECKS_FAILED_HEADER, table, outcome.note, outcome.recoveryHint);
+  if (!outcome.merged) return formatReport(FAILURE_HEADER, table, outcome.note, outcome.recoveryHint);
   return formatReport(SUCCESS_HEADER, table, outcome.note);
 };
 
@@ -90,7 +97,14 @@ export function createLifecycleFinishTool(handle: LifecycleFinishHandle): ToolDe
         const outcome = await handle.finish(args.issue_number, createFinishInput(mergeStrategy, waitForChecks));
         return formatOutcome(args.issue_number, outcome);
       } catch (error) {
-        return `${FAILURE_HEADER}${LINE_BREAK}${LINE_BREAK}${extractErrorMessage(error)}`;
+        const summary = extractErrorMessage(error);
+        const hint = buildHint({
+          failureKind: "unknown",
+          recommendedNextAction: "ask_user",
+          summary,
+          issueNumber: args.issue_number,
+        });
+        return `${FAILURE_HEADER}${LINE_BREAK}${LINE_BREAK}${summary}${LINE_BREAK}${LINE_BREAK}${formatRecoveryHint(hint)}`;
       }
     },
   });

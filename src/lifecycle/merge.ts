@@ -1,9 +1,18 @@
+import { tmpdir } from "node:os";
+
 import * as v from "valibot";
 
 import { config } from "@/utils/config";
-
+import type { CleanupFsOps } from "./cleanup-policy";
 import { runCleanup } from "./cleanup-policy";
 import { postOnceSummaryComment, upsertPullRequest, writeReviewSummaryToPrBody } from "./pr";
+import { buildHint, type LifecycleRecoveryHint } from "./recovery/hint";
+import {
+  computeTempWorktreePath,
+  createTempMergeWorktree,
+  readMergeConflicts,
+  removeTempMergeWorktree,
+} from "./recovery/temp-worktree";
 import type { LifecycleRunner, RunResult } from "./runner";
 import type { CleanupOutcome, FinishInput, FinishOutcome } from "./types";
 
@@ -19,6 +28,9 @@ export interface FinishLifecycleInput {
   readonly sleep?: (ms: number) => Promise<void>;
   readonly reviewSummarySection?: string;
   readonly postSummaryComment?: boolean;
+  readonly issueNumber?: number;
+  readonly artifactPointers?: readonly string[];
+  readonly fsOps?: CleanupFsOps;
 }
 
 const MERGE_STRATEGY = {
@@ -61,13 +73,16 @@ const GH_JSON_FLAG = "--json";
 const GH_CHECK_FIELDS = "state,name";
 const GH_SQUASH_FLAG = "--squash";
 
-const GIT_CHECKOUT = "checkout";
 const GIT_MERGE = "merge";
 const GIT_NO_FF_FLAG = "--no-ff";
+const GIT_FF_ONLY_FLAG = "--ff-only";
+const GIT_FETCH = "fetch";
 const GIT_PUSH = "push";
 const GIT_ORIGIN = "origin";
 const GIT_BRANCH = "branch";
 const GIT_DELETE_FLAG = "-d";
+const TMP_DIR = tmpdir();
+const ISSUE_BRANCH_RE = /^issue\/(\d+)-/;
 
 const CLEANUP_BLOCK_PREFIX = "cleanup_blocked";
 const CLEANUP_FAIL_PREFIX = "cleanup_failed";
@@ -92,6 +107,15 @@ interface InjectOutcome {
 }
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
+
+const deriveIssueNumber = (branch: string): number | null => {
+  const match = ISSUE_BRANCH_RE.exec(branch);
+  const raw = match?.[1];
+  if (!raw) return null;
+  const issueNumber = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) return null;
+  return issueNumber;
+};
 
 const getBaseBranch = (input: FinishLifecycleInput): string => {
   if (input.baseBranch === undefined || input.baseBranch.length === 0) {
@@ -131,6 +155,22 @@ const NOT_ATTEMPTED: CleanupOutcome = {
 
 const createPreCleanupOutcome = (merged: boolean, prUrl: string | null, note: string | null): FinishOutcome =>
   createOutcome(merged, prUrl, NOT_ATTEMPTED, note);
+
+const withHint = (outcome: FinishOutcome, hint: LifecycleRecoveryHint): FinishOutcome => ({
+  ...outcome,
+  recoveryHint: hint,
+});
+
+const unknownHint = (issueNumber: number, branch: string, detail: string, worktree: string): LifecycleRecoveryHint =>
+  buildHint({
+    failureKind: "unknown",
+    recommendedNextAction: "ask_user",
+    summary: detail,
+    issueNumber,
+    branch,
+    worktree,
+    safeToRetry: false,
+  });
 
 const mergeNotes = (...notes: readonly (string | null | undefined)[]): string | null => {
   const present = notes.filter((note): note is string => note !== undefined && note !== null && note.length > 0);
@@ -243,6 +283,9 @@ const runPostMergeCleanup = async (runner: LifecycleRunner, input: FinishLifecyc
     baseBranch: getBaseBranch(input),
     issueClosed: true,
     branchMerged: true,
+    issueNumber: input.issueNumber ?? deriveIssueNumber(input.branch) ?? 0,
+    artifactPointers: input.artifactPointers ?? [],
+    fsOps: input.fsOps,
   });
 };
 
@@ -308,29 +351,173 @@ const runGitStep = async (
   return formatCommandFailure(label, run);
 };
 
+const createUnknownTempOutcome = (
+  issueNumber: number,
+  input: FinishLifecycleInput,
+  note: string,
+  worktree: string,
+): FinishOutcome =>
+  withHint(createPreCleanupOutcome(false, null, note), unknownHint(issueNumber, input.branch, note, worktree));
+
+const createInvalidIssueNumberOutcome = (input: FinishLifecycleInput): FinishOutcome =>
+  withHint(
+    createPreCleanupOutcome(false, null, "invalid_issue_branch"),
+    buildHint({
+      failureKind: "invalid_issue_number",
+      recommendedNextAction: "ask_user",
+      summary: `cannot derive issue number from branch '${input.branch}'`,
+      branch: input.branch,
+    }),
+  );
+
+const createTempWorktreeFailureOutcome = (
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  reason: string,
+  tmpPath: string,
+): FinishOutcome =>
+  withHint(
+    createPreCleanupOutcome(false, null, `temp_worktree_create_failed: ${reason}`),
+    buildHint({
+      failureKind: "dirty_base_worktree",
+      recommendedNextAction: "use_temp_merge_worktree",
+      summary: reason,
+      issueNumber,
+      branch: input.branch,
+      worktree: tmpPath,
+      safeToRetry: false,
+    }),
+  );
+
+const prepareTempMergeWorktree = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  baseBranch: string,
+): Promise<
+  { readonly kind: "created"; readonly path: string } | { readonly kind: "failed"; readonly outcome: FinishOutcome }
+> => {
+  const tmpPath = computeTempWorktreePath({ repoRoot: input.cwd, issueNumber, tmpDir: TMP_DIR });
+  const create = await createTempMergeWorktree(runner, {
+    repoRoot: input.cwd,
+    issueNumber,
+    baseBranch,
+    tmpDir: TMP_DIR,
+  });
+  if (create.kind === "failed") {
+    return { kind: "failed", outcome: createTempWorktreeFailureOutcome(input, issueNumber, create.reason, tmpPath) };
+  }
+
+  const fetchNote = await runGitStep(runner, [GIT_FETCH, GIT_ORIGIN, baseBranch], create.path, "git_fetch");
+  if (fetchNote)
+    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, fetchNote, create.path) };
+
+  const ffOnlyNote = await runGitStep(
+    runner,
+    [GIT_MERGE, GIT_FF_ONLY_FLAG, `${GIT_ORIGIN}/${baseBranch}`],
+    create.path,
+    "git_ff_only",
+  );
+  if (ffOnlyNote)
+    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, ffOnlyNote, create.path) };
+
+  return { kind: "created", path: create.path };
+};
+
+const createMergeConflictOutcome = (
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  worktree: string,
+  conflictFiles: readonly string[],
+): FinishOutcome =>
+  withHint(
+    createPreCleanupOutcome(false, null, "merge_conflict"),
+    buildHint({
+      failureKind: "merge_conflict",
+      recommendedNextAction: "resolve_conflicts",
+      summary: `merge conflicts in ${conflictFiles.length} file(s); resolve in temp worktree then retry`,
+      issueNumber,
+      branch: input.branch,
+      worktree,
+      conflictFiles,
+      safeToRetry: false,
+    }),
+  );
+
+const mergeIssueBranchIntoBase = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  worktree: string,
+): Promise<FinishOutcome | null> => {
+  const merged = await runner.git([GIT_MERGE, GIT_NO_FF_FLAG, input.branch], { cwd: worktree });
+  if (completed(merged)) return null;
+
+  const conflictFiles = await readMergeConflicts(runner, worktree);
+  if (conflictFiles.length > 0) return createMergeConflictOutcome(input, issueNumber, worktree, conflictFiles);
+
+  const note = formatCommandFailure("git_merge", merged);
+  return createUnknownTempOutcome(issueNumber, input, note, worktree);
+};
+
+const pushMergedBaseBranch = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  baseBranch: string,
+  worktree: string,
+): Promise<FinishOutcome | null> => {
+  const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, baseBranch], { cwd: worktree });
+  if (completed(pushed)) return null;
+
+  const pushNote = formatCommandFailure("git_push", pushed);
+  const removed = await removeTempMergeWorktree(runner, { repoRoot: input.cwd, path: worktree });
+  const removeNote = completed(removed) ? null : formatCommandFailure("temp_worktree_remove_failed", removed);
+  const safeToRetry = completed(removed);
+  const note = mergeNotes(pushNote, removeNote);
+  return withHint(
+    createPreCleanupOutcome(false, null, note),
+    buildHint({
+      failureKind: "push_failed",
+      recommendedNextAction: safeToRetry ? "retry_finish" : "ask_user",
+      summary: mergeNotes(pushed.stderr || pushed.stdout || "push failed", removeNote) ?? "push failed",
+      issueNumber,
+      branch: input.branch,
+      worktree,
+      safeToRetry,
+    }),
+  );
+};
+
+const deleteBranchIfWorktreeRemoved = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  cleanup: CleanupOutcome,
+): Promise<string | null> => {
+  if (!worktreeRemovedFromCleanup(cleanup)) return null;
+  return runGitStep(runner, [GIT_BRANCH, GIT_DELETE_FLAG, input.branch], input.cwd, "git_branch_delete");
+};
+
 const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
   const baseBranch = getBaseBranch(input);
-  const checkoutNote = await runGitStep(runner, [GIT_CHECKOUT, baseBranch], input.cwd, "git_checkout");
-  if (checkoutNote) return createPreCleanupOutcome(false, null, checkoutNote);
+  const issueNumber = deriveIssueNumber(input.branch);
+  if (issueNumber === null) return createInvalidIssueNumberOutcome(input);
 
-  const mergeNote = await runGitStep(runner, [GIT_MERGE, GIT_NO_FF_FLAG, input.branch], input.cwd, "git_merge");
-  if (mergeNote) return createPreCleanupOutcome(false, null, mergeNote);
+  const prepared = await prepareTempMergeWorktree(runner, input, issueNumber, baseBranch);
+  if (prepared.kind === "failed") return prepared.outcome;
 
-  const pushNote = await runGitStep(runner, [GIT_PUSH, GIT_ORIGIN, baseBranch], input.cwd, "git_push");
-  if (pushNote) return createPreCleanupOutcome(false, null, pushNote);
+  const mergeFailure = await mergeIssueBranchIntoBase(runner, input, issueNumber, prepared.path);
+  if (mergeFailure) return mergeFailure;
+
+  const pushFailure = await pushMergedBaseBranch(runner, input, issueNumber, baseBranch, prepared.path);
+  if (pushFailure) return pushFailure;
+
+  await removeTempMergeWorktree(runner, { repoRoot: input.cwd, path: prepared.path });
 
   const cleanup = await runPostMergeCleanup(runner, input);
   // Only attempt branch deletion when the worktree actually went away; deleting the
   // branch while the worktree still references it would fail and add noise.
-  let branchDeleteNote: string | null = null;
-  if (worktreeRemovedFromCleanup(cleanup)) {
-    branchDeleteNote = await runGitStep(
-      runner,
-      [GIT_BRANCH, GIT_DELETE_FLAG, input.branch],
-      input.cwd,
-      "git_branch_delete",
-    );
-  }
+  const branchDeleteNote = await deleteBranchIfWorktreeRemoved(runner, input, cleanup);
 
   return createOutcome(true, null, cleanup, mergeNotes(cleanupNote(cleanup), branchDeleteNote));
 };
