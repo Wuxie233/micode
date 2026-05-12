@@ -2,6 +2,8 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
 import type { LifecycleHandle } from "@/lifecycle";
+import { buildHint } from "@/lifecycle/recovery/hint";
+import { formatRecoveryHint } from "@/lifecycle/recovery/hint-format";
 import type { RecoveryDecision } from "@/lifecycle/recovery/types";
 import { extractErrorMessage } from "@/utils/errors";
 
@@ -14,11 +16,22 @@ const SUCCESS_HEADER = "## Lifecycle recovery decision";
 const FAILURE_HEADER = "## lifecycle_recovery_decision failed";
 const LINE_BREAK = "\n";
 
-const formatDecision = (decision: RecoveryDecision): string => {
+const formatDecision = (decision: RecoveryDecision, issueNumber: number): string => {
   const lines = [`**kind:** \`${decision.kind}\``, `**lastSeq:** ${decision.lastSeq}`];
   if (decision.kind === "blocked") {
     lines.push(`**reason:** \`${decision.reason}\``);
     lines.push(`**detail:** ${decision.detail}`);
+    lines.push(
+      "",
+      formatRecoveryHint(
+        buildHint({
+          failureKind: "unknown",
+          recommendedNextAction: "ask_user",
+          summary: `${decision.reason}: ${decision.detail}`,
+          issueNumber,
+        }),
+      ),
+    );
   }
   if (decision.kind === "reconciled_resume") {
     lines.push(`**backfilledBatches:** ${decision.backfilledBatches.join(", ") || "(none)"}`);
@@ -47,7 +60,7 @@ export function createLifecycleRecoveryDecisionTool(handle: RecoveryHandle): Too
     execute: async (args) => {
       try {
         const decision = await handle.decideRecovery(args.issue_number, args.owner);
-        return formatDecision(decision);
+        return formatDecision(decision, args.issue_number);
       } catch (error) {
         return `${FAILURE_HEADER}${LINE_BREAK}${LINE_BREAK}${extractErrorMessage(error)}`;
       }
