@@ -76,6 +76,7 @@ import {
   checkBtcaAvailable,
   createAtlasLookupTool,
   createBatchReadTool,
+  createDetectKnowledgeStateTool,
   createMindmodelLookupTool,
   createOcttoTools,
   createProjectMemoryForgetTool,
@@ -145,6 +146,8 @@ if (process.env.FIRECRAWL_API_KEY) {
   };
 }
 
+const KNOWLEDGE_BOOTSTRAP_ORCHESTRATOR_AGENT = "knowledge-bootstrap-orchestrator";
+
 const PLUGIN_COMMANDS = {
   init: {
     description: "Initialize project with ARCHITECTURE.md and CODE_STYLE.md",
@@ -171,6 +174,25 @@ const PLUGIN_COMMANDS = {
     agent: PRIMARY_AGENT_NAME,
     template:
       "Use the project_memory_* tools to handle this request. Default behaviour: if no arguments are given, run project_memory_health and report a concise summary; if arguments are given, run project_memory_lookup with the arguments as the query. $ARGUMENTS",
+  },
+  "all-init": {
+    description: "Bootstrap all three knowledge layers (/init + /mindmodel + /atlas-init) for the missing parts only",
+    agent: KNOWLEDGE_BOOTSTRAP_ORCHESTRATOR_AGENT,
+    template:
+      "Mode: missing-only. The user invoked /all-init. Use detect_knowledge_state to inspect which of the three layers (/init, .mindmodel, atlas) are missing, then serial-spawn only the missing parts (project-initializer for /init, mm-orchestrator for .mindmodel, atlas-initializer for atlas). If all three layers are present, exit friendly and recommend /all-rebuild. $ARGUMENTS",
+  },
+  "all-rebuild": {
+    description:
+      "Rebuild all three knowledge layers (/init + /mindmodel + /atlas-init) with overwrite (requires user confirm)",
+    agent: KNOWLEDGE_BOOTSTRAP_ORCHESTRATOR_AGENT,
+    template:
+      "Mode: refresh-all. The user invoked /all-rebuild. Use detect_knowledge_state to list files that will be overwritten, then ask the user to confirm via octto. If confirmed, collect bootstrap-questionnaire answers via octto and serial-spawn project-initializer (overwrite ARCHITECTURE.md/CODE_STYLE.md), mm-orchestrator (overwrite .mindmodel/), atlas-initializer (force-rebuild atlas/, pre-seed octto answers in the spawn prompt). $ARGUMENTS",
+  },
+  "all-status": {
+    description: "Inspect status of all three knowledge layers and Project Memory (read-only)",
+    agent: KNOWLEDGE_BOOTSTRAP_ORCHESTRATOR_AGENT,
+    template:
+      "Mode: status-only. The user invoked /all-status. Use detect_knowledge_state, atlas_lookup-derived signals, and project_memory_health to produce a single read-only markdown report. Do NOT write any files. Do NOT spawn any child orchestrators. $ARGUMENTS",
   },
 };
 
@@ -966,6 +988,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       ...ptyTools,
       ...octtoTools,
       ...lifecycleTools,
+      ...createDetectKnowledgeStateTool(ctx),
     },
 
     config: async (config) => {

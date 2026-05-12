@@ -129,3 +129,30 @@ executor 给 implementer / reviewer 派任务时 prompt 中固定含 `<context-b
 ### Drift guard
 
 `src/agents/project-memory-protocol.ts` 是协议唯一权威来源；`tests/agents/project-memory-protocol.test.ts` 强制 6 个主 / 协调 agent 都注入该协议。本节是 markdown 镜像，命名和段落顺序需保持一致。
+
+## Knowledge Bootstrap Commands
+
+micode 提供三条零参数 orchestrator 命令，用单一入口建立 / 大更新 / 体检三层项目知识库 (`/init` → `ARCHITECTURE.md` + `CODE_STYLE.md`；`/mindmodel` → `.mindmodel/`；`/atlas-init` → `atlas/`)。三条命令均路由到 `knowledge-bootstrap-orchestrator` agent，由该 agent 按 mode 串行调度现有 `project-initializer` / `mm-orchestrator` / `atlas-initializer` 子流程。
+
+| 命令 | Mode | 行为 |
+|---|---|---|
+| `/all-init` | missing-only | 检测三层状态；仅建立缺失部分，已有的层不动 |
+| `/all-rebuild` | refresh-all | 列出会被覆盖的文件并 octto confirm；确认后串行重建三层（force-rebuild 语义） |
+| `/all-status` | status-only | 只读体检：三层是否存在 + atlas 健康度 + Project Memory 摘要，不写任何文件 |
+
+### Dispatch rules
+
+- 三条命令零参数。不引入 `--flag`，每个 mode 一个独立命令。
+- 不替换 `/init`、`/mindmodel`、`/atlas-init`、`/atlas-status`、`/atlas-refresh`。这些原有命令继续可独立使用。
+- 串行执行：`project-initializer` → `mm-orchestrator` → `atlas-initializer`，依赖顺序由后两阶段读取前阶段文件决定。禁止并发。
+- 中间失败不回滚：任一子 agent 失败时已完成阶段保留，用户复跑 `/all-init` 智能补齐。
+- `/all-rebuild` 必须显式 confirm，否则不动文件。
+- octto 问卷在 orchestrator 入口一次性收集（`intent.pitch` / `intent.user` / `intent.shape`），下传给 `atlas-initializer` 的 spawn prompt，避免重复询问。octto 不可用时用 `DEFAULT_BOOTSTRAP_ANSWERS` 兜底并 warn。
+
+### Output discipline
+
+每次执行后必须输出"本次知识上下文"板块（参见 `src/agents/knowledge-context-section.ts` 的 `KNOWLEDGE_CONTEXT_SECTION` 单源），列出本次任务读取与维护的知识来源。`/all-status` 之外的模式还需输出 commander effect-first 的四段终态汇报（预期表现 / 你可以怎么验收 / 已知限制 / 实现记录）。
+
+### Drift guard
+
+`src/agents/knowledge-bootstrap-orchestrator.ts`、`src/tools/knowledge-bootstrap/`、`src/index.ts` 中 `PLUGIN_COMMANDS` 的 `all-init` / `all-rebuild` / `all-status` 条目是单源；本节是 markdown 镜像，drift 由 `tests/agents/agents-md-knowledge-bootstrap.test.ts` 强制。
