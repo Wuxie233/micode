@@ -16,6 +16,13 @@ describe("atlas-compiler agent", () => {
     expect(atlasCompilerAgent.prompt).toContain("atlas:");
   });
 
+  it("documents explicit user-triggered invocation instead of lifecycle ownership", () => {
+    expect(atlasCompilerAgent.prompt).not.toContain("lifecycle finish hook");
+    expect(atlasCompilerAgent.prompt).not.toContain("most recent lifecycle finish");
+    expect(atlasCompilerAgent.prompt).toContain("user-triggered");
+    expect(atlasCompilerAgent.prompt).toContain("/atlas-refresh");
+  });
+
   it("forbids self-modification of _meta logs and challenges", () => {
     expect(atlasCompilerAgent.prompt).toContain("must not modify");
     expect(atlasCompilerAgent.prompt).toContain("_meta");

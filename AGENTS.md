@@ -39,14 +39,15 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 
 主 agent（commander / brainstormer / octto）在用户可见的终态汇报里，必须把表达中心从"我做了什么"切到"你会看到什么效果，以及怎么验证它"。详细 prompt 规则见 `src/agents/commander.ts`、`src/agents/brainstormer.ts`、`src/agents/octto.ts` 的 `<effect-first-reporting>` block；本节是 markdown 镜像，给后续 prompt 编辑一个单源说明。
 
-### 默认四段结构
+### 默认五段结构
 
 终态汇报按以下顺序输出，section 标题用以下中文原文：
 
 1. **预期表现**：用户现在会看到什么行为。1 句话或 2-3 个 bullet，说"是什么"不说"改了哪个文件"。
 2. **你可以怎么验收**：用户用 2-4 个步骤自己验证（打开某页 / 跑某命令 / 检查某输出），不是 agent 内部 verify 脚本。
 3. **已知限制 / 下一步**：没完成的部分、需要用户手动处理的事、已知边界。没有就写"无"。
-4. **实现记录**：commit / 测试 / issue / batch / 子任务等过程产物压缩为 1-2 行。
+4. **本次知识上下文**：本任务读取/确认/维护了哪些 Atlas 节点、Project Memory 条目、Mindmodel 主题，传给子 agent 的 context-brief 摘要长度。段尾两行固定状态：`Atlas status: <value>` 和 `Project Memory status: <value>`。
+5. **实现记录**：commit / 测试 / issue / batch / 子任务等过程产物压缩为 1-2 行。
 
 ### Blocked / failed-stop 例外
 
@@ -56,7 +57,7 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 ### 何时不强行套模板
 
 - 纯查询 / 状态查询 / 单行回答类任务可以一句话完成。
-- 中间 checkpoint（不是终态）不需要套四段；只在用户可见的终态汇报触发。
+- 中间 checkpoint（不是终态）不需要套五段；只在用户可见的终态汇报触发。
 - 用户明确要求"展开 commit / 测试 / 子任务"时，"实现记录"段可以展开到正常长度，但"预期表现"和"你可以怎么验收"仍然在前。
 
 ### 与其它规则的关系
@@ -67,7 +68,7 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 
 ### Drift guard
 
-`commander.ts` 与 `brainstormer.ts` 的 `<effect-first-reporting>` block 互为单源，必须 byte-identical（由 `tests/agents/effect-first-reporting.test.ts` 强制）。`octto.ts` 因 workflow 不同使用语义对齐但措辞贴合 octto 角色的版本，drift-guard 不强制 byte-identity，但仍然检查四个 section 标题和 blocked / failed-stop 例外存在。本节是 markdown 镜像，命名和段落顺序需保持一致。
+`commander.ts` 与 `brainstormer.ts` 的 `<effect-first-reporting>` block 互为单源，必须 byte-identical（由 `tests/agents/effect-first-reporting.test.ts` 强制）。`octto.ts` 因 workflow 不同使用语义对齐但措辞贴合 octto 角色的版本，drift-guard 不强制 byte-identity，但仍然检查五个 section 标题和 blocked / failed-stop 例外存在。本节是 markdown 镜像，命名和段落顺序需保持一致。"本次知识上下文" subsection 由 `src/agents/knowledge-context-section.ts` 提供，必须在 commander / brainstormer / octto 中保持 byte-identical。
 
 ## Atlas Shared Mental Model
 
@@ -77,14 +78,16 @@ Project Atlas (`atlas/`) 是人和 AI 共享的项目心智模型。任何想要
 
 ### 协议四步
 
-1. **Consult**：非平凡任务开始时读取 atlas-context（自动注入）和按需 `atlas_lookup`，优先关注 `00-index`、`10-impl`、`20-behavior`、`40-decisions`、`50-risks`。
-2. **Detect**：发现代码 / 行为 / 决策与 Atlas 节点冲突时，证据充分标记 `stale-detected`，证据不足标记 `cannot-assess`，禁止静默覆盖。
-3. **Propose**：任务结束前判断"是否改变高级工程师解释项目的方式"。改变 → 写 `thoughts/shared/atlas-deltas/YYYY-MM-DD-{topic}-delta.md` 并 `lifecycle_log_artifact(kind=delta, pointer=<path>)`；不变 → status=`no-change`。
-4. **Merge**：delta 由用户显式触发的 `atlas-compiler` 或 `/atlas-refresh` 走 staging → reconcile → atomic-rename 归并。Lifecycle 不自动调用 atlas-compiler。
+1. **Read**：非平凡任务开始时读取 atlas-context（自动注入）和按需 `atlas_lookup`，优先关注 `00-index`、`10-impl`、`20-behavior`、`40-decisions`、`50-risks`。把读到的节点写进终态"本次知识上下文 - 读取"段。
+2. **Maintain**：在 batch 完成 / 决策拍板 / lifecycle 阶段切换等 checkpoint 主动写或更新节点。冲突 / 人工编辑走 challenge / delta fallback (`thoughts/shared/atlas-deltas/`)。
+3. **Verify**：reviewer 与 executor 在批次完成时检查代码 diff 与对应节点 claim 是否一致；leaf agent 发现冲突通过 "Atlas observation: stale-detected" 单行 escalate，executor 决定本批次内修补还是登记为 stale。
+4. **Report**：终态汇报包含一行 `Atlas status: <value>`，并把 Read / Maintain / Verify 关键事实压缩进"本次知识上下文"段。
+
+`atlas-compiler` 与 `/atlas-refresh` 降级为辅助批量整理 / 历史 reconcile 路径，不在日常开发主路径触发。Atlas update 主路径是 agent 在任务中 Maintain。
 
 ### 状态取值
 
-终态 "实现记录" 段必须包含一行 `Atlas status: <value>`，取值之一：`consulted` / `no-change` / `delta-created` / `stale-detected` / `blocked` / `cannot-assess`。
+终态 "本次知识上下文" 段必须包含一行 `Atlas status: <value>`，取值之一：`consulted` / `read-only` / `maintained` / `verified` / `no-change` / `delta-created` / `stale-detected` / `conflict` / `blocked` / `cannot-assess`。新增 `read-only` / `maintained` / `verified` / `conflict` 与 Read/Maintain/Verify/Report 协议对齐。
 
 ### Lifecycle 边界
 
@@ -97,3 +100,32 @@ Lifecycle 是 source provider only。`lifecycle_finish`、`lifecycle_commit` 与
 ### Drift guard
 
 `src/agents/atlas-mental-model.ts` 是协议唯一权威来源；本节是 markdown 镜像，命名和段落顺序需保持一致。
+
+## Project Memory Active Maintenance
+
+Project Memory 是项目级的"为什么 / 选了什么"记忆（SQLite 中的 decisions / lessons / risks / open questions）。它与 Atlas（共享心智模型，markdown vault）和 Mindmodel（代码风格约束，.mindmodel/）分工不同：
+
+- **Atlas** 回答"现在的项目是怎样组织的"。
+- **Project Memory** 回答"我们之前为什么这么选 / 踩过什么坑 / 留下了什么 open question"。
+- **Mindmodel** 回答"代码具体应该怎么写"。
+
+完整 prompt 协议块在 `src/agents/project-memory-protocol.ts` 导出的 `PROJECT_MEMORY_PROTOCOL` 字符串中，brainstormer / planner / executor / reviewer / commander / octto 通过模板字面量统一注入。本节是 markdown 镜像。
+
+### 协议四步（与 Atlas 对称）
+
+1. **Read**：非平凡任务开始时调用 `project_memory_lookup` 查相关主题，把读到的条目写进"本次知识上下文 - 读取"。
+2. **Maintain**：在任务过程中主动 `project_memory_promote`：拍板的 decision、可复用 lesson、新增 risk、留下的 open question；带 source pointer (design/plan/ledger/lifecycle/manual)。
+3. **Verify**：reviewer 检查代码是否覆盖、违反或 supersede 某条 active decision；触发 active risk 边界时升级为新的 decision/lesson。
+4. **Report**：终态"本次知识上下文"段固定一行 `Project Memory status: <value>`，取值 `read-only` / `wrote-decision` / `wrote-lesson` / `wrote-risk` / `wrote-open-question` / `no-change` / `cannot-assess`。
+
+### Lifecycle 边界
+
+Lifecycle 不再自动 promote ledger 或 issue body 进 Project Memory。`config.projectMemory.promoteOnLifecycleFinish` 默认值为 `false`；保留 opt-in 字段是为了支持极少数实验场景，不作为日常路径。grep-based 边界测试见 `tests/lifecycle/project-memory-boundary.test.ts`。
+
+### 父子协同 (Context Brief)
+
+executor 给 implementer / reviewer 派任务时 prompt 中固定含 `<context-brief>` 块，下传已读 Atlas 节点 / Project Memory 条目 / Mindmodel 主题 / 已确认环境 / contract 路径。子 agent 默认信任 brief，不重复 lookup；冲突时 escalate "Brief mismatch" 由 executor 处理。完整规范见 `src/agents/executor.ts` `<context-brief>` 块。
+
+### Drift guard
+
+`src/agents/project-memory-protocol.ts` 是协议唯一权威来源；`tests/agents/project-memory-protocol.test.ts` 强制 6 个主 / 协调 agent 都注入该协议。本节是 markdown 镜像，命名和段落顺序需保持一致。

@@ -1,81 +1,102 @@
 /**
  * Single source of truth for the Atlas Mental Model Maintenance Protocol.
  *
+ * Read / Maintain / Verify / Report semantics: agent owns maintenance during
+ * the task, tool only stores and serves. Leaf agents do not write Atlas; only
+ * executor / brainstormer / planner / commander / octto maintain nodes.
+ *
  * This string is injected into brainstormer / planner / executor / reviewer /
  * commander / octto prompts via template-literal interpolation. Drift-guard
  * tests verify presence; they do NOT enforce byte-identical surrounding prompt.
  *
  * Lifecycle is a source provider only. This module does NOT register any
- * lifecycle-finish auto-spawn behaviour. See R2 / R7 in the plan.
+ * lifecycle-finish auto-spawn or auto-promote behaviour.
  */
 
 export const ATLAS_STATUS_VALUES = [
   "consulted",
+  "read-only",
+  "maintained",
+  "verified",
   "no-change",
   "delta-created",
   "stale-detected",
+  "conflict",
   "blocked",
   "cannot-assess",
 ] as const;
 
 export type AtlasStatus = (typeof ATLAS_STATUS_VALUES)[number];
 
-export const ATLAS_MENTAL_MODEL_PROTOCOL = `<atlas-mental-model priority="critical" description="Project Atlas as the shared human+AI mental model">
+export const ATLAS_MENTAL_MODEL_PROTOCOL = `<atlas-mental-model priority="critical" description="Project Atlas as the shared human+AI mental model, maintained by agents during the task">
 <purpose>
 Project Atlas (atlas/) 是人和 AI 共享的项目心智模型，不是 AI 私有缓存、代码索引或 lifecycle 副作用。
 任何想要全局理解 micode 的人或 agent，最该先读 Atlas。
-本协议规定 agent 在工作过程中如何 Consult / Detect / Propose / Merge Atlas，并在终态报告里给出 Atlas status。
+本协议规定 agent 在任务过程中如何 Read / Maintain / Verify / Report Atlas，并在终态报告里给出 Atlas status。
+核心范式：agent 是知识维护者，工具只负责存储、检索、写锁、敏感数据过滤、用户主动入口。
 </purpose>
 
 <role-of-lifecycle priority="hard">
 Lifecycle 只是 source provider。它提供 issue / design / plan / commit / PR / ledger 等来源材料，
-但不拥有 Atlas 更新触发权。绝对不允许通过 lifecycle_finish 隐式自动 spawn atlas-compiler 或写入 Atlas vault。
-Atlas update 必须由 agent 显式产生 delta 并通过 atlas-compiler / atlas-worker-* / /atlas-refresh 这些用户可见入口归并。
+但不拥有 Atlas 更新触发权。绝对不允许通过 lifecycle_finish / lifecycle_commit / 任何 hook 隐式自动 spawn atlas-compiler 或写入 Atlas vault。
+Atlas update 在任务过程中由 agent 主动 Maintain；批量修复 / 历史整理由用户显式触发 atlas-compiler 或 /atlas-refresh。
 </role-of-lifecycle>
 
+<role-of-leaf-agents priority="hard">
+leaf agent（implementer-frontend-ui / implementer-frontend-code / implementer-backend / implementer-general / reviewer）不直接写 Atlas vault，
+不调用 atlas_lookup 工具。它们只消费 executor 在 spawn prompt 中下传的 atlas excerpt（≤500 字 verbatim slice）。
+若 leaf agent 在工作中发现 Atlas 节点与代码事实冲突，必须在终态报告中以 "Atlas observation: stale-detected — <node> — <reason>" 单行形式向 executor escalate，
+而不是自己写 delta 或修改 atlas/ 文件。
+</role-of-leaf-agents>
+
 <protocol>
-<step name="Consult">
-非平凡任务（设计 / 计划 / 跨模块改动 / 引入新机制）开始时，必须 consult Atlas：
+<step name="Read">
+非平凡任务（设计 / 计划 / 跨模块改动 / 引入新机制）开始时，必须 Read Atlas：
 读取 brainstormer/planner 自动注入的 atlas-context；按需调用 atlas_lookup(query, layer?) 获取更深入的节点。
 优先关注：00-index、相关 10-impl、20-behavior、40-decisions、50-risks。
+把读到的节点 + 关键摘要写进终态 "本次知识上下文 - 读取" 一行。
 若 atlas-context 缺失或 atlas_lookup 返回 vault 未初始化，记录 status=cannot-assess 并继续主任务，不阻塞。
 </step>
 
-<step name="Detect">
-工作中若发现代码事实 / 用户行为 / 架构决策与 Atlas 节点冲突：
-- 证据充分（例如能给出 git source link 或 design 文档反例）→ 标记 status=stale-detected，并把冲突点摘要写进终态报告。
-- 证据不足 → 标记 status=cannot-assess，不要把旧 claim 当事实使用，也不要静默覆盖。
-人工编辑过的节点（atlas/_meta 标注或 mtime 漂移）一律走 challenge 路线，禁止直接 overwrite。
-</step>
-
-<step name="Propose">
-任务结束前，根据"是否改变高级工程师解释项目的方式"判断：
-- 改变了模块职责 / 用户行为规则 / workflow contract / 关键决策 / 长期风险 → status=delta-created，写一份 delta 文件。
-- 仅改了局部实现细节、bug 修复、prompt 微调、测试用例 → status=no-change。
+<step name="Maintain">
+在任务推进的语义 checkpoint 上主动维护节点：
+- 模块职责 / 接口契约变化 → 更新 atlas/10-impl 节点。
+- 用户可见行为规则变化 → 更新 atlas/20-behavior 节点。
+- 架构决策 / 取舍产生 → 更新 atlas/40-decisions 节点。
+- 长期风险 / 已知坑 → 更新 atlas/50-risks 节点。
+checkpoint 粒度：每个稳定 batch 完成 + reviewer 通过；每次结论性架构决策；每次 lifecycle 阶段切换。
+人工编辑过的节点（atlas/_meta 标注或 mtime 漂移）一律走 challenge 路线，禁止直接 overwrite；写 atlas/_meta/challenges/ 记录建议变更。
+status=maintained 表示本任务已主动写入 vault；status=delta-created 表示因冲突 / 人工编辑而走 delta fallback。
 delta 文件路径：thoughts/shared/atlas-deltas/YYYY-MM-DD-{topic}-delta.md
-delta 内容包含：目标层（10-impl / 20-behavior / 40-decisions / 50-risks）、claim 中文正文、source pointer、影响范围、stale/uncertain 标记。
 中文优先：节点名、H1/H2、prose、summary、rationale、risk、behavior 描述用中文。
-机器语法保留英文：frontmatter keys、IDs、wikilink syntax ([[...]])、file paths、tool names、command names、source pointers (code:.../lifecycle:.../thoughts:...)、test names、code symbols。
-若 lifecycle 处于 active 状态，调用 lifecycle_log_artifact(kind=delta, pointer=<path>) 把 delta 注册到 issue body；否则只把 delta 路径写进终态报告，由用户决定何时 merge。
+机器语法保留英文：frontmatter keys、IDs、wikilink syntax ([[...]]), file paths、tool names、command names、source pointers (code:.../lifecycle:.../thoughts:...)、test names、code symbols。
 </step>
 
-<step name="Merge">
-delta 不由 primary agent 直接写入 Atlas vault。Merge 由 atlas-compiler 或 /atlas-refresh 走 staging → reconcile → atomic-rename，
-保留人工编辑保护、challenge 路由和写锁。本协议下 merge 永远是用户显式触发或后续会话显式触发，禁止自动调用。
+<step name="Verify">
+reviewer 与 executor 在批次完成时执行 Verify：
+- 代码 diff 与对应 Atlas 节点的 claim 是否一致；契约描述与实现是否对得上。
+- decision 节点提到的取舍是否仍然成立；risk 节点提到的边界是否已被本次改动跨过。
+- leaf agent 报告中出现 "Atlas observation: stale-detected" 时，executor 决定本批次内修补还是登记到 status=stale-detected 让用户决定。
+status=verified 表示本任务里对相关节点完成了一致性核对（与 maintained 可同时出现）；status=conflict 表示发现冲突且本任务不修。
+</step>
+
+<step name="Report">
+任务终态（用户可见汇报）必须包含一行 Atlas status，取值之一：
+${ATLAS_STATUS_VALUES.join(" | ")}
+并把本次 Read / Maintain / Verify 的关键事实压缩进 "本次知识上下文" 段。
+- consulted：读了 atlas-context 但本任务未触发后续 Maintain / Verify（极少；通常会跟 no-change）。
+- read-only：本任务只 Read，未 Maintain 也未 Verify。
+- maintained：本任务在 checkpoint 主动写入 Atlas vault。
+- verified：本任务完成了 Atlas 一致性核对。
+- no-change：本任务不改变长期心智模型。
+- delta-created：本任务因冲突 / 人工编辑产出 delta 文件，附路径。
+- stale-detected：发现 Atlas 与现状冲突但本任务不修，已登记由用户决定。
+- conflict：Verify 发现节点与实现冲突且不在本批次修复范围。
+- blocked：Maintain 失败 / vault 写锁占用 / atlas-compiler 不可用。
+- cannot-assess：atlas-context 读取失败或 vault 未初始化。
+status 缺省时由 primary agent 从已知证据补全，不能省略。
 </step>
 </protocol>
-
-<status-reporting priority="critical">
-终态用户可见汇报（effect-first 第四段 "实现记录"）必须包含一行 Atlas status，取值之一：
-${ATLAS_STATUS_VALUES.join(" | ")}
-缺省时由 primary agent 从已知证据补全，不能省略。
-- consulted：读了 atlas-context 但本任务未触发 detect/propose 后续动作（极少；通常会跟一个 no-change）。
-- no-change：本任务不改变长期心智模型。
-- delta-created：本任务已产出 delta 文件，附路径。
-- stale-detected：发现 Atlas 与现状冲突但本任务不修，已记录到终态报告由用户决定如何处理。
-- blocked：delta 已产出但 merge 失败 / atlas vault 写锁占用 / atlas-compiler 不可用。
-- cannot-assess：atlas-context 读取失败或 vault 未初始化。
-</status-reporting>
 
 <chinese-content-guard>
 传递项目信息（节点名 / 标题 / 正文 / summary / behavior 描述 / decision rationale / risk 描述）必须中文优先。
@@ -84,10 +105,11 @@ ${ATLAS_STATUS_VALUES.join(" | ")}
 </chinese-content-guard>
 
 <anti-patterns>
-- 把 lifecycle_finish 当作 Atlas 更新入口。
+- 把 lifecycle_finish / lifecycle_commit 当作 Atlas 更新入口。
 - 在没有证据的情况下静默覆盖 Atlas stale claim。
 - 把每次 bug 修复或 prompt 微调都产出 delta（应当是 no-change）。
 - 把节点名 / H1 / 正文用英文，但机器语法（wikilink / path / code symbol）被翻译成中文。
-- 在 implementer / reviewer 等 leaf agent 里调用 atlas_lookup 工具（leaf agent 只接受父层传递的 atlas excerpt）。
+- 在 implementer / reviewer 等 leaf agent 里调用 atlas_lookup 工具或修改 atlas/ 文件（leaf agent 只接受父层传递的 atlas excerpt，并通过 escalate 报告冲突）。
+- 把 atlas-compiler 当成日常主路径；它是辅助批量整理 / 历史 reconcile 工具，由用户显式触发。
 </anti-patterns>
 </atlas-mental-model>`;

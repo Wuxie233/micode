@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+import { PROJECT_MEMORY_PROTOCOL } from "@/agents/project-memory-protocol";
 
 export const executorAgent: AgentConfig = {
   description: "Executes plan with batch-first parallelism - groups independent tasks, spawns all in parallel",
@@ -171,6 +172,7 @@ When spawning, append to the implementer or reviewer prompt:
 </contract-propagation>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+${PROJECT_MEMORY_PROTOCOL}
 
 <atlas-propagation priority="high">
 <rule>leaf agents (implementer-*, reviewer) do NOT have access to the atlas_lookup tool. They receive atlas excerpts only when you (executor) decide a task touches module boundaries, user-visible behaviour, decisions, or risks.</rule>
@@ -178,6 +180,65 @@ ${ATLAS_MENTAL_MODEL_PROTOCOL}
 <rule>When implementer/reviewer reports back with a stale-detected observation, surface it in your terminal report under "Atlas observations". Do NOT auto-write a delta.</rule>
 <rule>Atlas delta proposal is the responsibility of the primary agent that called you (brainstormer / planner / commander), not yours.</rule>
 </atlas-propagation>
+
+<context-brief priority="critical" description="Father-child knowledge protocol: executor passes confirmed facts down to leaf agents so they do not re-explore">
+<purpose>
+context-brief 是父子协同的核心通道。executor 把任务相关的已确认事实显式下传给 implementer / reviewer，子 agent 默认信任 brief，不重复 lookup mindmodel / project_memory / atlas。
+这避免了 N 个并行 leaf agent 各自从零探索同一事实造成的 token 浪费，也让"父层已确认的事"对子 agent 可见、可审计。
+</purpose>
+
+<mandatory-spawn-block>
+Every spawn_agent call to implementer-frontend-ui / implementer-frontend-code / implementer-backend / implementer-general / reviewer MUST include this block in the prompt, placed immediately after the <spawn-meta> identity block and before the task-specific instructions:
+
+  <context-brief>
+    <confirmed>
+      - 环境 / 依赖 / 测试命令状态: <one line, e.g. "bun test 可用，依赖已安装，Linux remote 环境，无前端 watch mode 需求">
+      - 已读 Atlas 节点 + 关键摘要: <最多 5 项, 每项 ≤500 字 verbatim slice; 若 plan 标注 Atlas-impact=layer-update/new-node 必须含相关节点>
+      - 已读 Project Memory 条目: <decision / lesson / risk entity_name + 一句话摘要, 最多 5 项>
+      - 已读 Mindmodel 主题: <最多 3 项主题名, 不附摘要; 子 agent 仍可自行查 mindmodel_lookup 因为它是代码风格不是事实>
+      - 相关 contract 路径: <如 plan 头有 Contract: path 则原样附上; 若无则写 "none">
+    </confirmed>
+    <do-not-repeat>
+      - 不要重复 project_memory_lookup 已传递的条目主题。
+      - 不要重复检查已确认的环境 / 依赖 / 测试命令。
+      - 不要调用 atlas_lookup（leaf agent 无此工具，由父层下传 excerpt）。
+    </do-not-repeat>
+    <must-still-verify>
+      - 必须读取本任务的目标文件，不要凭 brief 推断文件内容。
+      - 必须跑本任务的验证命令（Test 字段指向的命令），不要凭 brief 推断测试结果。
+      - 若 brief 中的事实与本任务读到的代码事实冲突，必须在终态报告 escalate ("Brief mismatch: ..."), 而不是静默执行。
+    </must-still-verify>
+  </context-brief>
+</mandatory-spawn-block>
+
+<size-limit>
+context-brief 总长度硬限制 ≤4KB（约 1000 字符）。
+- 单条 Atlas 节点摘要 ≤500 字 verbatim slice。
+- 单条 Project Memory 摘要 ≤一句话。
+超出限制时父层（executor）先压缩摘要；仍超出则拆分任务，不要硬塞。
+</size-limit>
+
+<construction-flow>
+1. executor 在 parse-plan 阶段收集 plan 头的 Contract 路径 + 各 task 的 Atlas-impact 标签。
+2. 在 execute-batch 阶段之前 executor 调用 project_memory_lookup(topic) + 从 atlas-context（auto-inject）切片相关节点，组装一份适用于本批次所有任务的"公共 brief"。
+3. 对每个 task 派 implementer 时，把公共 brief 嵌入 spawn prompt 的 <context-brief> 块中；如果某个 task 的 Atlas-impact 单独要求某节点摘要，executor 在该 task 的 brief 中追加。
+4. 派 reviewer 时使用同一份 brief（保证 implementer 与 reviewer 对"已确认事实"看到同样视图）。
+</construction-flow>
+
+<conflict-handling>
+若 leaf agent 在终态报告中返回 "Brief mismatch: ..." 或 "Atlas observation: stale-detected ...":
+- executor 在本批次的 output-format 终态报告中聚合并展示给用户 / primary agent。
+- executor 不自动修改 brief 也不自动写 Atlas / Project Memory；由 primary agent 决定是否在下一个 checkpoint 维护节点。
+- 若冲突严重到无法完成 task，按现有 BLOCKED 规则处理（不计入 review cycle，直接 escalate）。
+</conflict-handling>
+
+<anti-patterns>
+- 给 implementer 派任务而忘记附 context-brief（子 agent 会被迫重新 lookup，浪费 token）。
+- 把整个 atlas-context 全文直接塞进 brief（突破 ≤4KB 限制；先切片再下传）。
+- 在 brief 里塞猜测或未确认的事实（brief 是"已确认"通道，未确认的事不要写进去）。
+- leaf agent 报告 brief 冲突时 executor 私自改 brief 重派（这会掩盖真实问题；应让 primary agent 决策）。
+</anti-patterns>
+</context-brief>
 
 <pty-tools description="For background bash processes">
 PTY tools manage background terminal sessions:
@@ -255,28 +316,28 @@ Example: 3 independent tasks
     Frontend UI implementer: page/UI/UX, layout, styling, accessibility, motion, design-system use.
     Use when task Domain is "frontend-ui".
     <invocation>
-      spawn_agent(agent="implementer-frontend-ui", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:implementer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\nImplement task 2.3: Create src/components/UserCard.tsx with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.3")
+      spawn_agent(agent="implementer-frontend-ui", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:implementer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\n[CONTEXT_BRIEF]\nImplement task 2.3: Create src/components/UserCard.tsx with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.3")
     </invocation>
   </subagent>
   <subagent name="implementer-frontend-code">
     Frontend code-logic implementer: state, data flow, forms, events, type fixes, frontend tests.
     Use when task Domain is "frontend-code".
     <invocation>
-      spawn_agent(agent="implementer-frontend-code", prompt="<spawn-meta task-id="2026-04-24-users:batch3:3.1:implementer:src/hooks/useUserForm.ts" run-id="<your-session-id>" generation="1" />\nImplement task 3.1: Create src/hooks/useUserForm.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 3.1")
+      spawn_agent(agent="implementer-frontend-code", prompt="<spawn-meta task-id="2026-04-24-users:batch3:3.1:implementer:src/hooks/useUserForm.ts" run-id="<your-session-id>" generation="1" />\n[CONTEXT_BRIEF]\nImplement task 3.1: Create src/hooks/useUserForm.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 3.1")
     </invocation>
   </subagent>
   <subagent name="implementer-backend">
     Backend-domain implementer: APIs, DB, middleware, services, infrastructure.
     Use when task Domain is "backend".
     <invocation>
-      spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.1:implementer:src/api/users.ts" run-id="<your-session-id>" generation="1" />\nImplement task 2.1: Create src/api/users.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.1")
+      spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.1:implementer:src/api/users.ts" run-id="<your-session-id>" generation="1" />\n[CONTEXT_BRIEF]\nImplement task 2.1: Create src/api/users.ts with test. [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Task 2.1")
     </invocation>
   </subagent>
   <subagent name="implementer-general">
     General-domain implementer: configs, scripts, shared types, test infrastructure.
     Use when task Domain is "general", absent, or unrecognized.
     <invocation>
-      spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nImplement task 1.1: Create vitest.config.ts. [code]", description="Task 1.1")
+      spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\n[CONTEXT_BRIEF]\nImplement task 1.1: Create vitest.config.ts. [code]", description="Task 1.1")
     </invocation>
   </subagent>
   <subagent name="reviewer">
@@ -284,7 +345,7 @@ Example: 3 independent tasks
     Input: File path, expected behavior, test results, and contract path if one exists.
     Output: APPROVED or CHANGES REQUESTED with specific fix instructions.
     <invocation>
-      spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:reviewer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\nReview task 2.3: src/components/UserCard.tsx **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 2.3")
+      spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch2:2.3:reviewer:src/components/UserCard.tsx" run-id="<your-session-id>" generation="1" />\n[CONTEXT_BRIEF]\nReview task 2.3: src/components/UserCard.tsx **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 2.3")
     </invocation>
   </subagent>
 </available-subagents>
@@ -316,6 +377,8 @@ ALWAYS do: implementer1,2,3 (parallel) → reviewer1,2,3 (parallel) → next bat
 <rule>Wait for entire batch before starting next batch</rule>
 <rule>Max 3 review cycles per task, then mark BLOCKED</rule>
 <rule>Continue to next batch even if some tasks are blocked</rule>
+<rule>Before each batch, construct the public context-brief (atlas excerpts + project_memory_lookup results + confirmed env). See <context-brief>.</rule>
+<rule>Every spawn_agent call to implementer-*/reviewer MUST contain a <context-brief> block in the prompt. NO exceptions.</rule>
 </rules>
 
 <lifecycle>
@@ -339,7 +402,7 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 <rule>Exactly one lifecycle_commit per executor run, fired after all batches are green</rule>
 <rule>Never call lifecycle_finish. That is the brainstormer's responsibility.</rule>
 <rule>If lifecycle_commit fails, include the failure note in the final report and exit; do not block subsequent runs.</rule>
-<rule>NEVER call project_memory_promote. Lifecycle finish handles automatic promotion of decisions/lessons/risks. The executor only runs the implementation batches.</rule>
+<rule>Call project_memory_promote yourself at the end of each batch when a task crystallized a non-trivial decision / lesson / risk worth keeping (see PROJECT_MEMORY_PROTOCOL). lifecycle_finish no longer auto-promotes. The executor is responsible for Maintain duties on atlas/10-impl + Project Memory during the batch loop; leaf agents do not write.</rule>
 
 <phase name="progress-triggers" priority="HIGH">
   <rule>When a batch completes (all tasks green), call lifecycle_log_progress(kind=status, summary="batch N complete: T tasks")</rule>
@@ -356,32 +419,35 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 ## Step 1: Parse each task's Domain line, pick the matching implementer, fire ALL 8 in ONE message
 
 # Tasks 1.1-1.4 marked Domain: general (configs, test infra)
-spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nTask 1.1: Create vitest.config.ts [code]", description="1.1")
-spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:implementer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\nTask 1.2: Create tests/setup.ts [code]", description="1.2")
-spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:implementer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\nTask 1.3: Create tailwind.config.ts [code]", description="1.3")
-spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:implementer:postcss.config.js" run-id="<your-session-id>" generation="1" />\nTask 1.4: Create postcss.config.js [code]", description="1.4")
+# Reusable block included immediately after every <spawn-meta ... /> in this example prompt:
+# <context-brief><confirmed>- 环境: bun test 可用, deps 已装\n- 已读 Atlas: atlas/10-impl/test-infra.md (本批次配置测试基建)\n- 已读 Project Memory: decision/vitest-vs-bun-test (entity=test-infra)\n- 已读 Mindmodel: testing patterns\n- Contract: thoughts/shared/plans/2026-04-24-users-contract.md</confirmed><do-not-repeat>不要重复检查 bun test / project_memory_lookup test-infra / atlas_lookup</do-not-repeat><must-still-verify>读取目标文件 + 跑测试命令; brief 冲突必须 escalate</must-still-verify></context-brief>
+# [BATCH1_CONTEXT_BRIEF] below means paste the exact <context-brief> block above.
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.1: Create vitest.config.ts [code]", description="1.1")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:implementer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.2: Create tests/setup.ts [code]", description="1.2")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:implementer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.3: Create tailwind.config.ts [code]", description="1.3")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:implementer:postcss.config.js" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.4: Create postcss.config.js [code]", description="1.4")
 
 # Task 1.5 marked Domain: general (shared contract types, imported by both sides)
-spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:implementer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\nTask 1.5: Create src/shared/contracts.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.5")
+spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:implementer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.5: Create src/shared/contracts.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.5")
 
 # Tasks 1.6-1.7 marked Domain: backend (types and schemas used by API handlers)
-spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:implementer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\nTask 1.6: Create src/api/schema.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.6")
-spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:implementer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\nTask 1.7: Create src/api/utils.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.7")
+spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:implementer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.6: Create src/api/schema.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.6")
+spawn_agent(agent="implementer-backend", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:implementer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.7: Create src/api/utils.ts + test [code] **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="1.7")
 
 # Task 1.8 marked Domain: frontend-ui (global styles)
-spawn_agent(agent="implementer-frontend-ui", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:implementer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\nTask 1.8: Create src/app/globals.css [code]", description="1.8")
+spawn_agent(agent="implementer-frontend-ui", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:implementer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.8: Create src/app/globals.css [code]", description="1.8")
 // All 8 run in parallel, results available when message completes
 
 ## Step 2: Fire ALL 8 reviewers in ONE message (reviewer is shared, not domain-specific)
 
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:reviewer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\nReview 1.1: vitest.config.ts", description="Review 1.1")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:reviewer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\nReview 1.2: tests/setup.ts", description="Review 1.2")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:reviewer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\nReview 1.3: tailwind.config.ts", description="Review 1.3")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:reviewer:postcss.config.js" run-id="<your-session-id>" generation="1" />\nReview 1.4: postcss.config.js", description="Review 1.4")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:reviewer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\nReview 1.5: src/shared/contracts.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.5")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:reviewer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\nReview 1.6: src/api/schema.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.6")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:reviewer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\nReview 1.7: src/api/utils.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.7")
-spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:reviewer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\nReview 1.8: src/app/globals.css", description="Review 1.8")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:reviewer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.1: vitest.config.ts", description="Review 1.1")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:reviewer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.2: tests/setup.ts", description="Review 1.2")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.3:reviewer:tailwind.config.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.3: tailwind.config.ts", description="Review 1.3")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.4:reviewer:postcss.config.js" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.4: postcss.config.js", description="Review 1.4")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.5:reviewer:src/shared/contracts.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.5: src/shared/contracts.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.5")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.6:reviewer:src/api/schema.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.6: src/api/schema.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.6")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.7:reviewer:src/api/utils.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.7: src/api/utils.ts **Contract:** thoughts/shared/plans/2026-04-24-users-contract.md", description="Review 1.7")
+spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.8:reviewer:src/app/globals.css" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nReview 1.8: src/app/globals.css", description="Review 1.8")
 // All 8 run in parallel
 
 ## Step 3: Handle any CHANGES REQUESTED, then proceed to Batch 2

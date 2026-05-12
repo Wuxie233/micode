@@ -8,6 +8,7 @@ import { ARTIFACT_KINDS, createLifecycleStore, type LifecycleHandle } from "@/li
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 import { createProjectMemoryStore, type ProjectMemoryStore } from "@/project-memory";
 import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
+import { config } from "@/utils/config";
 import { resolveProjectId } from "@/utils/project-id";
 
 const PREFIX = "micode-lifecycle-promote-";
@@ -133,6 +134,10 @@ let cwd: string;
 let baseDir: string;
 let worktreesRoot: string;
 
+function setPromoteOnLifecycleFinish(enabled: boolean): void {
+  (config.projectMemory as { promoteOnLifecycleFinish: boolean }).promoteOnLifecycleFinish = enabled;
+}
+
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), PREFIX));
   cwd = join(root, "repo");
@@ -145,6 +150,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setPromoteOnLifecycleFinish(false);
   await resetProjectMemoryRuntimeForTest();
   rmSync(root, { recursive: true, force: true });
 });
@@ -178,6 +184,7 @@ describe("lifecycle finish project-memory promotion", () => {
   it(
     "promotes merged lifecycle ledger entries as active lifecycle sources",
     async () => {
+      setPromoteOnLifecycleFinish(true);
       const memory = await useMemory();
       const runner = createRunner();
       const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
@@ -202,6 +209,7 @@ describe("lifecycle finish project-memory promotion", () => {
   it(
     "promotes lifecycle issue body sections as meaningful notes when no ledger exists",
     async () => {
+      setPromoteOnLifecycleFinish(true);
       const issueBody = [
         "## Request",
         "",
@@ -255,6 +263,7 @@ describe("lifecycle finish project-memory promotion", () => {
   );
 
   it("skips promotion for non-merged finish outcomes", async () => {
+    setPromoteOnLifecycleFinish(true);
     const memory = await useMemory();
     const runner = createRunner({ failMerge: true });
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
@@ -270,6 +279,7 @@ describe("lifecycle finish project-memory promotion", () => {
   });
 
   it("keeps merged finish outcomes when promotion fails", async () => {
+    setPromoteOnLifecycleFinish(true);
     setProjectMemoryStoreForTest(createFailingStore());
     const runner = createRunner();
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
@@ -280,5 +290,23 @@ describe("lifecycle finish project-memory promotion", () => {
 
     expect(outcome.merged).toBe(true);
     expect(record?.notes).toContain(`memory_promotion_failed: ${PROMOTION_FAILURE}`);
+  });
+
+  it("does not promote project memory by default on merged finish", async () => {
+    expect(config.projectMemory.promoteOnLifecycleFinish).toBe(false);
+    const memory = await useMemory();
+    const runner = createRunner();
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+    await startWithLedger(handle);
+
+    const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
+    const identity = await resolveProjectId(cwd);
+    const record = await handle.load(ISSUE_NUMBER);
+
+    expect(outcome.merged).toBe(true);
+    expect(await memory.countEntries(identity.projectId)).toBe(0);
+    expect(
+      record?.notes.some((note) => note.startsWith("memory_promoted:") || note.startsWith("memory_rejected:")),
+    ).toBe(false);
   });
 });

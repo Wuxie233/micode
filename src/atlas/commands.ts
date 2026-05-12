@@ -21,7 +21,8 @@ export const atlasCommandDefinitions: readonly AtlasCommandDefinition[] = [
   },
   {
     name: "/atlas-refresh",
-    description: "Manually refresh a single atlas node or area without waiting for lifecycle finish",
+    description:
+      "Auxiliary entry to merge accumulated atlas deltas via atlas-compiler (staging → reconcile → atomic-rename). For daily maintenance, agents update Atlas inline via Read/Maintain/Verify/Report; /atlas-refresh is for batch fixup and history cleanup.",
   },
   {
     name: "/atlas-translate",

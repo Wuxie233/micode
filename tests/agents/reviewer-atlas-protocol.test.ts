@@ -8,9 +8,10 @@ describe("reviewer prompt atlas protocol injection", () => {
     expect(reviewerAgent.prompt).toContain(ATLAS_MENTAL_MODEL_PROTOCOL);
   });
 
-  it("appends a reviewer-specific detect-only block", () => {
+  it("appends a reviewer-specific knowledge detect-only block", () => {
     const p = reviewerAgent.prompt ?? "";
-    expect(p).toContain("<atlas-detect-role");
+    expect(p).toContain("<knowledge-detect-role");
+    expect(p).not.toContain("<atlas-detect-role");
     expect(p).toContain("do NOT write atlas deltas");
   });
 });

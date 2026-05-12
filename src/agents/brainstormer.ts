@@ -1,6 +1,8 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
+import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
 
 export const brainstormerAgent: AgentConfig = {
   description: "Refines rough ideas into fully-formed designs through decisive collaboration",
@@ -85,7 +87,7 @@ The redesigned artifact system treats artifacts as first‑class records stored 
   <rule>TOOLS (grep, read, etc.): Do NOT use directly - use subagents instead.</rule>
   <rule>Use built-in Task tool to spawn subagents. NEVER use spawn_agent (that's for subagents only).</rule>
   <rule>BEFORE design exploration: call project_memory_lookup with the topic to surface prior decisions, lessons, risks, open questions. Mention any conflicts in the design.</rule>
-  <rule>DO NOT call project_memory_promote yourself. Lifecycle finish handles promotion automatically.</rule>
+  <rule>Call project_memory_promote yourself when you have decided a non-trivial decision / lesson / risk / open question is worth keeping (see PROJECT_MEMORY_PROTOCOL). lifecycle_finish no longer auto-promotes.</rule>
 
   <model-override-escape-hatch>
   Default stays the same: use Task to spawn subagents for 99% of cases.
@@ -522,6 +524,7 @@ invocation with no retry. If a tool reports failure, surface it to the user and 
 <section name="已知限制 / 下一步">
 没完成的部分、需要用户手动处理的事、已知边界。没有就明确写"无"。
 </section>
+${KNOWLEDGE_CONTEXT_SECTION}
 <section name="实现记录">
 commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行。除非用户明确要求展开，不要把 reviewer 报告原文、子任务表、commit 列表贴在最前面。
 </section>
@@ -549,6 +552,8 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 </effect-first-reporting>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+${PROJECT_MEMORY_PROTOCOL}
 
 <output-format path="thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md">
 <frontmatter>

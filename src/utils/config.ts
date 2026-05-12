@@ -282,7 +282,7 @@ export const config = {
     statuses: ["active", "superseded", "tentative", "hypothesis", "deprecated"] as readonly string[],
     defaultLookupLimit: 10,
     snippetMaxChars: 240,
-    promoteOnLifecycleFinish: true,
+    promoteOnLifecycleFinish: false,
     refuseWritesOnDegradedIdentity: true,
   },
 
