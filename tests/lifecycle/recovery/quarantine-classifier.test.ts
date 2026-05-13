@@ -40,9 +40,9 @@ describe("classifyQuarantine", () => {
     expect(classifyQuarantine({ untrackedPath: "thoughts/shared/designs/.env", artifactPointers: [] }).kind).toBe(
       "block",
     );
-    expect(classifyQuarantine({ untrackedPath: "thoughts/shared/plans/credentials.json", artifactPointers: [] }).kind).toBe(
-      "block",
-    );
+    expect(
+      classifyQuarantine({ untrackedPath: "thoughts/shared/plans/credentials.json", artifactPointers: [] }).kind,
+    ).toBe("block");
   });
 
   it("blocks paths attempting to escape via ../", () => {

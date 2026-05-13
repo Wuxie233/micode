@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { PROJECT_MEMORY_PROTOCOL, PROJECT_MEMORY_STATUS_VALUES } from "@/agents/project-memory-protocol";
 import { brainstormerAgent } from "@/agents/brainstormer";
 import { commanderAgent } from "@/agents/commander";
 import { executorAgent } from "@/agents/executor";
 import { octtoAgent } from "@/agents/octto";
 import { plannerAgent } from "@/agents/planner";
+import { PROJECT_MEMORY_PROTOCOL, PROJECT_MEMORY_STATUS_VALUES } from "@/agents/project-memory-protocol";
 import { reviewerAgent } from "@/agents/reviewer";
 
 describe("project-memory-protocol drift guard", () => {

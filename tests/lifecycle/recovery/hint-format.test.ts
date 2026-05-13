@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { buildHint } from "@/lifecycle/recovery/hint";
-import { RECOVERY_SECTION_HEADER, formatRecoveryHint } from "@/lifecycle/recovery/hint-format";
+import { formatRecoveryHint, RECOVERY_SECTION_HEADER } from "@/lifecycle/recovery/hint-format";
 
 describe("formatRecoveryHint", () => {
   it("renders the stable section header", () => {

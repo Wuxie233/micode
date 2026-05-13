@@ -79,7 +79,7 @@ const resolveIssueNumber = async (deps: ProgressLoggerDeps, explicit: number | u
   if (result.kind === "none") {
     throw new Error(`${NO_ACTIVE_LIFECYCLE}: pass issue_number explicitly or run lifecycle_resume first`);
   }
-  throw new Error(`${AMBIGUOUS_ACTIVE_LIFECYCLE}: candidates=${result.candidates.join(",")}`);
+  throw new Error(`${AMBIGUOUS_ACTIVE_LIFECYCLE}: candidates=${result.candidates.map((c) => c.issueNumber).join(",")}`);
 };
 
 interface ParsedComment {

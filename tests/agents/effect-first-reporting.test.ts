@@ -32,6 +32,7 @@ const PRIMARIES_WITH_BLOCK = [
 const effectFirstBlock = (source: string) => source.match(/<effect-first-reporting[\s\S]*?<\/effect-first-reporting>/);
 const expandedEffectFirstBlock = (source: string): string | null => {
   const block = effectFirstBlock(source);
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: matching a placeholder in source prompt text, not a template string
   return block?.[0].replace("${KNOWLEDGE_CONTEXT_SECTION}", KNOWLEDGE_CONTEXT_SECTION) ?? null;
 };
 
