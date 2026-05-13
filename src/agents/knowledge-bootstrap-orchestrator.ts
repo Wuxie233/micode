@@ -1,6 +1,5 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
-import { buildBootstrapQuestionPrompt } from "@/tools/knowledge-bootstrap/questionnaire";
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
 
@@ -39,8 +38,9 @@ Use spawn_agent (not Task) for all child orchestrators.
 
   ── missing-only (/all-init) ──
     - all present (三层全 present) → 输出友好提示"三层都已存在"，建议用户改用 /all-rebuild，结束。
-    - 三层全 missing → 进入 octto 问卷收集 → 串行 spawn 三个子 agent (project-initializer →
-      mm-orchestrator → atlas-initializer)。
+    - 三层全 missing → 串行 spawn 三个子 agent (project-initializer →
+      mm-orchestrator → atlas-initializer)。atlas-initializer 在 phase 2 自行从 README /
+      package.json / ARCHITECTURE.md 推断 intent；本 orchestrator 不收集 intent 答案。
     - 部分缺失 → 仅 spawn 缺失部分对应的 agent，串行顺序依旧是 init → mindmodel → atlas
       (跳过已 present 的层)。已存在的层 NOT 覆盖。
 
@@ -48,8 +48,7 @@ Use spawn_agent (not Task) for all child orchestrators.
     - 调用 octto confirm 列出会被覆盖的文件路径 (ARCHITECTURE.md, CODE_STYLE.md,
       .mindmodel/, atlas/00-index.md 及其它 atlas 节点)。
     - 用户拒绝 → 优雅退出，不动任何文件。
-    - 用户确认 → 收集 bootstrap-questionnaire 答案 → 串行 spawn 三个子 agent，每个 prompt
-      显式说明覆盖语义：
+    - 用户确认 → 串行 spawn 三个子 agent，每个 prompt 显式说明覆盖语义：
         * spawn_agent(agent="project-initializer", prompt="覆盖模式：重写 ARCHITECTURE.md
           和 CODE_STYLE.md，即使它们已存在...", description="rebuild init")
         * spawn_agent(agent="mm-orchestrator", prompt="覆盖模式：重新生成 .mindmodel/...",
@@ -57,8 +56,8 @@ Use spawn_agent (not Task) for all child orchestrators.
         * Atlas 阶段不走 spawn_agent("atlas-initializer", ...) 的纯 cold-init；而是先调用
           runAtlasInit 工具入口的等价语义 —— 即 spawn_agent("atlas-initializer", ...) 时
           prompt 显式说明 "mode=force-rebuild，旧 atlas/ 已被外层删除/将由 atlas-initializer
-          走 force-rebuild 分支"，并把 octto 答案以 "Pre-seeded answers (skip these questions):
-          intent.pitch=..., intent.user=..., intent.shape=..." 形式拼接到 prompt。
+          走 force-rebuild 分支"；atlas-initializer 在 phase 2 自行从 README /
+          package.json / ARCHITECTURE.md 推断 intent，spawn prompt 不再含预置答案段。
 
   ── status-only (/all-status) ──
     - 这是 READ-ONLY 流程。不调 octto，不写任何文件，不 spawn 子 agent。
@@ -80,8 +79,6 @@ Use spawn_agent (not Task) for all child orchestrators.
   复跑 /all-init 智能补齐继续。
 </serial-execution>
 
-${buildBootstrapQuestionPrompt()}
-
 <friendly-exits>
   - /all-init 三层都已存在 → 输出："✓ 三层知识库 (/init, .mindmodel, atlas) 均已存在。
     若需要刷新所有层，运行 /all-rebuild。" 然后输出"本次知识上下文"板块并结束。
@@ -95,8 +92,8 @@ ${buildBootstrapQuestionPrompt()}
   - project_memory_health: status-only 模式调用，合并到 status 报告。
   - spawn_agent: 串行调用 project-initializer / mm-orchestrator / atlas-initializer。
     每次只 spawn 一个 agent，等待其完成再 spawn 下一个。
-  - octto 工具集 (start_session / confirm / get_next_answer / end_session)：
-    /all-init 全缺失或 /all-rebuild 模式下收集 bootstrap-questionnaire 答案。
+  - octto 工具集 (confirm 为主)：/all-rebuild 模式下用 octto.confirm 让用户确认覆盖。
+    本 orchestrator 不再用 octto 收集问卷答案。
 </available-tools>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}

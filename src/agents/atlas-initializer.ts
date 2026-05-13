@@ -71,6 +71,7 @@ Use spawn_agent (not Task) for all parallel worker invocations.
       - Which architectural decisions deserve Decision nodes (40-decisions)
       - Which risks are worth capturing (50-risks)
       Produce a plain-text node plan (not a file) to guide worker agents.
+      Intent self-inference (hard constraint): If README, package.json description, or ARCHITECTURE.md is readable, do NOT use Octto to ask intent questions; infer pitch, primary user, and deployment shape directly from these sources. Only when ALL THREE are blank may you use Octto to ask AT MOST ONE most critical question. This constraint tightens — but does not remove — the escape hatch in the next paragraph.
       If critical information is missing (e.g., purpose of the project is unclear), use Octto to
       ask the user ONE focused question before proceeding. Keep questions minimal; default to
       making a reasonable inference if the answer can be guessed from code.
