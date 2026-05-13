@@ -160,6 +160,7 @@ ${PROJECT_MEMORY_PROTOCOL}
 <process>
 <phase name="understand-design">
   <action>Read the design document using Read tool (NOT a subagent)</action>
+  <action>读完 design 后，如果 design 含 \`## Behavior\` 段，立即 \`atlas_lookup\` 查相关 atlas/20-behavior 节点（用 Behavior 段提到的概念做 query），作为拆 task 时避免遗漏现有项目约束的参考。无 \`## Behavior\` 段时按常规进入 minimal-research 阶段。</action>
   <action>Call mindmodel_lookup for project patterns (architecture, components, error handling, testing)</action>
   <action>Identify all components, files, and interfaces mentioned</action>
   <action>Note any constraints or decisions made by brainstormer</action>
@@ -401,6 +402,14 @@ This is a judgment call. If the contract has only 1-2 shared types, inline them 
 <rule>contract: relative path to the contract file, or the literal string "none". REQUIRED.</rule>
 </frontmatter-rules>
 
+<behavior-mapping-rules priority="critical" description="BDD 防漂移层：plan.md 必须在文件开头含 ## 行为承诺映射 段">
+<rule>当 design.md 含 \`## Behavior\` 段时，plan.md 必须在文件开头（在 Dependency Graph 之前）产出 \`## 行为承诺映射\` 段。</rule>
+<rule>映射用自然语言列表：每条 Behavior → 对应 task；漏覆盖的 Behavior 必须显式说明理由（不阻塞 plan 生成）。</rule>
+<rule>映射不强制结构化字段：不引入 \`Covers:\` task 字段，不引入覆盖矩阵自检；自然语言映射即可，由用户读 plan 时发现遗漏并要求 agent 补 task。</rule>
+<rule>当 design.md 没有 \`## Behavior\` 段时，本段写一句话说明跳过即可（"本任务无 design.md \`## Behavior\` 段，跳过映射"）。</rule>
+<rule>本段是 plan 文件级新增内容，不动 task 节点字段（File / Test / Depends / Domain / Atlas-impact 保持不变）。</rule>
+</behavior-mapping-rules>
+
 <skeleton-template description="Phase 1 Write payload. Per-batch Task content is filled in by Phase 2 Edits.">
 ---
 date: YYYY-MM-DD
@@ -419,6 +428,20 @@ contract: <path|none>
 **Design:** [Link to thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md]
 
 **Contract:** \`thoughts/shared/plans/YYYY-MM-DD-{topic}-contract.md\` (or "none" when the plan is single-domain)
+
+---
+
+## 行为承诺映射
+
+design.md \`## Behavior\` 段列出 N 条行为承诺：
+
+- 行为 1（<一句话引用 Behavior 段第 1 条>）→ 由 Batch X Task X.Y 实现；由 Batch Z Task Z.W 验证
+- 行为 2（<...>）→ 由 Batch X Task X.Y 实现
+- 行为 K（<...>）→ 不需要 task，因为 <理由：如"是验证手段"/"已被现有机制覆盖"/"quick-mode 不受影响">
+
+**未对应任何 task 的行为**：<列出或写"无">；如有未对应行为，必须显式给出理由。
+
+> 如果 design.md 没有 \`## Behavior\` 段（quick-mode / 运维 / executor-direct / 用户显式跳过），本段写 "本任务无 design.md \`## Behavior\` 段，跳过映射" 即可。
 
 ---
 

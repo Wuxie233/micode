@@ -70,6 +70,54 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 
 `commander.ts` 与 `brainstormer.ts` 的 `<effect-first-reporting>` block 互为单源，必须 byte-identical（由 `tests/agents/effect-first-reporting.test.ts` 强制）。`octto.ts` 因 workflow 不同使用语义对齐但措辞贴合 octto 角色的版本，drift-guard 不强制 byte-identity，但仍然检查五个 section 标题和 blocked / failed-stop 例外存在。本节是 markdown 镜像，命名和段落顺序需保持一致。"本次知识上下文" subsection 由 `src/agents/knowledge-context-section.ts` 提供，必须在 commander / brainstormer / octto 中保持 byte-identical。
 
+## Behavior 段约定
+
+micode 在 brainstorm / planner / executor / reviewer / 终态汇报 5 个阶段加入轻量 BDD 防漂移层，把"用户可见行为承诺"显式落到 design.md 末尾的 `## Behavior` 段。完整 prompt 协议片段单源在 `src/agents/brainstormer.ts`（`<behavior-section-maintenance>` 与 finalizing 产出规则）、`src/agents/planner.ts`（`<behavior-mapping-rules>` 与 skeleton-template `## 行为承诺映射` 段）、`src/agents/executor.ts`（`<context-brief>` 行为指向 + `<behavior-checkpoint-maintenance>` 块）、`src/agents/reviewer.ts`（`<behavior-drift-detection>` 块 + Findings 行为一致性子项）、`src/agents/brainstormer.ts` 与 `src/agents/commander.ts` 的 `<effect-first-reporting>` 内 `<behavior-alignment>` 子块（byte-identical 镜像）。本节是 markdown 镜像，不复制完整 prompt 文本，避免与 prompt 单源 drift。
+
+### design.md 第 10 个可选段
+
+design.md 既有 9 段（Problem Statement / Constraints / Approach / Architecture / Components / Data Flow / Error Handling / Testing Strategy / Open Questions）顺序不变；`## Behavior` 作为可选第 10 段追加在末尾。
+
+格式：自由（bullet / 段落 / 三段式都可），无强制结构、无强制 ID、无强制字数。建议每条 bullet 描述一条用户可见行为或验收方式。
+
+省略条件：quick-mode / 运维 / executor-direct / 用户显式跳过 时整段可省略。
+
+Atlas 关联用一行自然语言注明，不引入 `atlas_target` frontmatter 字段。
+
+### 5 阶段闭环
+
+| 阶段 | 机制 |
+|---|---|
+| brainstorm | brainstormer 在 finalizing 主动产出 `## Behavior` 段 + 立即 `atlas_lookup` 评估 atlas/20-behavior 关联；架构层级行为决策时 `project_memory_promote` decision |
+| planner | plan.md 文件开头自动产出 `## 行为承诺映射` 段（自然语言列出每条 Behavior 对应的 task；漏覆盖时显式说明理由）；不引入新 task 字段 |
+| executor | context-brief `<confirmed>` 段加一行「本次 Task 对应的行为承诺」；每个 batch reviewer 通过后判断是否 Maintain atlas/20-behavior |
+| reviewer | `**Findings**` 段加「行为一致性」子项（默认 ✓ 一句话过；明显漂移升级 ⚠️ + CHANGES REQUESTED）；可复用漂移教训以 "Behavior observation: drift-lesson — ..." 一行 escalate 给 executor / primary agent |
+| 终态汇报 | brainstormer / commander 的 `<effect-first-reporting>` 五段内「预期表现」与「你可以怎么验收」与 design.md `## Behavior` 段语义一致；不新增 section 标题 |
+
+### 全 agent 驱动 + 用户角色
+
+- 用户从不直接编辑 `atlas/` / Project Memory SQLite / `thoughts/` 文件。
+- 用户想改 atlas 节点 → 跟 agent 说「`atlas/20-behavior/X` 改成 Y」→ agent 完成实际修改。
+- 用户想查行为历史 → 跟 agent 说「查 X 行为的历史决策」→ agent 调 `project_memory_lookup`。
+- 用户想清理 PM 条目 → 跟 agent 说「忘掉 X」→ agent 调 `project_memory_forget`。
+- Atlas / Project Memory 维护全部由 agent 在 prompt 协议里自动完成；用户在终态汇报「本次知识上下文」段就能看到所有变化。
+
+### 不引入
+
+- 不引入 Gherkin / `.feature` 文件 / BDD 测试框架。
+- 不引入 `scenarios[]` frontmatter 数组。
+- 不引入 `atlas_target` 字段。
+- 不引入 `atlas-behavior:<slug>` Project Memory entity 前缀约定。
+- 不引入 sink-to-Atlas 自动化流程（不触碰 `tests/lifecycle/atlas-boundary.test.ts` 边界）。
+- 不引入新 byte-identical 镜像（仅复用 `<effect-first-reporting>` 既有 brainstormer ↔ commander 镜像）。
+- 不引入新 task 字段（plan task 仍是 File / Test / Depends / Domain / Atlas-impact）。
+- 不引入覆盖率仪表盘 / `Scenario coverage: N/M` 状态行。
+- 不引入 `## Behavior` 段格式校验器（自由格式）。
+
+### Drift guard
+
+`src/agents/brainstormer.ts` 与 `src/agents/commander.ts` 的 `<effect-first-reporting>` 块内 `<behavior-alignment>` 子块仍受既有 `tests/agents/effect-first-reporting.test.ts` byte-identical drift-guard 保护。其它 `<behavior-section-maintenance>` / `<behavior-mapping-rules>` / `<behavior-checkpoint-maintenance>` / `<behavior-drift-detection>` 块各自只存在于一个 agent prompt 中，不引入新 byte-identical 镜像；新增小型 grep-based 单元测试 `tests/agents/behavior-layer.test.ts` 守护关键字符串落地。本节是 markdown 镜像，命名和段落顺序需保持一致。
+
 ## Atlas Shared Mental Model
 
 Project Atlas (`atlas/`) 是人和 AI 共享的项目心智模型。任何想要全局理解 micode 的人或 agent，最该先读 Atlas。Atlas 不是 AI 私有缓存、代码索引或 lifecycle 副作用。

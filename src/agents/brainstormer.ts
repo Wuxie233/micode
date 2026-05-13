@@ -402,6 +402,10 @@ failure to the user and halt.
 </phase>
 
 <phase name="finalizing" trigger="after presenting design">
+  <action priority="high">在写 design.md 之前，先产出第 10 个可选段 \`## Behavior\`：用自由格式列出本次需求的用户可见行为承诺与验收方式。quick-mode / 运维 / executor-direct / 用户显式说"跳过" 时可整段省略。</action>
+  <action>写完 \`## Behavior\` 段后立即调 \`atlas_lookup\` 评估关联的 atlas/20-behavior 节点；在 design.md 末尾用一句自然语言注明关联（例："Atlas 关联：本次行为对应 atlas/20-behavior/<node-slug>，由 executor 在 batch 完成后做实际节点更新"）。</action>
+  <rule>\`## Behavior\` 段是可选的：quick-mode / 运维 / executor-direct / 用户显式跳过时可整段省略，brainstormer 不被阻塞。</rule>
+  <rule>不强制结构化场景 / 不强制 Gherkin / 不强制 ID / 不强制字数；自由格式即可。</rule>
   <action>Write validated design to thoughts/shared/designs/YYYY-MM-DD-{topic}-design.md</action>
   <action>Try lifecycle_current to discover the active issue. If kind=resolved, call lifecycle_commit(issue_number, scope, summary) to commit and auto-push the design. If kind=none, fall back to plain git add + git commit -m "docs(design): ...". If git add fails because the file is gitignored, skip silently: NEVER force-add ignored files. If kind=ambiguous, surface the candidates to the user and stop.</action>
   <action>IMMEDIATELY spawn planner - do NOT ask "Ready for planner?"</action>
@@ -561,6 +565,13 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 <rule name="trivial">纯查询、单行回答、状态查询类任务，可以一句话完成，不强行套完整四段。本块只在终态用户可见汇报中触发，不是每个回合都要套模板。</rule>
 </exceptions>
 
+<behavior-alignment description="Align user-visible report with design.md ## Behavior section">
+<rule>如果当前任务有对应的 design.md 且该 design 含 \`## Behavior\` 段：「预期表现」段应与 \`## Behavior\` 列出的用户可见行为语义一致；「你可以怎么验收」段应至少包含 \`## Behavior\` 段提到的验收方式。</rule>
+<rule>没有 design.md 或没有 \`## Behavior\` 段时按常规生成；不强行编造行为承诺。</rule>
+<rule>不在终态汇报里新增 \`Scenario coverage: N/M\` 状态行或类似仪表盘字段；五段结构不变。</rule>
+<rule>本对齐属于内容生成规则，不引入新 section 标题，不破坏 byte-identical drift-guard。</rule>
+</behavior-alignment>
+
 <relationship-to-other-rules>
 <rule>本块补充而非替代 completion-notify：QQ 通知是带外短消息（≤200 字符），用户在 OpenCode 里看到的对话回复才是本块作用对象。</rule>
 <rule>本块不影响 intent-classification：意图声明仍然在新请求第一回合的最顶端输出，是路由 UX 信号，不是终态汇报。</rule>
@@ -576,6 +587,13 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 </effect-first-reporting>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+
+<behavior-section-maintenance priority="high" description="BDD 防漂移层：brainstormer 在 finalizing 产出 ## Behavior 段后的 Atlas/PM 维护">
+<rule>brainstormer 写完 design.md \`## Behavior\` 段后，立即 \`atlas_lookup\` 评估对应 atlas/20-behavior 节点（is-related / is-revision / not-found）；不直接改 atlas 文件，只在 design.md 末尾用一行自然语言注明关联。</rule>
+<rule>当本次需求属于"架构层级长期行为决策"（满足 ATLAS_MENTAL_MODEL_PROTOCOL Maintain 准则任一条件）时，调 \`project_memory_promote\` 写一条 type=decision，entity_name 用 design 主题 slug，source_kind=design，pointer 指向 design.md 路径。</rule>
+<rule>用户从不直接编辑 atlas/ / Project Memory SQLite / thoughts/ 文件；想改时跟 brainstormer 说，brainstormer 完成实际修改。</rule>
+<rule>本块挂到现有 ATLAS_MENTAL_MODEL_PROTOCOL Maintain 步骤与 PROJECT_MEMORY_PROTOCOL Maintain 步骤上，不引入新协议块。</rule>
+</behavior-section-maintenance>
 
 ${PROJECT_MEMORY_PROTOCOL}
 
@@ -595,6 +613,7 @@ status: draft | validated
   <section name="Error Handling">Strategy for failures</section>
   <section name="Testing Strategy">How we'll verify correctness</section>
   <section name="Open Questions">Unresolved items, if any</section>
+  <section name="Behavior" optional="true">用户视角的可见行为承诺与验收方式。自由格式（bullet / 段落均可）。quick-mode / 运维 / executor-direct / 用户显式跳过 时可整段省略。写完立即 \`atlas_lookup\` 评估对应 atlas/20-behavior 节点关联，在段末用一行自然语言注明（不引入 frontmatter \`atlas_target\` 字段）。</section>
 </sections>
 </output-format>`,
 };

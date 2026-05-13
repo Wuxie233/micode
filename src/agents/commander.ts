@@ -269,6 +269,13 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 <rule name="trivial">纯查询、单行回答、状态查询类任务，可以一句话完成，不强行套完整四段。本块只在终态用户可见汇报中触发，不是每个回合都要套模板。</rule>
 </exceptions>
 
+<behavior-alignment description="Align user-visible report with design.md ## Behavior section">
+<rule>如果当前任务有对应的 design.md 且该 design 含 \`## Behavior\` 段：「预期表现」段应与 \`## Behavior\` 列出的用户可见行为语义一致；「你可以怎么验收」段应至少包含 \`## Behavior\` 段提到的验收方式。</rule>
+<rule>没有 design.md 或没有 \`## Behavior\` 段时按常规生成；不强行编造行为承诺。</rule>
+<rule>不在终态汇报里新增 \`Scenario coverage: N/M\` 状态行或类似仪表盘字段；五段结构不变。</rule>
+<rule>本对齐属于内容生成规则，不引入新 section 标题，不破坏 byte-identical drift-guard。</rule>
+</behavior-alignment>
+
 <relationship-to-other-rules>
 <rule>本块补充而非替代 completion-notify：QQ 通知是带外短消息（≤200 字符），用户在 OpenCode 里看到的对话回复才是本块作用对象。</rule>
 <rule>本块不影响 intent-classification：意图声明仍然在新请求第一回合的最顶端输出，是路由 UX 信号，不是终态汇报。</rule>
