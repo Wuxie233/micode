@@ -34,6 +34,26 @@ describe("atlas-initializer agent config", () => {
     expect(p).toContain("write");
   });
 
+  it("phase 2 requires intent self-inference before falling back to octto", () => {
+    const p = atlasInitializerAgent.prompt;
+    // The 2026-05-14 hard constraint must be present in the phase-2 synthesis block
+    expect(p).toContain("Intent self-inference (hard constraint)");
+    expect(p).toContain("If README, package.json description, or ARCHITECTURE.md is readable");
+    expect(p).toContain("do NOT use Octto to ask intent questions");
+    expect(p).toContain("infer pitch, primary user, and deployment shape");
+    expect(p).toContain("Only when ALL THREE are blank");
+    expect(p).toContain("AT MOST ONE most critical question");
+    // The constraint lives inside the phase-2 block; verify ordering
+    const phase2Idx = p.indexOf('<phase name="2-synthesis"');
+    const constraintIdx = p.indexOf("Intent self-inference (hard constraint)");
+    const phase3Idx = p.indexOf('<phase name="3-worker-fanout"');
+    expect(phase2Idx).toBeGreaterThan(-1);
+    expect(constraintIdx).toBeGreaterThan(phase2Idx);
+    expect(phase3Idx).toBeGreaterThan(constraintIdx);
+    // The pre-existing escape-hatch sentence is RETAINED right after the new constraint
+    expect(p).toContain("If critical information is missing");
+  });
+
   it("bans confidence and human_authored fields", () => {
     expect(atlasInitializerAgent.prompt).toContain("confidence");
     expect(atlasInitializerAgent.prompt).toContain("human_authored");

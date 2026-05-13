@@ -187,7 +187,7 @@ const PLUGIN_COMMANDS = {
       "Rebuild all three knowledge layers (/init + /mindmodel + /atlas-init) with overwrite (requires user confirm)",
     agent: KNOWLEDGE_BOOTSTRAP_ORCHESTRATOR_AGENT,
     template:
-      "Mode: refresh-all. The user invoked /all-rebuild. Use detect_knowledge_state to list files that will be overwritten, then ask the user to confirm via octto. If confirmed, collect bootstrap-questionnaire answers via octto and serial-spawn project-initializer (overwrite ARCHITECTURE.md/CODE_STYLE.md), mm-orchestrator (overwrite .mindmodel/), atlas-initializer (force-rebuild atlas/, pre-seed octto answers in the spawn prompt). $ARGUMENTS",
+      "Mode: refresh-all. The user invoked /all-rebuild. Use detect_knowledge_state to list files that will be overwritten, then ask the user to confirm via octto. If confirmed, serial-spawn project-initializer (overwrite ARCHITECTURE.md/CODE_STYLE.md), mm-orchestrator (overwrite .mindmodel/), atlas-initializer (force-rebuild atlas/; atlas-initializer self-infers intent from README / package.json / ARCHITECTURE.md in phase 2, no pre-seeded answers). $ARGUMENTS",
   },
   "all-status": {
     description: "Inspect status of all three knowledge layers and Project Memory (read-only)",
