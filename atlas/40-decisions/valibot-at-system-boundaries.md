@@ -1,17 +1,22 @@
 ---
+title: 系统边界使用 Valibot
 tags: [atlas, decision]
+sources:
+  - code:src/config-schemas.ts
+  - code:src/octto/session/schemas.ts
+  - code:src/lifecycle/schemas.ts
+  - code:.mindmodel/patterns/validation.md
 ---
-# Valibot at System Boundaries
+# 系统边界使用 Valibot
 
-项目在配置、工具参数、Octto WebSocket、mindmodel、project memory 和安全门禁等边界优先使用 Valibot schema 做运行时验证。
+## Decision
+
+运行时输入、配置、WebSocket 消息、lifecycle 输入和 mindmodel schema 统一使用 `valibot` 验证。
 
 ## Rationale
 
-- [[Config Loader]] 可在不信任输入进入 agent registry 前清洗字段。
-- [[Octto Session System]] 能校验浏览器消息和问题答案。
-- [[Project Memory Store]] 与 [[Skill Autopilot]] 可拒绝错误形状或敏感输入。
+单一验证库减少类型与 schema 漂移，`v.safeParse` 支持宽容边界，`v.parse` 支持严格内部契约。
 
 ## Consequences
 
-- schema 需要随公共契约同步更新。
-- 容错路径应积累 warning 并安全降级，而不是让非关键解析失败中断主流程。
+新增外部输入边界不应引入 Zod、Yup 或手写 schema maps；类型应从 schema 推导。

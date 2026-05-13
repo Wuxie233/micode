@@ -1,18 +1,22 @@
 ---
+title: Domain 路由与冻结契约
 tags: [atlas, decision]
+sources:
+  - code:README.md
+  - code:src/agents/planner.ts
+  - code:src/agents/executor.ts
+  - code:.mindmodel/architecture/coupling-reuse.md
 ---
-# Domain Routing with Frozen Contracts
+# Domain 路由与冻结契约
 
-micode fork 把旧的单一 implementer 拆成 `implementer-frontend`、`implementer-backend` 和 `implementer-general`，并在跨前后端计划中引入冻结 API contract。
+## Decision
+
+计划任务必须使用 `frontend-ui`、`frontend-code`、`backend`、`general` 四类 `Domain`，跨 frontend/backend 的计划必须生成冻结 API 契约。
 
 ## Rationale
 
-- [[Domain Routed Execution]] 允许不同领域使用更匹配的模型和 prompt 约束。
-- [[Frozen API Contracts]] 降低并行前后端实现时的接口漂移。
-- reviewer 能以同一 contract 作为事实边界检查实现。
+该决策让不同模型或不同 agent 按擅长领域执行，同时用契约降低并发实现时的接口漂移。
 
 ## Consequences
 
-- `planner` 必须可靠标记 `Domain` 并在跨域时写 contract。
-- `executor` 必须把 contract path 注入 implementer 和 reviewer。
-- 单入口修复容易遗漏 `brainstormer`、`octto`、`commander` 或 executor-direct 的路径一致性。
+Executor 必须拒绝旧的 `Domain: frontend`；implementer 发现契约错误时升级问题，不直接编辑契约。

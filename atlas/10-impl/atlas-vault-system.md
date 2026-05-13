@@ -1,20 +1,24 @@
 ---
+title: Atlas Vault 系统
 tags: [atlas, impl]
+sources:
+  - code:src/atlas/*
+  - code:src/tools/atlas/*
+  - code:atlas/README.md
 ---
-# Atlas Vault System
+# Atlas Vault 系统
 
-`src/atlas/`、`src/tools/atlas/` 与 `src/agents/atlas-*` 维护项目 `atlas/` Obsidian vault，包括冷初始化、状态检查、刷新、翻译、wikilink、frontmatter、staging、challenge 和写锁。
+`src/atlas/`、`src/tools/atlas/` 和 `atlas/` 共同构成 Project Atlas：一个面向人和 AI 的 Obsidian vault，用 Markdown、frontmatter 和 wikilinks 表达项目心智模型。
 
 ## Responsibilities
 
-- `runAtlasInit` 处理 fresh、reconcile、force-rebuild 模式。
-- cold-init 流程发现项目、合成 vault plan、可选询问 Octto、再写入节点。
-- page reader/writer 解析 frontmatter、sections 和 wikilinks，并通过 staging 做原子提交。
-- status 检查 open challenges、broken wikilinks、orphan staging dirs 和 last successful run。
-- conflict router、challenge writer、soft delete planner 保护人工编辑和过期节点。
+- 定义 Atlas layers、node schema、frontmatter、wikilink、source link 与 repo URL 处理。
+- 提供 `atlas_lookup`、`/atlas-init`、`/atlas-status`、`/atlas-refresh`、`/atlas-translate`。
+- 支持 cold-init、staging、reconcile、challenge、delta fallback 和 broken link 扫描。
+- 让日常 agent 在 Read / Maintain / Verify / Report 协议中维护共享知识。
 
 ## Links
 
-- 实现 [[Atlas Commands]]。
-- [[Atlas as Obsidian Vault]] 记录输出形态决策。
-- [[Atlas Wikilink Drift]] 与 [[Concurrent Atlas Write Race]] 记录主要风险。
+- [[Atlas 命令]] 描述用户入口。
+- [[Atlas 作为 Obsidian Vault]] 记录该设计决策。
+- [[Atlas Wikilink 漂移]] 记录主要一致性风险。

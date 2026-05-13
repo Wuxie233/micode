@@ -1,18 +1,24 @@
 ---
+title: 会话连续性账本
 tags: [atlas, behavior]
+sources:
+  - code:README.md
+  - code:src/agents/ledger-creator.ts
+  - code:src/hooks/ledger-loader.ts
+  - code:src/hooks/auto-compact.ts
+  - code:src/tools/artifact-search.ts
 ---
-# Session Continuity Ledgers
+# 会话连续性账本
 
-Ledger 机制把跨会话状态保存到 `thoughts/ledgers/CONTINUITY_*.md`，减少上下文压缩或新会话带来的信息丢失。
+micode 用 `thoughts/ledgers/CONTINUITY_*.md` 和 artifact search 保存跨会话上下文，让长期任务可以在压缩或重开后继续。
 
 ## Mechanics
 
-- `/ledger` 可创建或更新当前会话的连续性记录。
-- `ledger-loader` 在 prompt 注入最新 continuity ledger。
-- `auto-compact` 在上下文压力达到阈值时总结会话并写入 ledger。
-- `artifact-auto-index` 会把 ledger 纳入检索，便于后续恢复。
+- `/ledger` 创建或更新当前会话账本。
+- `ledger-loader` hook 会把最新账本注入上下文。
+- `auto-compact` 在上下文接近阈值时总结并写 ledger。
+- `artifact-auto-index` 与 `artifact_search` 支持检索过往 plans 和 ledgers。
 
 ## Links
 
-- [[Hooks Pipeline]] 装配 ledger 和 auto-compact hooks。
-- [[Artifact Indexing]] 支持 ledger 搜索。
+- [[Artifact 索引]] 提供搜索能力。

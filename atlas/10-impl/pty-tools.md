@@ -1,19 +1,21 @@
 ---
+title: PTY 工具
 tags: [atlas, impl]
+sources:
+  - code:src/tools/pty/*
 ---
-# PTY Tools
+# PTY 工具
 
-`src/tools/pty/` 把可选 `bun-pty` 能力包装成 OpenCode long-running terminal tools。
+`src/tools/pty/` 封装 `bun-pty`，为 agent 提供可持久的交互式终端 session。
 
 ## Responsibilities
 
-- `createPTYManager` 管理 PTY session、process、状态、exit code 和 parent session。
-- ring buffer 保存滚动输出，支持 offset、limit 和 regex search。
-- `pty_spawn` 启动后台终端，`pty_write` 输入文本或控制字符。
-- `pty_read` 读取输出，`pty_list` 列出 session，`pty_kill` 终止或清理。
-- session 删除时按 parent session 清理相关 PTY 进程。
+- `pty_spawn` 启动长运行进程或交互 shell。
+- `pty_write` 向 session 写入命令、文本或控制字符。
+- `pty_read` 分页读取滚动输出缓冲区，并支持 pattern 过滤。
+- `pty_list` 与 `pty_kill` 管理 session 状态和清理。
+- `loadBunPty` 在依赖不可用时降级，而不是让插件整体失败。
 
 ## Links
 
-- [[Tools Registry]] 负责暴露该工具组。
-- [[External CLI Integrations]] 描述外部运行时依赖。
+- [[Bun Runtime]] 提供该模块的运行时基础。

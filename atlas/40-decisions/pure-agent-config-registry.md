@@ -1,17 +1,20 @@
 ---
+title: 纯 Agent 配置注册表
 tags: [atlas, decision]
+sources:
+  - code:src/agents/index.ts
+  - code:.mindmodel/architecture/layers.md
 ---
-# Pure Agent Config Registry
+# 纯 Agent 配置注册表
 
-Agent 模块采用纯 `AgentConfig` 数据对象和命名导出，业务执行逻辑放在 prompt 约束和工具调用中，而不是在 agent 文件中实现函数流程。
+## Decision
+
+Agent 文件保持为 `AgentConfig` 与 prompt 协议的配置层，统一由 [[Agent 注册表]] 聚合，再由 [[插件组合]] 注入 OpenCode。
 
 ## Rationale
 
-- [[Agent Registry]] 可以集中合并默认模型和用户覆盖。
-- 纯数据结构让 agent 差异更容易审查、测试和覆盖。
-- 该选择符合项目规则中“agents 目录只放配置对象”的边界。
+这种设计让 agent prompt 可被 drift-guard 测试直接导入检查，也避免 agent 层直接持有工具或 hook 状态。
 
 ## Consequences
 
-- 复杂行为需要在 [[Workflow Agents]] prompt 和 [[Tools Registry]] 工具层表达。
-- registry key 成为公共契约，重命名会影响用户配置和 executor 路由。
+新 agent 应先成为可导入的配置对象，再加入 registry；运行时模型覆盖由 [[配置加载器]] 处理。

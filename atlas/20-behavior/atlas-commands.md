@@ -1,19 +1,24 @@
 ---
+title: Atlas 命令
 tags: [atlas, behavior]
+sources:
+  - code:src/atlas/commands.ts
+  - code:src/tools/atlas/*
+  - code:src/agents/atlas-initializer.ts
+  - code:src/agents/atlas-compiler.ts
 ---
-# Atlas Commands
+# Atlas 命令
 
-Atlas commands 维护 `atlas/` Obsidian vault，让项目结构、行为、决策和风险以 Markdown 节点形式长期保存。
+Atlas 命令维护 `atlas/` Obsidian vault，使人和 agent 都能读取项目结构、行为、决策和风险。
 
 ## Mechanics
 
-- `/atlas-init` 执行冷初始化，生成分层 vault 和维护日志。
-- `/atlas-status` 报告 open challenges、broken wikilinks、orphan staging dirs 和最近成功 run。
-- `/atlas-refresh` 写入刷新日志，并在未初始化或写锁占用时返回明确状态。
-- `/atlas-translate` 保留结构并翻译 vault 内容。
-- fresh 初始化遇到已有 vault 时需要 reconcile 或 force rebuild 策略，避免无意覆盖人工维护内容。
+- `/atlas-init` 冷启动或重建 vault。
+- `/atlas-status` 检查 broken wikilinks、open challenges、staging 和最近运行状态。
+- `/atlas-refresh` 作为辅助批量 reconcile 路径，不由 lifecycle 自动触发。
+- `/atlas-translate` 在保留结构的前提下翻译节点内容。
+- 日常开发按 Read / Maintain / Verify / Report 协议内联维护 Atlas。
 
 ## Links
 
-- [[Atlas Vault System]] 实现命令和 vault IO。
-- [[Atlas as Obsidian Vault]] 记录这个知识库形态。
+- [[Atlas Vault 系统]] 实现该行为。

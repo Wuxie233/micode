@@ -1,17 +1,21 @@
 ---
+title: Atlas 作为 Obsidian Vault
 tags: [atlas, decision]
+sources:
+  - code:atlas/README.md
+  - code:src/atlas/*
+  - code:AGENTS.md
 ---
-# Atlas as Obsidian Vault
+# Atlas 作为 Obsidian Vault
 
-项目知识库输出为 `atlas/` 下的 Obsidian Markdown vault，使用分层目录和 wikilinks 组织实现、行为、上下文、决策和风险。
+## Decision
+
+Project Atlas 使用 `atlas/` Markdown vault、YAML frontmatter 和 Obsidian wikilinks 表达项目结构、行为、决策和风险。
 
 ## Rationale
 
-- [[Atlas Vault System]] 能把代码发现和历史事实转成可人工阅读、可增量维护的节点。
-- Obsidian wikilinks 让模块、行为和决策之间的关系可浏览。
-- 分层目录把实现事实和用户行为、架构决策、风险缓解分开。
+Markdown vault 同时适合人类阅读、Obsidian 图谱和 agent 检索，比私有缓存更容易长期维护。
 
 ## Consequences
 
-- 需要维护 wikilink 目标和 H1 标题一致性。
-- 需要维护日志记录推断、警告和生成范围，避免 atlas 成为黑盒产物。
+节点必须保持 H1、tags、中文正文和可解析 wikilinks；批量刷新应通过 atlas 命令或明确维护流程进行。

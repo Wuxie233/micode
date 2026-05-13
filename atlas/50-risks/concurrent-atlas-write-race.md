@@ -1,18 +1,23 @@
 ---
+title: 并发 Atlas 写入竞争
 tags: [atlas, risk]
+sources:
+  - code:src/atlas/write-lock.ts
+  - code:src/atlas/staging.ts
+  - code:tests/atlas/concurrency.test.ts
 ---
-# Concurrent Atlas Write Race
+# 并发 Atlas 写入竞争
 
-Atlas 写锁使用锁文件记录 pid、runId 和 acquiredAt，但检查与写入之间不是完全原子，极端并发下可能出现竞争。
+## Risk
 
-## Impact
-
-- 两个 atlas run 可能同时认为自己获得写锁。
-- 后写入的 run 可能覆盖前一个 run 的 staging 或目标节点。
-- 人工编辑保护和 challenge 路由可能基于过期 mtime 判断。
+多个 agent 或命令同时写 `atlas/` 时，可能覆盖彼此节点、留下 staging 残留或产生 challenge 冲突。
 
 ## Mitigation
 
-- 避免并发执行多个 atlas 写命令。
-- [[Atlas Vault System]] 使用 staging 和维护日志降低部分写入风险。
-- 后续改进可考虑 `O_EXCL` 原子创建锁文件和更严格的 run ownership 校验。
+- 使用 Atlas write lock、staging 和 atomic commit 语义。
+- 对人工编辑冲突走 challenge 或 delta fallback。
+- 日常维护优先小范围节点更新，避免无必要全量刷新。
+
+## Links
+
+- [[Atlas Vault 系统]]

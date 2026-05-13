@@ -1,19 +1,24 @@
 ---
+title: Runtime Deploy 脚本
 tags: [atlas, impl]
+sources:
+  - code:scripts/deploy-runtime.ts
+  - code:src/utils/runtime-deploy/*
+  - code:docs/runtime-deploy.md
 ---
-# Runtime Deploy Script
+# Runtime Deploy 脚本
 
-`scripts/deploy-runtime.ts` 和 `docs/runtime-deploy.md` 描述从开发 checkout `/root/CODE/micode` 同步到 live plugin `/root/.micode` 的运行时部署流程。
+`scripts/deploy-runtime.ts` 是把开发 checkout 同步到 live OpenCode plugin checkout 的运行时部署助手，入口命令是 `bun run deploy:runtime`。
 
 ## Responsibilities
 
-- 执行 preflight，检查源 checkout、runtime checkout、必要工具和 dirty 状态。
-- 用 selective sync 保留 runtime-local `node_modules`、`dist`、`.git`、`thoughts`、env 文件和缓存。
-- 需要时执行 `bun install --frozen-lockfile`，再构建 live `dist/index.js`。
-- 成功时打印 `Runtime ready. Restart of OpenCode requires explicit user approval.`。
-- 绝不自动重启 OpenCode，重启必须由用户显式批准。
+- 支持 `--dry-run` 预览和 apply 模式执行。
+- 校验 source/runtime cleanliness、工具可用性和 lockfile 状态。
+- 使用受控同步规则保留 runtime-local state。
+- 在 runtime checkout 中安装依赖、构建并验证 `dist/index.js`。
+- 明确不重启 OpenCode，restart 必须由用户单独批准。
 
 ## Links
 
-- 实现 [[Runtime Deploy Workflow]]。
-- [[Runtime Checkout Drift]] 记录这个双 checkout 模式的主要风险。
+- [[运行时部署工作流]] 描述用户操作步骤。
+- [[运行时 Checkout 漂移]] 是该模块缓解的主要风险。

@@ -47,12 +47,15 @@ describe("knowledge-bootstrap-orchestrator agent config", () => {
     expect(ai).toBeGreaterThan(mm);
   });
 
-  it("prompt includes the octto questionnaire block and references intent question keys", () => {
+  it("prompt does NOT contain the removed intent questionnaire surface", () => {
     const p = knowledgeBootstrapOrchestratorAgent.prompt;
-    expect(p).toContain("<bootstrap-questionnaire>");
-    expect(p).toContain("intent.pitch");
-    expect(p).toContain("intent.user");
-    expect(p).toContain("intent.shape");
+    expect(p).not.toContain("<bootstrap-questionnaire>");
+    expect(p).not.toContain("intent.pitch");
+    expect(p).not.toContain("intent.user");
+    expect(p).not.toContain("intent.shape");
+    expect(p).not.toContain("buildBootstrapQuestionPrompt");
+    expect(p).not.toContain("Pre-seeded answers");
+    expect(p).not.toContain("bootstrap-questionnaire");
   });
 
   it("prompt explicitly requires confirm before /all-rebuild executes", () => {

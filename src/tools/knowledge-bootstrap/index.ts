@@ -52,11 +52,5 @@ export function createDetectKnowledgeStateTool(ctx: PluginInput): { detect_knowl
 }
 
 export { detectKnowledgeState } from "./detect";
-export type { BootstrapAnswers, BootstrapQuestionKey } from "./questionnaire";
-export {
-  BOOTSTRAP_QUESTION_KEYS,
-  buildBootstrapQuestionPrompt,
-  DEFAULT_BOOTSTRAP_ANSWERS,
-} from "./questionnaire";
 export { type AtlasStatusResult, renderBootstrapStatus } from "./status";
 export type { FilePresence, KnowledgeState, LayerState, ProjectMemorySummary } from "./types";

@@ -1,18 +1,22 @@
 ---
+title: 配置加载器
 tags: [atlas, impl]
+sources:
+  - code:src/config-loader.ts
+  - code:src/config-schemas.ts
+  - code:micode.example.jsonc
 ---
-# Config Loader
+# 配置加载器
 
-`src/config-loader.ts` 与 `src/config-schemas.ts` 读取 `micode.json(c)` 和 `opencode.json(c)`，用 `jsonc-parser` 与 `valibot` 清洗配置，再把安全的 agent override 交给 [[Agent Registry]]。
+`src/config-loader.ts` 读取 `opencode.json(c)` 与 `micode.json(c)`，用 `valibot` 清洗 agent overrides、feature flags、fragments、context limits 和 compaction threshold，并把配置合并进 [[Agent 注册表]]。
 
 ## Responsibilities
 
-- `loadMicodeConfig` 读取插件配置，解析失败时降级为 `null`。
-- `loadAvailableModels`、`loadDefaultModel`、`loadModelContextLimits` 从 OpenCode 配置提取模型信息。
-- `mergeAgentConfigs` 合并默认 agent、per-agent override、默认模型和可用模型校验结果。
-- schema 层只允许安全字段进入 agent 配置，避免把未知配置直接透传到运行时。
+- 解析 JSONC 配置并忽略未知或不安全字段。
+- 按 per-agent override、OpenCode default model、plugin fallback 的顺序解析模型。
+- 为 primary、planner、executor、reviewer、implementer 和 specialist agents 提供运行时模型配置。
+- 将无效模型降级为安全默认值，而不是让插件启动失败。
 
 ## Links
 
-- [[Plugin Composition]] 在启动阶段调用该模块。
-- [[Domain Routed Execution]] 依赖 per-agent 模型覆盖语义。
+- [[模型配置缺口]] 记录配置缺口造成的行为风险。

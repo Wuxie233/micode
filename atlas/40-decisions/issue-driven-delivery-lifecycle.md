@@ -1,17 +1,21 @@
 ---
+title: Issue 驱动交付生命周期
 tags: [atlas, decision]
+sources:
+  - code:src/lifecycle/*
+  - code:src/tools/lifecycle/*
+  - code:AGENTS.md
 ---
-# Issue Driven Delivery Lifecycle
+# Issue 驱动交付生命周期
 
-非平凡工作使用 issue、branch、worktree、progress comments、commit 和 finish 流程来提供可追踪交付状态。
+## Decision
+
+非平凡交付默认可以进入 issue-driven lifecycle，由工具创建 issue、branch、worktree，并在 checkpoint commit/push，最终 merge/close/cleanup。
 
 ## Rationale
 
-- [[Issue Driven Lifecycle]] 把跨会话工作状态放到 GitHub issue 和本地 lifecycle record 中。
-- 隔离 worktree 降低主工作树被其他会话污染的概率。
-- progress comments 和 journal 让恢复、审查和自动记忆推广更可靠。
+它把长期任务的状态外显到 GitHub issue 和本地 record，减少跨会话丢失上下文的概率。
 
 ## Consequences
 
-- 远程写操作必须遵守仓库所有权 preflight。
-- lifecycle 失败时需要 recovery decision，而不是假设当前分支就是正确上下文。
+所有 remote mutation 必须经过 ownership preflight；lifecycle 是 source provider，不自动写 Atlas 或 Project Memory。

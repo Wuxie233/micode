@@ -30,6 +30,20 @@ describe("project AGENTS.md: Knowledge Bootstrap Commands section", () => {
     expect(AGENTS_MD).toContain("knowledge-bootstrap-orchestrator");
   });
 
+  it("states orchestrator does not collect intent questionnaire and atlas-initializer self-infers", () => {
+    // After 2026-05-14 questionnaire removal, the Dispatch rules section must
+    // (a) explicitly state intent.* questionnaire is no longer collected at orchestrator entry
+    // (b) state atlas-initializer self-infers intent in phase 2 from README/package.json/ARCHITECTURE.md
+    // (c) NOT mention the deleted intent.pitch / intent.user / intent.shape keys
+    // (d) NOT mention the deleted DEFAULT_BOOTSTRAP_ANSWERS fallback
+    expect(AGENTS_MD).toMatch(/不再收集 intent\.\* 问卷|orchestrator 入口不再收集 intent/);
+    expect(AGENTS_MD).toMatch(/atlas-initializer.*phase 2.*推断|自行.*README.*package\.json.*ARCHITECTURE/);
+    expect(AGENTS_MD).not.toContain("intent.pitch");
+    expect(AGENTS_MD).not.toContain("intent.user");
+    expect(AGENTS_MD).not.toContain("intent.shape");
+    expect(AGENTS_MD).not.toContain("DEFAULT_BOOTSTRAP_ANSWERS");
+  });
+
   it("states the three commands do NOT replace /init /mindmodel /atlas-init", () => {
     expect(AGENTS_MD).toMatch(/不替换|do not replace|保留.*\/init.*\/mindmodel.*\/atlas-init/);
   });

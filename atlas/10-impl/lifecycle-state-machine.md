@@ -1,20 +1,23 @@
 ---
+title: Lifecycle 状态机
 tags: [atlas, impl]
+sources:
+  - code:src/lifecycle/*
+  - code:src/tools/lifecycle/*
 ---
-# Lifecycle State Machine
+# Lifecycle 状态机
 
-`src/lifecycle/` 与 `src/tools/lifecycle/` 实现 issue-driven delivery 的本地记录、GitHub issue、worktree、commit、PR、merge、journal、lease 和 recovery。
+`src/lifecycle/` 与 `src/tools/lifecycle/` 实现 issue-driven delivery 的本地记录、GitHub issue、branch、worktree、commit、push、merge、journal、lease 和 recovery。
 
 ## Responsibilities
 
-- `createLifecycleStore` 管理 `thoughts/lifecycle/<issue>.json` 记录和状态转换。
-- `runner` 负责调用 `git` 与 `gh`，创建 issue、branch、worktree、commit 和 PR。
-- `resolver`、`recovery`、`lease` 支持从当前 worktree 恢复生命周期状态并避免并发重入。
-- lifecycle tools 暴露 `lifecycle_start_request`、`lifecycle_commit`、`lifecycle_finish`、`lifecycle_context` 等入口。
-- finish 阶段可触发 project memory promotion、通知和 worktree 清理。
+- 用 `LIFECYCLE_STATES` 管理 `PROPOSED` 到 `CLEANED` 的状态迁移。
+- 在 start 阶段执行 repo ownership preflight，创建 issue、branch 和 worktree。
+- 在 commit 阶段将 checkpoint 变更提交并推送到 `origin`。
+- 在 finish 阶段选择 PR-first 或 local merge，并关闭 issue、清理 worktree。
+- 通过 recovery hint、temp worktree 和 quarantine 支持有界自主恢复。
 
 ## Links
 
-- 实现 [[Issue Driven Lifecycle]]。
-- 与 [[Project Memory Store]] 和 [[Notifications]] 相连。
-- [[Issue Driven Delivery Lifecycle]] 记录架构决策。
+- [[Issue 驱动交付生命周期]] 描述用户可见交付行为。
+- [[远程 Git 所属误推]] 是该模块必须持续防护的高影响风险。

@@ -7,7 +7,7 @@
 //   - renderBootstrapStatus over those fixtures
 //   - PLUGIN_COMMANDS routing
 //
-// LLM-driven behaviour (octto questionnaire, serial spawn, mode switching) is
+// LLM-driven behaviour (octto confirm on rebuild, serial spawn, mode switching) is
 // asserted indirectly via knowledge-bootstrap-orchestrator prompt tests in
 // tests/agents/knowledge-bootstrap-orchestrator.test.ts.
 //
