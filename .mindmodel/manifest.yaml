@@ -1,54 +1,77 @@
 name: micode
 version: 2
 categories:
+  # Stack
   - path: stack/backend.md
-    description: Backend runtime and plugin foundations
+    description: Bun runtime, build pipeline, shell commands, external CLIs, PTY
     group: stack
+
   - path: stack/database.md
-    description: SQLite usage and local persistence
+    description: Bun SQLite stores and filesystem JSON persistence patterns
     group: stack
+
   - path: stack/dependencies.md
-    description: Approved external and internal dependencies
+    description: Approved libraries, import constraints, node: prefix rules
     group: stack
-  - path: architecture/layers.md
-    description: Layering and dependency direction
-    group: architecture
-  - path: architecture/organization.md
-    description: Directory and module organization
-    group: architecture
-  - path: architecture/coupling-reuse.md
-    description: Module decoupling and high-reuse engineering philosophy
-    group: architecture
-  - path: patterns/error-handling.md
-    description: Error handling conventions
-    group: patterns
-  - path: patterns/logging.md
-    description: Logging practices and logger usage
-    group: patterns
-  - path: patterns/validation.md
-    description: Validation with schemas
-    group: patterns
-  - path: patterns/data-fetching.md
-    description: Loading and parsing data files
-    group: patterns
-  - path: patterns/testing.md
-    description: Testing patterns with bun:test
-    group: patterns
-  - path: style/naming.md
-    description: Naming conventions for files and symbols
-    group: style
+
+  # Style
   - path: style/imports.md
-    description: Import ordering and module boundaries
+    description: "@/* aliases, import ordering, type-only imports, no default exports"
     group: style
+
+  - path: style/naming.md
+    description: File, function, variable, and constant naming conventions
+    group: style
+
   - path: style/types.md
-    description: TypeScript type usage guidelines
+    description: TypeScript strict mode, interface vs type, readonly, Valibot InferOutput
     group: style
-  - path: components/shared.md
-    description: Shared hooks, tools, and utilities
-    group: components
+
+  # Patterns
+  - path: patterns/error-handling.md
+    description: extractErrorMessage, catch unknown, no stack leaks, tool error strings
+    group: patterns
+
+  - path: patterns/logging.md
+    description: log.info/warn/error with module prefix, no direct console.*
+    group: patterns
+
+  - path: patterns/validation.md
+    description: Valibot schemas at boundaries, safeParse vs parse, allow-list sanitization
+    group: patterns
+
+  - path: patterns/testing.md
+    description: Bun test BDD style, drift guard tests, in-memory SQLite for store tests
+    group: patterns
+
+  - path: patterns/tool-formatting.md
+    description: Tool factory pattern, formatted Markdown return, no thrown errors
+    group: patterns
+
+  # Architecture
+  - path: architecture/layers.md
+    description: "Layer order: utils → tools → hooks → agents; no upward imports"
+    group: architecture
+
+  - path: architecture/organization.md
+    description: Directory layout, one-agent-per-file, protocol constant files
+    group: architecture
+
+  - path: architecture/coupling-reuse.md
+    description: Factory functions, no business classes, frozen contract, leaf agent boundaries
+    group: architecture
+
+  # Domain
   - path: domain/concepts.md
-    description: Domain terminology and workflows
+    description: Workflow vocabulary (Domain, Batch, Contract, Lifecycle, Atlas, Project Memory)
     group: domain
+
+  # Ops
   - path: ops/database.md
-    description: Operational database setup and lifecycle
+    description: Store factory, FTS5, deterministic IDs, secret detection before insert
     group: ops
+
+  # Components
+  - path: components/shared.md
+    description: Protocol constants, hook factories, LRU cache, AgentConfig structure
+    group: components
