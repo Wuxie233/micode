@@ -1,18 +1,22 @@
 ---
+title: 运行时部署工作流
 tags: [atlas, behavior]
+sources:
+  - code:README.md
+  - code:docs/runtime-deploy.md
+  - code:scripts/deploy-runtime.ts
 ---
-# Runtime Deploy Workflow
+# 运行时部署工作流
 
-运行时部署流程把开发 checkout 的改动同步到 live plugin checkout，并构建 live `dist/index.js`。
+本仓库 `/root/CODE/micode` 是开发 checkout，live OpenCode plugin 从 `/root/.micode` 加载；只改开发 checkout 不会自动影响运行时。
 
 ## Mechanics
 
-- 开发路径是 `/root/CODE/micode`，live plugin 路径是 `/root/.micode`。
-- runtime 敏感变更后运行 `bun run deploy:runtime`，不是只在开发 checkout 里 `bun run build`。
-- helper 会保留 live 目录中的状态、依赖、`.git`、`thoughts` 和 env 文件。
-- helper 成功后仍不能自动重启 OpenCode，必须先得到用户明确批准。
+- `bun run deploy:runtime -- --dry-run` 预览同步和构建操作。
+- `bun run deploy:runtime` 同步到 runtime checkout、必要时安装依赖、构建并验证 bundle。
+- 同步保留 runtime-local state，例如 `node_modules`、`.git`、`thoughts` 和环境文件。
+- helper 成功后只报告 runtime ready，不重启 OpenCode；restart 必须由用户明确批准。
 
 ## Links
 
-- [[Runtime Deploy Script]] 实现同步和构建。
-- [[Runtime Checkout Drift]] 说明为什么这个流程重要。
+- [[Runtime Deploy 脚本]] 实现该行为。

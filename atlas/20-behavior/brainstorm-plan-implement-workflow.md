@@ -1,18 +1,24 @@
 ---
+title: 头脑风暴到计划到实现工作流
 tags: [atlas, behavior]
+sources:
+  - code:README.md
+  - code:ARCHITECTURE.md
+  - code:src/agents/brainstormer.ts
+  - code:src/agents/planner.ts
+  - code:src/agents/executor.ts
 ---
-# Brainstorm Plan Implement Workflow
+# 头脑风暴到计划到实现工作流
 
-用户可见的核心流程是 `Brainstorm → Plan → Implement`，先把想法变成设计，再拆成可执行微任务，最后由 executor 并行推进实现和审查。
+micode 面向 OpenCode 开发者提供一条固定主路径：先由 `brainstormer` 或 `octto` 把想法收敛成设计，再由 `planner` 生成微任务计划，最后由 `executor` 批量执行并审查。
 
 ## Mechanics
 
-- Brainstorm 阶段通过 `brainstormer` 或 `octto` 细化需求，产物写入 `thoughts/shared/designs/`。
-- Plan 阶段把设计转成 2 到 5 分钟粒度的任务计划，任务带精确路径、依赖批次和 `Domain` 字段。
-- Implement 阶段由 `executor` 按 batch 派发 implementer，并运行 implementer 到 reviewer 的闭环。
-- 历史计划和 ledger 会被索引，后续可通过 `/search` 或 `artifact_search` 找回。
+- 设计阶段强调 research before opinion，并把设计写入 `thoughts/shared/designs/`。
+- 计划阶段把设计拆成 2-5 分钟粒度任务，包含路径、依赖、测试策略和 `Domain`。
+- 实现阶段使用 implementer → reviewer 循环，并通过 [[子 Agent 派发工具]] 并行处理可并行任务。
+- 非平凡交付可进入 [[Issue 驱动交付生命周期]]，以 issue、worktree、commit 和 merge 串起端到端状态。
 
 ## Links
 
-- [[Workflow Agents]] 实现主流程角色。
-- [[Artifact Indexing]] 支持历史检索。
+- [[工作流 Agent]] 实现该行为。

@@ -1,19 +1,23 @@
 ---
+title: Mindmodel 运行时
 tags: [atlas, impl]
+sources:
+  - code:src/tools/mindmodel-lookup.ts
+  - code:src/agents/mindmodel/*
+  - code:.mindmodel/*
 ---
-# Mindmodel Runtime
+# Mindmodel 运行时
 
-`src/mindmodel/`、`.mindmodel/` 与 `src/agents/mindmodel/` 共同实现项目约束加载、分类、格式化、审查和生成。
+Mindmodel runtime 由 `.mindmodel/`、`src/mindmodel/`、`src/tools/mindmodel-lookup.ts` 和 `src/agents/mindmodel/*` 组成，提供项目代码风格、模式、架构约束和领域词汇。
 
 ## Responsibilities
 
-- `loadMindmodel` 读取 `.mindmodel/manifest.yaml` 和约束 markdown。
-- classifier prompt 根据任务需求选择相关 category。
-- formatter 把 rules、examples、antiPatterns 渲染成可注入 prompt 的上下文。
-- review parser 解析 `mm-constraint-reviewer` 的违规结果。
-- mindmodel agent 群负责 stack detection、dependency mapping、pattern discovery 和 constraint writing。
+- 加载 `.mindmodel/manifest.yaml` 与分类 markdown。
+- 通过 `mindmodel_lookup` 按 query 返回相关规则和示例。
+- 由 `mm-orchestrator` 与 `mm-*` agents 重建或扩展约束层。
+- 支撑 injector 和 constraint reviewer，让实现阶段遵守 HOW-to-code 规则。
 
 ## Links
 
-- 实现 [[Mindmodel Constraint Enforcement]]。
-- 与 [[Hooks Pipeline]] 和 [[Tools Registry]] 协作。
+- [[Mindmodel 约束执行]] 是该模块的用户可见行为。
+- 低耦合与复用约束 记录其核心架构原则。

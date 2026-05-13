@@ -1,18 +1,20 @@
 ---
+title: Agent 注册表
 tags: [atlas, impl]
+sources:
+  - code:src/agents/index.ts
 ---
-# Agent Registry
+# Agent 注册表
 
-`src/agents/index.ts` 是所有 `AgentConfig` 的集中注册表，输出 OpenCode agent name 到配置对象的映射，并暴露 `PRIMARY_AGENT_NAME`。
+`src/agents/index.ts` 集中导出所有 `AgentConfig`，是 [[插件组合]] 注入 OpenCode agent map 的唯一注册源。
 
 ## Responsibilities
 
-- 注册 `commander`、`brainstormer`、`octto`、`planner`、`executor`、domain implementers、`reviewer`、Atlas agents 和 mindmodel agents。
-- 给 registry entry 注入默认模型，再允许 [[Config Loader]] 做覆盖。
-- 保持 agent module 为纯数据配置，具体业务执行由 agent prompt 和工具完成。
-- 通过 `implementer-frontend`、`implementer-backend`、`implementer-general` 支撑 [[Domain Routed Execution]]。
+- 注册 `commander`、`brainstormer`、`octto`、`planner`、`executor`、domain implementers 和 `reviewer`。
+- 注册 discovery、specialist、Atlas、Mindmodel、knowledge bootstrap、ledger 和 notification agents。
+- 给所有 agent 套用 `DEFAULT_MODEL`，再交给 [[配置加载器]] 做用户覆盖。
+- 保持 agent name 的 kebab-case 外部契约。
 
-## Links
+## Notes
 
-- [[Workflow Agents]] 描述主工作流 agent 的职责。
-- [[Pure Agent Config Registry]] 记录这个结构决策。
+注册表只负责聚合配置，不负责实际调度；调度规则写在对应 agent prompt 与 [[子 Agent 派发工具]] 中。

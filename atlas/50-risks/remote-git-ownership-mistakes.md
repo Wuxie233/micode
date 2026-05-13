@@ -1,17 +1,23 @@
 ---
+title: 远程 Git 所属误推
 tags: [atlas, risk]
+sources:
+  - code:src/lifecycle/pre-flight.ts
+  - code:tests/lifecycle/pre-flight.test.ts
+  - code:AGENTS.md
 ---
-# Remote Git Ownership Mistakes
+# 远程 Git 所属误推
 
-远程写操作如果没有识别 fork、origin 和 upstream，可能把分支、issue 或 PR 写到错误仓库。
+## Risk
 
-## Impact
-
-- 未完成代码可能被推到 upstream 或错误账号。
-- lifecycle issue、PR 或 branch 可能污染不应修改的仓库。
+仓库通常是用户 fork；如果 agent 把 push、issue、PR 或 merge 发到 upstream，可能泄露未完成工作或污染上游项目。
 
 ## Mitigation
 
-- [[Issue Driven Lifecycle]] 的远程写操作前执行 `git remote -v` 和 `gh repo view` 分类。
-- fork 场景只推 `origin`，不碰 upstream。
-- 无法判断所有权时停止并向用户确认。
+- remote mutation 前运行 `git remote -v` 与 `gh repo view --json nameWithOwner,isFork,parent,owner,viewerPermission`。
+- fork 场景只推 `origin`，不碰 `upstream`。
+- 禁止 force push，除非用户在当前回合明确要求且目标安全。
+
+## Links
+
+- [[Lifecycle 状态机]]

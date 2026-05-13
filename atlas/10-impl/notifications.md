@@ -1,19 +1,21 @@
 ---
+title: 通知系统
 tags: [atlas, impl]
+sources:
+  - code:src/notifications/*
+  - code:src/agents/notification-courier.ts
 ---
-# Notifications
+# 通知系统
 
-`src/notifications/` 为 lifecycle 或 session 完成状态提供可去重、可配置、可脱敏的通知管线。
+`src/notifications/` 提供 completion notification 的策略、脱敏、去重、投递和 courier sink，服务 primary agent 的 terminal-state 通知。
 
 ## Responsibilities
 
-- `createPolicy` 判断通知是否启用、是否被去重抑制、是否允许发送。
-- `createDedupeStore` 用 TTL 和条目上限避免重复通知。
-- `composeMessage` 组合状态、标题、摘要和 reference，并调用 scrub 逻辑。
-- `createNotifier` 串联 policy、composer 和 sink，发送失败只记录 warning。
-- `createCourierSink` 通过外部 courier 投递，`createNoopSink` 支持测试和禁用场景。
+- 判断哪些 terminal state 需要发送通知。
+- 通过 dedupe store 避免同一会话重复通知。
+- 在发送前 scrub secrets 和原始日志。
+- 支持 courier sink 和 noop sink，便于测试与降级。
 
-## Links
+## Notes
 
-- [[Lifecycle State Machine]] 在完成或阻塞时可触发通知。
-- [[Remote Git Ownership Mistakes]] 的缓解依赖清晰的完成和失败反馈。
+通知是用户体验层能力，不应成为 lifecycle 或 executor 的核心控制流依赖。

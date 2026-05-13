@@ -1,13 +1,21 @@
 ---
+title: Bun Runtime
 tags: [atlas, context]
+sources:
+  - code:package.json
+  - code:bun.lock
 ---
 # Bun Runtime
 
-Bun 是 micode 的运行时、构建目标和测试运行器，`package.json` 的 `module` 与 `main` 都指向 `dist/index.js`。
+Bun 是项目的测试、构建、SQLite、shell 和部分 runtime API 基础。
+
+## Role
+
+- `bun build` 生成 `dist/index.js`。
+- `bun test` 运行测试套件。
+- `bun:sqlite` 支撑 [[Project Memory 存储]] 与 [[Artifact 索引]]。
+- `bun-pty` 支撑 [[PTY 工具]]。
 
 ## Notes
 
-- `bun run build` 使用 `bun build src/index.ts --target bun`。
-- `bun:test` 驱动 `tests/` 中的行为测试。
-- `bun:sqlite` 支撑 [[Artifact Indexing]] 和 [[Project Memory Store]] 的本地存储。
-- `bun-pty` 是可选依赖，由 [[PTY Tools]] 在运行时加载。
+Bun 版本或 API 行为变化可能影响 build、tests、SQLite 和 PTY 四类路径。

@@ -1,13 +1,22 @@
 ---
+title: External CLI Integrations
 tags: [atlas, context]
+sources:
+  - code:src/tools/ast-grep/*
+  - code:src/tools/btca/*
+  - code:scripts/deploy-runtime.ts
 ---
 # External CLI Integrations
 
-micode 通过外部 CLI 扩展能力，包括 `git`、`gh`、`sg`、`btca`、`npx` 和运行时 shell 命令。
+micode 依赖若干外部 CLI 或系统命令来补充代码搜索、库源码问答、部署同步和 GitHub 交付能力。
+
+## Role
+
+- `sg` 支撑 AST-aware search/replace。
+- `btca` 支撑库源码问答。
+- `git` 与 `gh` 支撑 [[Lifecycle 状态机]]。
+- `rsync`、`bun` 和 shell 命令支撑 [[Runtime Deploy 脚本]]。
 
 ## Notes
 
-- [[Lifecycle State Machine]] 使用 `git` 和 `gh` 管理 issue、分支、worktree、commit 和 PR。
-- [[Tools Registry]] 暴露 `ast_grep_search`、`ast_grep_replace` 和 `btca_ask`。
-- [[OpenCode Plugin API]] 的 MCP 注册会通过 `npx` 启动 Context7 等服务。
-- 外部 CLI 不可用时需要降级或返回明确诊断。
+外部 CLI 缺失通常应降级为 warning 或清晰失败，不应让无关能力同时失效。

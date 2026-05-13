@@ -1,18 +1,23 @@
 ---
+title: 子 Agent 失败与恢复漂移
 tags: [atlas, risk]
+sources:
+  - code:src/tools/spawn-agent/*
+  - code:src/tools/resume-subagent.ts
+  - code:tests/integration/spawn-agent-allsettled.test.ts
 ---
-# Subagent Failure and Resume Drift
+# 子 Agent 失败与恢复漂移
 
-并行 subagent 可以显著提速，但失败、阻塞或 session 过期会导致上下文丢失、重复探索或结论不一致。
+## Risk
 
-## Impact
-
-- 重新派发可能浪费已完成的部分分析。
-- 多个 worker 的 claim 可能互相冲突。
-- 过期 session 无法 resume，协调者需要人工判断是否接受残缺输出。
+并行 subagent 可能出现 transient、task_error 或 blocked；如果 coordinator 盲目重派，可能丢失已收集证据或产生互相矛盾的上下文。
 
 ## Mitigation
 
-- 优先使用 [[Spawn Agent Tool]] 的 preserved session 和 `resume_subagent`。
-- 批量结果按 task 分类处理，不让一个 worker 失败拖垮整批。
-- reconcile 阶段去重 claim，并把冲突写入 challenge 或维护日志。
+- `spawn_agent` 使用 all-settled 返回每个任务状态。
+- 对可恢复失败优先 `resume_subagent`，而不是新开 session。
+- 在综合结果时明确跳过、恢复或重派的原因。
+
+## Links
+
+- [[子 Agent 派发工具]]

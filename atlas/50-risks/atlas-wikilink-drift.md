@@ -1,18 +1,23 @@
 ---
+title: Atlas Wikilink 漂移
 tags: [atlas, risk]
+sources:
+  - code:src/atlas/wikilink.ts
+  - code:tests/atlas/broken-link-scanner.test.ts
+  - code:atlas/README.md
 ---
-# Atlas Wikilink Drift
+# Atlas Wikilink 漂移
 
-Atlas 节点依赖 H1 标题和 Obsidian wikilinks，如果重命名节点但没有同步链接，就会出现 broken link 或误导性关系。
+## Risk
 
-## Impact
-
-- `00-index.md` 或节点间链接无法跳转。
-- 行为节点可能指向不存在的实现节点。
-- 长期维护后知识图谱会逐步失真。
+Atlas 节点改名、H1 改动或批量重建后，旧 wikilinks 可能指向不存在的节点，削弱 Obsidian 图谱和 agent lookup 的可用性。
 
 ## Mitigation
 
-- [[Atlas Vault System]] 的 status 和 broken link scanner 应定期运行。
-- 新节点只链接已存在 H1，重命名时批量更新 wikilinks。
-- 维护日志记录推断和警告，便于下次 refresh 校正。
+- 节点 H1、frontmatter title 和 index wikilink 需要一起维护。
+- 批量写入后扫描 wikilink target 是否存在。
+- 避免在正文中混用 markdown 相对链接作为跨节点引用。
+
+## Links
+
+- [[Atlas Vault 系统]]

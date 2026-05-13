@@ -1,18 +1,21 @@
 ---
+title: 工具注册表
 tags: [atlas, impl]
+sources:
+  - code:src/tools/index.ts
+  - code:src/tools/*
 ---
-# Tools Registry
+# 工具注册表
 
-`src/tools/index.ts` 是工具导出入口，[[Plugin Composition]] 再按运行时依赖创建具体 tool map。
+`src/tools/index.ts` 聚合 OpenCode tools，并由 [[插件组合]] 统一注册到运行时。工具层负责 schema、输入验证和副作用边界，不应直接导入 agent。
 
 ## Responsibilities
 
-- 导出 `artifact_search`、`milestone_artifact_search`、`look_at`、`ast_grep_*`、`btca_ask` 等静态工具。
-- 导出 `createBatchReadTool`、`createMindmodelLookupTool`、`createOcttoTools`、`createPtyTools`、project memory tool factories。
-- 把工具层和内部子系统隔离，避免 `src/index.ts` 直接依赖过多实现细节。
-- 给 agent prompt 提供稳定 tool names，例如 `spawn_agent`、`resume_subagent`、`project_memory_lookup`。
+- 导出 `ast_grep_search`、`ast_grep_replace`、`btca_ask`、`look_at`、artifact search 等静态工具。
+- 通过工厂创建 `spawn_agent`、`batch_read`、`mindmodel_lookup`、`atlas_lookup`、Octto、Project Memory、PTY 和 Lifecycle 工具。
+- 将外部 CLI、文件系统、SQLite、WebSocket、GitHub 等边界封装成稳定 tool contract。
+- 用格式化 Markdown 或结构化 JSON 反馈 agent 可消费的结果。
 
 ## Links
 
-- [[Spawn Agent Tool]] 是并行子代理工具。
-- [[PTY Tools]]、[[Project Memory Store]]、[[Octto Session System]] 都通过该层暴露。
+- [[OpenCode Plugin API]] 是工具注册的外部运行时边界。

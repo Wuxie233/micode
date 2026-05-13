@@ -1,19 +1,22 @@
 ---
+title: Project Memory 存储
 tags: [atlas, impl]
+sources:
+  - code:src/project-memory/*
+  - code:src/tools/project-memory/*
 ---
-# Project Memory Store
+# Project Memory 存储
 
-`src/project-memory/` 与 `src/tools/project-memory/` 用 SQLite 和 FTS 保存项目隔离的 durable memory，用于记录决策、教训、风险、问题和流程。
+`src/project-memory/` 使用 SQLite 保存项目级 durable memory，记录 decisions、lessons、risks、open questions、procedures 和来源关系。
 
 ## Responsibilities
 
-- `createProjectMemoryStore` 管理 entity、entry、source 和 relation 数据。
-- `promoteMarkdown` 从 lifecycle、ledger、plan 或手动 markdown 中提取结构化候选。
-- `lookup` 通过 FTS 检索条目，并按敏感级别、状态和类型过滤。
-- `health` 汇总存储健康状态，`forget` 支持 project、entity、entry、source 级删除。
-- tool factories 暴露 `project_memory_lookup`、`project_memory_promote`、`project_memory_health`、`project_memory_forget`。
+- 维护 `entities`、`entries`、`relations`、`sources` 与 FTS 索引。
+- 提供 lookup、promote、forget 和 health 四类能力。
+- 在 promote 前进行 secret detection，并按 source kind 设置状态。
+- 以 repo identity 为项目隔离维度，使 memory 跨 worktree 可用。
 
 ## Links
 
-- [[Issue Driven Lifecycle]] 在完成时可自动推广经验。
-- [[Artifact Indexing]] 负责检索 thoughts artifacts，两者形成不同知识层。
+- [[Project Memory 工作流]] 描述何时读取和写入记忆。
+- [[Project Memory 与 Atlas 分层]] 记录与 Atlas、Mindmodel 的职责边界。

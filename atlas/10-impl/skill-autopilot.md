@@ -1,19 +1,21 @@
 ---
+title: Skill Autopilot
 tags: [atlas, impl]
+sources:
+  - code:src/skill-autopilot/*
+  - code:tests/skill-autopilot/*
 ---
 # Skill Autopilot
 
-`src/skill-autopilot/` 从 lifecycle journal、records 和 ledgers 中挖掘可复用 procedure candidate，并在安全门禁通过后写入 `.opencode/skills/<name>/SKILL.md`。
+`src/skill-autopilot/` 从项目材料或会话材料中挖掘 skill candidates，并经过安全 gates、原子写入、主权检查和推送保护。
 
 ## Responsibilities
 
-- `runAutopilot` 检查 project identity、写入边界、并发锁和候选策略。
-- candidate miner 从已批准流程和 ledgers 中抽取可复用步骤。
-- policy 根据 recurrence、issue 覆盖、敏感级别和已有 skill 决定 create、patch 或 skip。
-- security pipeline 检查 schema、PII、prompt injection、destructive 操作、代码照搬、冲突标记和长度。
-- writer 做原子写入，stale sweep 标记失效 skill。
+- 从 sources 中提取 candidate，并生成稳定 ID 与 slug。
+- 通过 secret、PII、prompt injection、destructive、conflict marker、code verbatim 等 gates。
+- 用 atomic writer、source hashes 和 overlap 检测维护 skill 文件。
+- 通过 stale sweep 和 push guard 控制长期维护风险。
 
 ## Links
 
-- 与 [[Lifecycle State Machine]] 和 [[Project Memory Store]] 共享历史上下文。
-- [[Valibot at System Boundaries]] 覆盖其 schema gate 思路。
+- [[质量工具链]] 中的测试覆盖该模块的安全边界。

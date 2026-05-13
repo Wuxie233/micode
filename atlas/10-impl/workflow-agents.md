@@ -1,20 +1,31 @@
 ---
+title: 工作流 Agent
 tags: [atlas, impl]
+sources:
+  - code:src/agents/commander.ts
+  - code:src/agents/brainstormer.ts
+  - code:src/agents/octto.ts
+  - code:src/agents/planner.ts
+  - code:src/agents/executor.ts
+  - code:src/agents/implementer-frontend-ui.ts
+  - code:src/agents/implementer-frontend-code.ts
+  - code:src/agents/implementer-backend.ts
+  - code:src/agents/implementer-general.ts
+  - code:src/agents/reviewer.ts
 ---
-# Workflow Agents
+# 工作流 Agent
 
-`src/agents/commander.ts`、`brainstormer.ts`、`octto.ts`、`planner.ts`、`executor.ts`、`implementer*.ts` 与 `reviewer.ts` 定义 Brainstorm、Plan、Implement 的 agent 角色。
+工作流 agent 定义 Brainstorm → Plan → Implement 的人机协作协议，并通过 [[子 Agent 派发工具]]、[[Lifecycle 状态机]]、[[Atlas Vault 系统]]、[[Project Memory 存储]] 和 [[Mindmodel 运行时]] 调用实际能力。
 
 ## Responsibilities
 
-- `commander` 负责主流程判断和任务路由。
-- `brainstormer` 与 `octto` 负责设计探索，产出 design artifacts。
-- `planner` 把设计拆成微任务计划，并在跨前后端时生成冻结 contract。
-- `executor` 按批次并行派发 implementer，并安排 reviewer 回合。
-- domain implementers 执行具体任务，`reviewer` 只读检查结果、测试和 contract 一致性。
+- `commander` 处理主入口意图、轻量执行、lifecycle 协调和终态汇报。
+- `brainstormer` 与 `octto` 负责设计探索，分别服务文本和浏览器 UI。
+- `planner` 产出带 `Domain` 的微任务计划，并在跨前后端时生成冻结契约。
+- `executor` 按 `Domain` 派发 implementers，并组织 implementer → reviewer 循环。
+- `reviewer` 只读校验任务结果、测试状态与契约一致性。
 
 ## Links
 
-- 实现 [[Brainstorm Plan Implement Workflow]]。
-- 支撑 [[Frozen API Contracts]] 与 [[Domain Routing with Frozen Contracts]]。
-- 使用 [[Spawn Agent Tool]] 运行并行子任务。
+- [[头脑风暴到计划到实现工作流]] 描述用户可见路径。
+- [[按领域路由执行]] 描述 `Domain` 派发规则。
