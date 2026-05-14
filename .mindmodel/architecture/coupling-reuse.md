@@ -1,112 +1,98 @@
-# Coupling, Reuse & Design Constraints
+# 模块解耦与高复用 (Coupling and Reuse Philosophy)
+
+This file is the SINGLE source of truth for module decoupling and reuse philosophy in this project.
+AGENTS.md and agent prompts MUST reference this file rather than re-state the philosophy, to avoid drift.
 
 ## Rules
 
-- **Low coupling**: modules depend only on the layer below them (utils ← tools ← hooks ← agents). No circular imports. No "reach up" from utils into tools.
-- **No business classes**: use factory functions with closed-over state (`createX(ctx)`) instead of `class X`. Error subclasses (`class FooError extends Error`) are the only allowed classes.
-- **Factory functions as the composition unit**: every tool, hook, store, and runner is created via a `createX` factory. This keeps state testable, avoids singleton pitfalls, and makes injection explicit.
-- **Reuse protocol constants**: agent prompts share `ATLAS_MENTAL_MODEL_PROTOCOL`, `PROJECT_MEMORY_PROTOCOL`, `KNOWLEDGE_CONTEXT_SECTION` via import — never copy-paste. Tests enforce byte-identity.
-- **Avoid stale Domain tags**: the valid Domain values are `frontend-ui`, `frontend-code`, `backend`, `general`. The bare string `"frontend"` is a stale-plan error — executor stops with a clear message.
-- **Frozen API contract**: when a plan spans both frontend and backend tasks, the planner emits a contract file. Implementers must conform; they **never edit** the contract. Escalate mismatches to the executor.
-- **Leaf agents do not write durable memory**: `implementer-*` and `reviewer` never call `project_memory_promote`, `project_memory_forget`, or write Atlas nodes. They escalate observations via their terminal report.
-- **Context-brief propagation**: executor injects a `<context-brief>` block into every implementer/reviewer spawn prompt. Leaf agents trust the brief and do not re-do atlas_lookup or project_memory_lookup.
-- **Maximum function size**: 40 non-comment, non-blank lines. Max nesting depth: 2. Cognitive complexity ≤ 10.
-- **Early returns** over nested if-else: validate input at the top, return error early, keep happy path unindented.
+- 低耦合优先：模块之间通过显式接口、纯数据或工厂参数通信，禁止跨模块抓取私有状态或内部实现。
+- 模块化分层：每个 src/ 子目录承担一个明确职责（agents 管 prompt、hooks 管生命周期、tools 管工具、utils 管纯工具函数），不混业务逻辑。
+- 高复用："轮子"先行：业务功能由可复用的小工厂、小工具、共享 hook 拼装，而不是为每个需求新写一段一次性业务代码。
+- 新轮子必须有正当性：只有当现有工具无法表达新需求且预期会被多处使用时，才允许新增公共抽象；其他情况优先扩展或组合现有工具。
+- 三个使用阶段必须沿用同一份约束：
+  1. brainstormer/architect 阶段：设计文档显式列出受影响的耦合面与可复用点，禁止"先做了再说"的临时业务堆积。
+  2. planner 阶段：每个 task 标注它修改/新增的耦合面、复用了哪些现有工具、是否引入新轮子；引入新轮子时给出依据。
+  3. reviewer 阶段：审查实现是否复用现有工具、是否引入了不必要的新抽象、是否泄露了私有状态或绕过了模块边界。
 
 ## Examples
 
-### Factory function (not class) for a runner
+### Reuse an existing utility instead of duplicating
+```ts
+// GOOD: business code composes existing wheels
+import { extractErrorMessage } from "@/utils/errors";
+import { createLogger } from "@/utils/logger";
 
-```typescript
-// src/lifecycle/runner.ts
-export function createLifecycleRunner(): LifecycleRunner {
+const log = createLogger("payments");
+
+export function chargeUser(input: ChargeInput) {
+  try {
+    return processCharge(input);
+  } catch (error) {
+    log.error("charge failed", { reason: extractErrorMessage(error) });
+    throw error;
+  }
+}
+```
+
+### Communicate across modules via explicit injected interfaces
+```ts
+// GOOD: hook factory takes ctx, no hidden singleton coupling
+export function createSomeHook(ctx: PluginInput) {
   return {
-    git: (args, options) => runCommand(GIT_BIN, args, options?.cwd),
-    gh: (args, options) => runCommand(GH_BIN, args, options?.cwd),
+    onEvent: async (event: Event) => {
+      await ctx.client.session.message(event.sessionID, { text: "ok" });
+    },
   };
 }
-// Caller creates an instance; no singleton, no static state
-const runner = createLifecycleRunner();
 ```
 
-### Protocol constants imported and injected (not duplicated)
+### Extend an existing wheel rather than create a new one
+```ts
+// GOOD: reuse the shared schema-driven validator with a new pipe step
+import * as v from "valibot";
+import { ConfigSchema } from "@/config-loader";
 
-```typescript
-// src/agents/brainstormer.ts
-import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
-import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
-import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
-
-export const brainstormerAgent: AgentConfig = {
-  prompt: `
-    ...brainstormer-specific instructions...
-    ${ATLAS_MENTAL_MODEL_PROTOCOL}
-    ${PROJECT_MEMORY_PROTOCOL}
-    ${KNOWLEDGE_CONTEXT_SECTION}
-  `,
-};
-// Tests in tests/agents/atlas-protocol-injection.test.ts enforce exactly-once injection
-```
-
-### Early return pattern (max depth 2)
-
-```typescript
-// src/project-memory/promote.ts
-export async function promote(input: PromoteInput): Promise<PromoteOutcome> {
-  if (!input.identity.projectId) {
-    return { accepted: [], rejected: [], refusedReason: DEGRADED_IDENTITY_REASON };
-  }
-  const candidates = extractCandidates(input.markdown);
-  if (candidates.length === 0) {
-    return { accepted: [], rejected: [], refusedReason: null };
-  }
-  // happy path follows — no nesting needed
-  const results = await Promise.all(candidates.map(c => processCandidate(input, c)));
-  return mergeResults(results);
-}
+const StrictConfigSchema = v.pipe(ConfigSchema, v.check((c) => c.timeoutMs > 0, "timeout must be positive"));
 ```
 
 ## Anti-patterns
 
-### Business logic class
-
-```typescript
-// BAD: class for stateful workflow logic
-class LifecycleOrchestrator {
-  constructor(private runner: LifecycleRunner, private store: LifecycleStore) {}
-  async start(summary: string) { ... }
-  async finish() { ... }
-}
-
-// GOOD: factory returning a plain object or function
-function createLifecycleOrchestrator(runner: LifecycleRunner, store: LifecycleStore) {
-  return {
-    start: async (summary: string) => { ... },
-    finish: async () => { ... },
-  };
+### Shotgun business logic (散弹式业务堆积)
+```ts
+// BAD: each new requirement adds a new ad-hoc handler with copy-pasted glue
+export function handleNewRequirementA(input: unknown) {
+  const log = console.log; // duplicated logger
+  try {
+    /* one-shot business code, no reuse */
+  } catch (error) {
+    log("err", error instanceof Error ? error.message : String(error));
+  }
 }
 ```
 
-### Stale Domain tag in a plan
-
-```markdown
-<!-- BAD: stale plan with bare "frontend" -->
-- Domain: frontend
-  File: src/components/Button.tsx
-
-<!-- GOOD: use the current domain taxonomy -->
-- Domain: frontend-ui
-  File: src/components/Button.tsx
+### Utility duplication (工具重复)
+```ts
+// BAD: re-implements an existing helper
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+// already exists as extractErrorMessage in @/utils/errors
 ```
 
-### Leaf agent writing project memory
+### Future-proof abstraction (过度抽象 / future-proof abstraction)
+```ts
+// BAD: introduces a generic registry plus plugin interface for ONE current caller
+export interface PaymentProcessorPlugin<TIn, TOut> {
+  readonly id: string;
+  readonly version: number;
+  process(input: TIn): Promise<TOut>;
+}
+export class PaymentProcessorRegistry { /* ... only used by stripe today ... */ }
+```
 
-```typescript
-// BAD: implementer-backend directly promoting a decision
-// (inside implementer-backend agent prompt or tool call)
-await project_memory_promote({ markdown: "decided to use SQLite", ... });
-// Leaf agents must NEVER do this
-
-// GOOD: escalate via terminal report to executor
-// "Project Memory observation: we chose SQLite for session storage — executor should promote"
+### Private-state coupling (私有状态耦合)
+```ts
+// BAD: reaches into another module's internal cache through a non-exported path
+import { _internalCache } from "@/octto/session/sessions";
+_internalCache.clear();
 ```
