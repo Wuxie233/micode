@@ -13,7 +13,18 @@ import {
 const REVIEW_DECISION_MARKER = "CHANGES REQUESTED";
 const ECONNRESET_MESSAGE = "Provider request failed with ECONNRESET while streaming.";
 const STREAM_RESET_MESSAGE = "Provider stream reset before completion.";
+const H2_UPSTREAM_INTERNAL_ERROR_MESSAGE = "stream error: stream ID 1261; INTERNAL_ERROR; received from peer";
+const H2_UPSTREAM_INTERNAL_ERROR_JSON_MESSAGE =
+  '{"type":"error","sequence_number":0,"error":{"type":"upstream_error","code":"internal_server_error","message":"stream error: stream ID 1261; INTERNAL_ERROR; received from peer"}}';
+const H2_UPSTREAM_INTERNAL_ERROR_STREAM_ID_7_MESSAGE = "stream error: stream ID 7; INTERNAL_ERROR; received from peer";
+const H2_UPSTREAM_INTERNAL_ERROR_STREAM_ID_99999_MESSAGE =
+  "stream error: stream ID 99999; INTERNAL_ERROR; received from peer";
 const NON_TRANSIENT_MESSAGE = "Validation failed before contacting the provider.";
+const UPSTREAM_INTERNAL_SERVER_ERROR_MESSAGE = "upstream returned internal_server_error";
+const UPSTREAM_ERROR_PROVIDER_MESSAGE = "upstream_error: provider blew up";
+const HTTP_500_INTERNAL_SERVER_ERROR_MESSAGE = "HTTP 500 Internal Server Error";
+const STREAM_ERROR_ONLY_MESSAGE = "stream error happened";
+const INTERNAL_ERROR_ONLY_MESSAGE = "INTERNAL_ERROR";
 const TEST_FAILURE_OUTPUT = "Task completed with TEST FAILED after running bun test.";
 const BUILD_FAILURE_OUTPUT = "BUILD FAILED because typecheck rejected the branch.";
 const REVIEW_DECISION_OUTPUT = `Reviewer emitted ${REVIEW_DECISION_MARKER} after review.`;
@@ -29,6 +40,23 @@ describe("spawn-agent classifier tokens", () => {
 
   it("does not match non-transient provider text", () => {
     expect(matchesAnyPattern(NON_TRANSIENT_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+  });
+
+  it("matches upstream h2 stream INTERNAL_ERROR messages", () => {
+    expect(matchesAnyPattern(H2_UPSTREAM_INTERNAL_ERROR_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(true);
+    expect(matchesAnyPattern(H2_UPSTREAM_INTERNAL_ERROR_JSON_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(true);
+    expect(matchesAnyPattern(H2_UPSTREAM_INTERNAL_ERROR_STREAM_ID_7_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(true);
+    expect(matchesAnyPattern(H2_UPSTREAM_INTERNAL_ERROR_STREAM_ID_99999_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(
+      true,
+    );
+  });
+
+  it("does not match generic upstream internal error text as transient network", () => {
+    expect(matchesAnyPattern(UPSTREAM_INTERNAL_SERVER_ERROR_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+    expect(matchesAnyPattern(UPSTREAM_ERROR_PROVIDER_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+    expect(matchesAnyPattern(HTTP_500_INTERNAL_SERVER_ERROR_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+    expect(matchesAnyPattern(STREAM_ERROR_ONLY_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+    expect(matchesAnyPattern(INTERNAL_ERROR_ONLY_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
   });
 
   it("defines concrete transient HTTP statuses", () => {

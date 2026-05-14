@@ -47,6 +47,31 @@ describe("classifySpawnError", () => {
     expect(classifySpawnError({ httpStatus: 503 }).class).toBe(INTERNAL_CLASSES.TRANSIENT);
   });
 
+  it("returns transient for upstream stream INTERNAL_ERROR without broad internal error matching", () => {
+    const coreResult = classifySpawnError({
+      thrown: new Error("stream error: stream ID 1261; INTERNAL_ERROR; received from peer"),
+    });
+    expect(coreResult.class).toBe(INTERNAL_CLASSES.TRANSIENT);
+    expect(coreResult.reason).toContain("INTERNAL_ERROR");
+
+    const http500Result = classifySpawnError({
+      thrown: new Error("stream error: stream ID 42; INTERNAL_ERROR; received from peer"),
+      httpStatus: 500,
+    });
+    expect(http500Result.class).toBe(INTERNAL_CLASSES.TRANSIENT);
+
+    const internalServerResult = classifySpawnError({
+      thrown: new Error("internal_server_error"),
+      httpStatus: 500,
+    });
+    expect(internalServerResult.class).not.toBe(INTERNAL_CLASSES.TRANSIENT);
+
+    const upstreamErrorResult = classifySpawnError({
+      thrown: new Error("upstream_error: something went wrong"),
+    });
+    expect(upstreamErrorResult.class).not.toBe(INTERNAL_CLASSES.TRANSIENT);
+  });
+
   it("returns hard_failure on empty output and no thrown error", () => {
     expect(classifySpawnError({ assistantText: "   " }).class).toBe(INTERNAL_CLASSES.HARD_FAILURE);
   });

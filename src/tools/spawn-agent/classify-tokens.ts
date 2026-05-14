@@ -5,6 +5,7 @@ export const TRANSIENT_NETWORK_PATTERNS: readonly RegExp[] = [
   /fetch failed/i,
   /socket hang up/i,
   /stream\s+(aborted|reset|closed)/i,
+  /stream\s+ID\s+\d+;\s*INTERNAL_ERROR/i,
 ];
 
 export const HTTP_TOO_MANY_REQUESTS = 429;
