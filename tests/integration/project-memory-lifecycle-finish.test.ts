@@ -8,6 +8,7 @@ import { ARTIFACT_KINDS, createLifecycleStore, LIFECYCLE_STATES, type LifecycleH
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 import { createProjectMemoryStore, type ProjectMemoryStore, type SearchHit } from "@/project-memory";
 import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
+import { config } from "@/utils/config";
 import { resolveProjectId } from "@/utils/project-id";
 
 const PREFIX = "micode-memory-lifecycle-";
@@ -106,6 +107,11 @@ let root: string;
 let cwd: string;
 let baseDir: string;
 let worktreesRoot: string;
+let originalPromoteFlag = false;
+
+function setPromoteOnLifecycleFinish(enabled: boolean): void {
+  (config.projectMemory as { promoteOnLifecycleFinish: boolean }).promoteOnLifecycleFinish = enabled;
+}
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), PREFIX));
@@ -116,9 +122,12 @@ beforeEach(async () => {
   mkdirSync(worktreesRoot, { recursive: true });
   await $`git init -q`.cwd(cwd);
   await $`git remote add origin ${ORIGIN}`.cwd(cwd);
+  originalPromoteFlag = config.projectMemory.promoteOnLifecycleFinish;
+  setPromoteOnLifecycleFinish(true);
 });
 
 afterEach(async () => {
+  setPromoteOnLifecycleFinish(originalPromoteFlag);
   await resetProjectMemoryRuntimeForTest();
   rmSync(root, { recursive: true, force: true });
 });
@@ -184,6 +193,10 @@ describe("project memory lifecycle finish E2E", () => {
       prUrl: null,
       closedAt: expect.any(Number),
       worktreeRemoved: true,
+      cleanupOutcome: expect.objectContaining({
+        kind: "already-missing",
+        retried: false,
+      }),
       note: null,
     });
     expect(record?.state).toBe(LIFECYCLE_STATES.CLEANED);
