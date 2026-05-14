@@ -100,7 +100,7 @@ function loadState(cwd: string): State {
 function saveState(cwd: string, state: State): void {
   const file = join(cwd, STATE_FILE);
   mkdirSync(join(cwd, SKILLS_DIR), { recursive: true });
-  writeFileSync(file, JSON.stringify(state, null, JSON_INDENT));
+  writeFileSync(file, `${JSON.stringify(state, null, JSON_INDENT)}\n`);
 }
 
 function bumpState(state: State, key: string, issue: number): void {
