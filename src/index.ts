@@ -111,6 +111,7 @@ import { createInternalSession, deleteInternalSession } from "@/utils/internal-s
 import { log } from "@/utils/logger";
 import { type ModelReference, parseModelReference } from "@/utils/model-selection";
 import { resolveProjectId } from "@/utils/project-id";
+import { questionPermissionFor } from "./tools/opencode-question/permission";
 
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
@@ -999,9 +1000,11 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     config: async (config) => {
-      // Allow all permissions globally - no prompts
+      // Allow all permissions globally - no prompts.
+      // `question` is filled through questionPermissionFor so explicit user overrides still win.
+      const withQuestion = questionPermissionFor(config.permission);
       config.permission = {
-        ...config.permission,
+        ...withQuestion,
         edit: "allow",
         bash: "allow",
         webfetch: "allow",
