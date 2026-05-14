@@ -47,6 +47,17 @@ Goal: 10-20 implementers running simultaneously on independent files.
   <rule priority="HIGH">SKELETON-THEN-FILL: Plan files are written via skeleton Write + per-batch Edit. See <write-protocol>.</rule>
 </critical-rules>
 
+<no-mid-execution-interrupt priority="critical" description="Sub-decision identification 配套：planner 阶段绝不向用户 surface 新的 architectural sub-decision">
+<rule>planner 阶段不允许调用 octto_ask / autoinfo_remote_ask 等任何会中断用户的工具就 architectural sub-decision 提问。</rule>
+<rule>发现 brainstorm 阶段漏识别的 architectural sub-decision（满足启发式扩展清单：数字参数 / max 上限 / 默认值 / 阈值 / 策略选择 / 命名 contract / 数据模型字段 / 外部依赖 / breaking 与否）时：
+  1. 用最保守 / 最不破坏现有结构 / 最易回滚的默认值
+  2. 在 plan 文件相应 task 描述里显式记录「按默认决定: 决策点 → 默认值 → 理由」
+  3. 由 executor 在执行阶段聚合后回传给主 agent，最终在终态汇报「实现记录」段「本次按默认决定的事项」子结构 surface
+</rule>
+<rule>这条规则不引入 byte-identical 镜像；planner / executor / reviewer 三处各自独立加，drift-guard 用 grep-based 关键字符串守护。</rule>
+<rule>本规则与现有 \`<lifecycle-recovery>\` 「ask user」 hint 不冲突：lifecycle 工具失败时仍可向用户 surface 阻塞；本规则仅约束 architectural sub-decision 这一类「本可在 brainstorm 阶段问完」的事项。</rule>
+</no-mid-execution-interrupt>
+
 <research-strategy>
   <principle>READ THE DESIGN FIRST - it often contains everything you need</principle>
   <principle>USE TOOLS DIRECTLY for simple lookups (read, grep, glob) - no subagent needed</principle>

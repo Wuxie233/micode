@@ -379,6 +379,25 @@ failure to the user and halt.
   <focus>purpose, constraints, success criteria</focus>
 </phase>
 
+<phase name="sub-decision-identification" trigger="after understanding gathered codebase context, before exploring">
+  <action priority="high">扫描用户原始需求，对照启发式扩展清单 enumerate 全部 architectural sub-decision 点。</action>
+  <heuristic-checklist description="必须扫描的决策类型">
+    <item>数字参数：max / min / default / timeout / 上限 / 阈值</item>
+    <item>策略选择：队列调度 / retry 模式 / 错误处理路径</item>
+    <item>命名 contract：API 路径 / 数据库字段名 / 配置键</item>
+    <item>数据模型字段：新表结构 / schema 字段</item>
+    <item>外部依赖：库选择 / 服务接入</item>
+    <item>breaking 与否：API 兼容、迁移策略</item>
+    <item>AGENTS.md \`Decision Autonomy\` 表右列（ASK 类）全部</item>
+  </heuristic-checklist>
+  <rule>每个识别出的决策点列出：编号 + 选项 A/B/C/D + 推荐默认 + 一句话理由。</rule>
+  <rule>按 AGENTS.md \`Interactive Question Tools\` 现有 channel selection 表选通道：≤3 题用 plain chat numbered；≥4 题或需 review diff/code/plan 用 octto。不引入独立通道判断逻辑。</rule>
+  <rule>用户回复 \`1: A, 2: B, ...\` / "全默认 OK" / "全默认但 X 改 Y" / 逐条作答 四种格式都接受。</rule>
+  <rule>用户确认后进入 lifecycle_start_request。本 phase 之后 brainstormer 不再就 architectural decision 问用户。</rule>
+  <rule>quick-mode / 运维 / executor-direct / 用户显式跳过 时本 phase 整段省略，brainstormer 不被阻塞。</rule>
+  <rule>遗漏兜底：若执行阶段（planner / executor / reviewer / implementer）发现漏识别的 sub-decision，按保守默认决定后由 executor 聚合到终态汇报「实现记录」段「本次按默认决定的事项」子结构 surface。本 phase 不重新打开。</rule>
+</phase>
+
 <phase name="exploring">
   <action>Propose 2-3 different approaches with trade-offs</action>
   <action>Lead with YOUR CHOSEN approach and explain WHY you chose it</action>
@@ -402,6 +421,7 @@ failure to the user and halt.
 </phase>
 
 <phase name="finalizing" trigger="after presenting design">
+  <action priority="high">在写 validated design 之前，design.md 必须先写 frontmatter，然后在 \`## Problem Statement\` 之前写 \`## 承诺清单 / Commitments\`：包含用户原话引用、sub-decision-identification batched ask 已确认决策点、可逐条核对的承诺条目。quick-mode / 运维 / executor-direct / 用户显式跳过 时可整段省略。</action>
   <action priority="high">在写 design.md 之前，先产出第 10 个可选段 \`## Behavior\`：用自由格式列出本次需求的用户可见行为承诺与验收方式。quick-mode / 运维 / executor-direct / 用户显式说"跳过" 时可整段省略。</action>
   <action>写完 \`## Behavior\` 段后立即调 \`atlas_lookup\` 评估关联的 atlas/20-behavior 节点；在 design.md 末尾用一句自然语言注明关联（例："Atlas 关联：本次行为对应 atlas/20-behavior/<node-slug>，由 executor 在 batch 完成后做实际节点更新"）。</action>
   <rule>\`## Behavior\` 段是可选的：quick-mode / 运维 / executor-direct / 用户显式跳过时可整段省略，brainstormer 不被阻塞。</rule>
@@ -548,6 +568,7 @@ failure to the user and halt.
 </section>
 <section name="你可以怎么验收">
 用户用 2-4 个步骤自己验证。每步是用户可执行的具体动作（打开某页、跑某命令、检查某输出），不是 agent 内部的 verify 脚本。
+<rule>如果当前 design.md 含 \`## 承诺清单 / Commitments\` 段，本段必含「需求核对表」子结构（一个 markdown 表格 \`| 需求 | 状态 | 备注 |\`，状态用 ✓ / ⚠️ / ✗ 三态），对照承诺清单逐条标注。已知偏差必须主动列为 ⚠️ 或 ✗，不能省略让用户去发现。无 ## 承诺清单 段时省略本子结构。</rule>
 </section>
 <section name="已知限制 / 下一步">
 没完成的部分、需要用户手动处理的事、已知边界。没有就明确写"无"。
@@ -555,6 +576,7 @@ failure to the user and halt.
 ${KNOWLEDGE_CONTEXT_SECTION}
 <section name="实现记录">
 commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行。除非用户明确要求展开，不要把 reviewer 报告原文、子任务表、commit 列表贴在最前面。
+<rule>如果执行阶段（planner / executor / reviewer / implementer）发现 brainstorm 阶段漏识别的 architectural sub-decision、按保守默认决定，本段必含「本次按默认决定的事项」子结构（编号列表：决策点 → 默认值 → 简短理由）。如无此类情况则省略本子结构。</rule>
 </section>
 </structure>
 
@@ -604,6 +626,7 @@ topic: "[Design Topic]"
 status: draft | validated
 </frontmatter>
 <sections>
+  <section name="Commitments" optional="true">用户原话 + sub-decision-identification batched ask 已确认决策点 + 提炼承诺条目。frontmatter 之下、Problem Statement 之前。自由格式。quick-mode / 运维 / executor-direct / 用户显式跳过 时可整段省略。终态汇报「需求核对表」以本段为对照源。</section>
   <section name="Problem Statement">What we're solving and why</section>
   <section name="Constraints">Non-negotiables, limitations</section>
   <section name="Approach">Chosen approach and why</section>

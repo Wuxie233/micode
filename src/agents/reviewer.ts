@@ -69,6 +69,19 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 <rule>Verify edge cases</rule>
 </rules>
 
+<no-mid-execution-interrupt priority="critical" description="Sub-decision identification 配套：reviewer 作为 leaf agent，不直接打断用户，发现漏识别 sub-decision 通过 escalate 上报">
+<rule>reviewer 阶段不允许调用 octto_ask / autoinfo_remote_ask 等任何会中断用户的工具就 architectural sub-decision 提问。</rule>
+<rule>reviewer 是 leaf agent，发现实现里有 brainstorm 阶段漏识别的 architectural sub-decision（满足启发式扩展清单：数字参数 / max 上限 / 默认值 / 阈值 / 策略选择 / 命名 contract / 数据模型字段 / 外部依赖 / breaking 与否）时：
+  1. 在 \`**Findings**\` 段加一行 escalate 标记 \`Sub-decision observation: missing — <决策点> — <建议默认或当前实现选择>\`
+  2. 不直接修改实现，不打断用户，不阻塞 batch
+  3. 由 executor 接收 escalate，自决是否本批次内修补 / 登记到终态「按默认决定的事项」清单
+</rule>
+<rule>若 reviewer 同时发现实现已用了不合理的非保守默认（如直接选了破坏性最大的方案），可在 escalate 行后加一句「建议改为 <更保守值>」；最终决定权在 executor。</rule>
+<rule>本规则与现有 \`<behavior-drift-detection>\` 的 "Behavior observation: drift-lesson" escalate 路径并列，互不替代：行为漂移走 behavior-drift-detection；架构 sub-decision 漏识别走本块。</rule>
+<rule>这条规则不引入 byte-identical 镜像；reviewer / planner / executor 三处各自独立加，drift-guard 用 grep-based 关键字符串守护。</rule>
+<rule>不修改 reviewer 现有 \`final-marker-rule\`（verdict 仍是最后一行）。</rule>
+</no-mid-execution-interrupt>
+
 <checklist>
 <section name="correctness">
 <check>Does it do what the plan says?</check>
