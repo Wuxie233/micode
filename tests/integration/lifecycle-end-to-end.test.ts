@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolDefinition } from "@opencode-ai/plugin";
@@ -25,12 +25,15 @@ const SUMMARY = "Lifecycle scripted workflow";
 const MAIN_BRANCH = "main";
 const README_FILE = "README.md";
 const INITIAL_COMMIT = "chore: initial";
+const FIRST_SHA = "abc1231";
+const SECOND_SHA = "abc1232";
 const FIRST_SCOPE = "batch-one";
 const SECOND_SCOPE = "batch-two";
 const FIRST_SUMMARY = "apply first batch";
 const SECOND_SUMMARY = "apply second batch";
 const FIRST_MESSAGE = `chore(${FIRST_SCOPE}): ${FIRST_SUMMARY} (#${ISSUE_NUMBER})`;
 const SECOND_MESSAGE = `chore(${SECOND_SCOPE}): ${SECOND_SUMMARY} (#${ISSUE_NUMBER})`;
+const SHA = "abc123def456";
 const DESIGN_POINTER = "thoughts/shared/designs/issue-1-design.md";
 const PLAN_POINTER = "thoughts/shared/plans/issue-1-plan.md";
 const TOOL_CONTEXT = {} as unknown as ToolContext;
@@ -39,6 +42,7 @@ const EMPTY_OUTPUT = "";
 const NO_CALLS = 0;
 const COMMIT_COUNT = 2;
 const LINE_BREAK = "\n";
+const FORCE_FLAG = "--force";
 const HISTORY_FORMAT = "--format=%s";
 const GH_DEFAULT_BRANCH_ARGS = ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"] as const;
 
@@ -77,6 +81,13 @@ const isArgs = (args: readonly string[], expected: readonly string[]): boolean =
 
 const isPush = (args: readonly string[]): boolean => args[0] === "push";
 
+const fakeShaFor = (args: readonly string[]): string => {
+  const message = args[2] ?? EMPTY_OUTPUT;
+  if (message.startsWith(`chore(${FIRST_SCOPE})`)) return FIRST_SHA;
+  if (message.startsWith(`chore(${SECOND_SCOPE})`)) return SECOND_SHA;
+  return SHA;
+};
+
 const runGit = async (args: readonly string[], cwd: string): Promise<RunResult> => {
   const tokens = [...args];
   const completed = await $`git ${tokens}`.cwd(cwd).quiet().nothrow();
@@ -86,6 +97,13 @@ const runGit = async (args: readonly string[], cwd: string): Promise<RunResult> 
     stderr: completed.stderr.toString(),
     exitCode: completed.exitCode,
   };
+};
+
+const syncFakeWorktreeReadme = async (cwd?: string): Promise<void> => {
+  if (!cwd || cwd === process.cwd()) return;
+  const source = join(cwd, README_FILE);
+  if (!existsSync(source)) return;
+  await Bun.write(join(process.cwd(), README_FILE), await Bun.file(source).text());
 };
 
 const requireGit = async (args: readonly string[], cwd: string): Promise<void> => {
@@ -98,13 +116,101 @@ const requireGit = async (args: readonly string[], cwd: string): Promise<void> =
 const createRunner = (repo: string): FakeRunner => {
   const calls: RunnerCall[] = [];
   const edits: string[] = [];
+  let headSha = SHA;
+  let lifecycleWorktree: string | null = null;
 
   return {
     calls,
     edits,
     git: async (args, options) => {
       calls.push({ bin: "git", args, cwd: options?.cwd });
+
+      // lifecycle_commit push path is mocked to avoid touching any remote.
       if (isPush(args)) return createRun();
+
+      // finishViaLocalMerge reads HEAD for the commit artifact table.
+      if (args[0] === "rev-parse" && args[1] === "HEAD") return createRun(`${headSha}${LINE_BREAK}`);
+
+      // origin URL ownership/lifecycle record preflight reads the target remote.
+      if (isArgs(args, ["remote", "get-url", "origin"])) return createRun(`${ORIGIN}${LINE_BREAK}`);
+
+      // lifecycle_start_request creates the issue worktree; mirror README into a real git repo for commits.
+      if (args[0] === "worktree" && args[1] === "add" && args.includes("-b")) {
+        const worktree = args.at(-1);
+        if (worktree) {
+          lifecycleWorktree = worktree;
+          mkdirSync(worktree, { recursive: true });
+          await Bun.write(join(worktree, README_FILE), await Bun.file(join(repo, README_FILE)).text());
+          await requireGit(["init", "--initial-branch", MAIN_BRANCH], worktree);
+          await requireGit(["config", "user.name", "Micode Test"], worktree);
+          await requireGit(["config", "user.email", "micode@example.invalid"], worktree);
+          await requireGit(["add", README_FILE], worktree);
+          await requireGit(["commit", "-m", INITIAL_COMMIT], worktree);
+        }
+        return createRun();
+      }
+
+      // lifecycle_commit stages worktree changes before creating the lifecycle commit.
+      if (isArgs(args, ["add", "--all"])) return runGit(args, options?.cwd ?? repo);
+
+      // lifecycle_commit writes real commits so history assertions cover both batch subjects.
+      if (args[0] === "commit") {
+        const completed = await runGit(args, options?.cwd ?? repo);
+        await syncFakeWorktreeReadme(options?.cwd);
+        headSha = fakeShaFor(args);
+        return completed;
+      }
+
+      // lifecycle_commit reads changed paths for pre-push hooks; no hook paths needed in this test.
+      if (args[0] === "diff-tree") return createRun();
+
+      // finish default-branch resolver probes origin/HEAD before falling back to gh metadata.
+      if (isArgs(args, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]))
+        return createRun(`${MAIN_BRANCH}${LINE_BREAK}`);
+
+      // temp merge worktree create path is mocked to keep the test filesystem deterministic.
+      if (args[0] === "worktree" && args[1] === "add") return createRun();
+
+      // lifecycle cleanup removes the fake issue worktree directory from disk for assertions.
+      if (args[0] === "worktree" && args[1] === "remove") {
+        const worktree = args.filter((arg) => arg !== FORCE_FLAG).at(-1);
+        if (worktree && worktree !== repo) rmSync(worktree, { recursive: true, force: true });
+        return createRun();
+      }
+
+      // temp merge worktree list path is mocked for cleanup discovery.
+      if (args[0] === "worktree" && args[1] === "list") {
+        const worktrees = [repo, lifecycleWorktree].filter((path): path is string => path !== null);
+        return createRun(worktrees.map((path) => `worktree ${path}`).join(LINE_BREAK));
+      }
+
+      // temp merge worktree prune path is mocked for post-cleanup maintenance.
+      if (args[0] === "worktree" && args[1] === "prune") return createRun();
+
+      // finishViaLocalMerge fetch path is mocked to avoid network access.
+      if (args[0] === "fetch") return createRun();
+
+      // finishViaLocalMerge fast-forward merge probe is mocked as successful.
+      if (args[0] === "merge" && args.includes("--ff-only")) return createRun();
+
+      // finishViaLocalMerge no-fast-forward merge path is mocked as successful.
+      if (args[0] === "merge" && args.includes("--no-ff")) {
+        await requireGit(["add", README_FILE], repo);
+        await requireGit(["commit", "-m", FIRST_MESSAGE], repo);
+        await requireGit(["commit", "--allow-empty", "-m", SECOND_MESSAGE], repo);
+        return createRun();
+      }
+
+      // branch cleanup path is mocked after the lifecycle worktree is removed.
+      if (args[0] === "branch" && args.includes("-d")) return createRun();
+
+      // status cleanliness checks are mocked as clean porcelain output.
+      if (isArgs(args, ["status", "--porcelain"])) return createRun();
+
+      // cleanup untracked checks are mocked with an empty tracked-file list.
+      if (args[0] === "ls-files") return createRun();
+
+      console.warn(`[lifecycle-e2e-fake-runner] unhandled git command: ${args.join(" ")}`);
       return runGit(args, options?.cwd ?? repo);
     },
     gh: async (args, options) => {
@@ -240,6 +346,7 @@ describe("lifecycle scripted end-to-end", () => {
       wait_for_checks: false,
     });
     expect(finishOutput).toContain("## Lifecycle finished");
+    expect(finishOutput).toMatch(new RegExp(`\\| ${ISSUE_NUMBER} \\| - \\| \\d{4}-\\d{2}-\\d{2}T`));
 
     const location = join(lifecycleDir, `${ISSUE_NUMBER}.json`);
     expect(existsSync(location)).toBe(true);
