@@ -148,6 +148,22 @@ describe("runAutopilot", () => {
     expect(skillFiles[0]).toContain("x-micode-sensitivity: public");
   });
 
+  it("writes .state.json with a trailing newline", async () => {
+    const dir = tempRoot("sa-runner-newline-");
+
+    await runAutopilot({
+      cwd: dir,
+      projectId: PROJECT_ID,
+      issueNumber: ISSUE,
+      now: NOW,
+      resolveProjectId: async () => ({ projectId: PROJECT_ID, kind: "origin", source: "git_remote" }),
+      seedCandidates: [candidate({ trigger: WRITE_TRIGGER })],
+    });
+
+    const stateContent = readFileSync(join(dir, STATE_PATH), "utf8");
+    expect(stateContent.endsWith("\n")).toBe(true);
+  });
+
   it("does not overwrite a frozen managed skill", async () => {
     const dir = tempRoot("sa-runner-frozen-");
     const trigger = "update safe docs";
