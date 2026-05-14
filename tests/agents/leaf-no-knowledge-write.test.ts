@@ -1,6 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { executorAgent } from "@/agents/executor";
 import { BASE_IMPLEMENTER_PROMPT } from "@/agents/implementer";
 import { implementerBackendAgent } from "@/agents/implementer-backend";

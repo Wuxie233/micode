@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  buildHint,
+  isSafeToRetry,
   LIFECYCLE_FAILURE_KINDS,
   LIFECYCLE_RECOMMENDED_ACTIONS,
   type LifecycleRecoveryHint,
-  buildHint,
-  isSafeToRetry,
 } from "@/lifecycle/recovery/hint";
 
 describe("LifecycleRecoveryHint", () => {

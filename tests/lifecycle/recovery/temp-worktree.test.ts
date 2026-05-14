@@ -1,12 +1,11 @@
 import { describe, expect, it } from "bun:test";
-
-import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 import {
   computeTempWorktreePath,
   createTempMergeWorktree,
   readMergeConflicts,
   removeTempMergeWorktree,
 } from "@/lifecycle/recovery/temp-worktree";
+import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 
 const ok = (stdout = ""): RunResult => ({ stdout, stderr: "", exitCode: 0 });
 const fail = (stderr = "boom"): RunResult => ({ stdout: "", stderr, exitCode: 1 });
@@ -75,9 +74,7 @@ describe("createTempMergeWorktree", () => {
 
 describe("readMergeConflicts", () => {
   it("returns conflict files from git status --porcelain UU/AA/DD lines", async () => {
-    const { runner } = recorder([
-      ok("UU src/a.ts\nAA src/b.ts\n M src/c.ts\nDD src/d.ts\n?? untracked.ts\n"),
-    ]);
+    const { runner } = recorder([ok("UU src/a.ts\nAA src/b.ts\n M src/c.ts\nDD src/d.ts\n?? untracked.ts\n")]);
     const files = await readMergeConflicts(runner, "/tmp/wt");
     expect(files).toEqual(["src/a.ts", "src/b.ts", "src/d.ts"]);
   });

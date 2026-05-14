@@ -105,6 +105,12 @@ Quick review - you're one of 10-20 reviewers running in parallel.
 <check>Implementation does not silently contradict an active Project Memory decision listed in the brief?</check>
 <check>Implementation does not cross a Project Memory risk boundary without a Maintain note?</check>
 </section>
+
+<section name="behavior-consistency">
+<check>Implementation 与 design.md \`## Behavior\` 段语义一致（没有引入未声明的用户可见行为）?</check>
+<check>Implementation 没有遗漏 \`## Behavior\` 段中由本 task 负责的那条行为承诺?</check>
+<check>如 plan.md \`## 行为承诺映射\` 段指明本 task 对应的行为承诺，diff 实际行为是否与该映射条目一致?</check>
+</section>
 </checklist>
 
 <test-policy>
@@ -146,6 +152,17 @@ ${PROJECT_MEMORY_PROTOCOL}
 <rule>These observations are SIGNALS for executor to escalate or for the primary agent to write a Maintain entry. The reviewer does NOT auto-fail the review on these signals; the verdict (APPROVED / CHANGES REQUESTED) is based on code correctness against the plan, not on knowledge-store conflicts.</rule>
 </project-memory-consistency>
 
+<behavior-drift-detection priority="medium" description="BDD 防漂移层：reviewer 行为一致性升级 + lesson escalate">
+<rule>对照 design.md \`## Behavior\` 段（在 context-brief「本次 Task 对应的行为承诺」字段已下传）判断实现是否存在明显漂移：与某条 \`## Behavior\` 描述矛盾，或引入未声明的用户可见新行为。</rule>
+<rule>区分两类：</rule>
+<sub-rule type="minor">轻微补全（不矛盾任何 Behavior 描述，只是补全实现细节）→ 不阻塞，在 \`**Findings**\` 行为一致性子项标 ✓ 或附一句备注；verdict 仍可 APPROVED。</sub-rule>
+<sub-rule type="major">明显漂移（与某条 Behavior 描述矛盾 / 引入未声明用户可见行为 / 遗漏本 task 负责的 Behavior）→ 在 \`**Findings**\` 行为一致性子项标 ⚠️ 并升级 verdict 为 CHANGES REQUESTED。</sub-rule>
+<rule>发现明显漂移且判断属于"可复用漂移教训"（不是单次特定情况）时，在 reviewer 报告 body 中追加一行 "Behavior observation: drift-lesson — <一句话教训> — design pointer: <design.md 路径>"，放在 verdict 之前；executor 收集后由 primary agent 决定是否调 \`project_memory_promote\` type=lesson。</rule>
+<rule>reviewer 是 leaf agent，自身不调 \`project_memory_promote\` / \`project_memory_forget\`（保持现有 leaf agent 协议约定）。</rule>
+<rule>不强制 CHANGES REQUESTED 阈值过低（避免 implementer-reviewer 循环卡死）：仅"明显漂移"升级；"实现细节补全""更优实现"等不算漂移。</rule>
+<rule>verdict 行仍单独最后一行（APPROVED / CHANGES REQUESTED），不破坏 \`<final-marker-rule>\`。</rule>
+</behavior-drift-detection>
+
 <observation-format>
 <rule>Place observation lines at the END of your reviewer body but BEFORE the final verdict line (per <final-marker-rule>: verdict MUST be the last line).</rule>
 <rule>Multiple observations are allowed; one per line.</rule>
@@ -183,6 +200,12 @@ You review ONE file. Keep review focused:
 
 **Test**: PASS / FAIL
 - Command: \`bun test path/to/test.ts\`
+
+**Findings**:
+- 行为一致性: ✓ 实现与 design.md \`## Behavior\` 段（本 task 对应条目）一致
+  （发现明显漂移时升级为）
+  ⚠️ 实现引入了未声明的「<具体行为>」/ 实现遗漏了 \`## Behavior\` 段第 K 条；建议回退或补 Behavior 声明
+- （可选）其它 finding 一行一条
 
 **Issues** (if any):
 1. \`file:line\` - [issue]

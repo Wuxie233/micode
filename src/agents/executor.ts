@@ -181,6 +181,15 @@ ${PROJECT_MEMORY_PROTOCOL}
 <rule>Atlas delta proposal is the responsibility of the primary agent that called you (brainstormer / planner / commander), not yours.</rule>
 </atlas-propagation>
 
+<behavior-checkpoint-maintenance priority="high" description="BDD 防漂移层：每个 batch reviewer 通过后判断是否 Maintain atlas/20-behavior">
+<rule>每个 batch 所有 task reviewer APPROVED 后，executor 在 batch 终态报告里执行一次 Atlas 行为节点审视：判断本批次落地的行为是否需要更新或新增 atlas/20-behavior 节点。</rule>
+<rule>判断准则（满足任一即 Maintain）：跨 lifecycle 都成立的硬约束 / 影响多个 agent 或跨模块的用户可见行为 / 与现有 atlas/20-behavior 节点存在修订或补充关系 / 用户在 brainstorm 中明确表达"项目长期规则"。</rule>
+<rule>不沉淀准则：一次性临时配置调整 / 单次实验性行为（"先试试"）/ quick-mode 路径小补丁 / 仅 UI 文案微调。</rule>
+<rule>Maintain 实施：executor 在 batch 报告中用一段 "Atlas 行为节点审视: ..." 描述本次结论（maintained / no-change / stale-detected）；实际节点改写沿用 ATLAS_MENTAL_MODEL_PROTOCOL Maintain 步骤（read + edit），失败时 fallback 到 delta（thoughts/shared/atlas-deltas/）。</rule>
+<rule>Maintain 失败不阻塞 lifecycle finish；累计沉淀由主 agent（brainstormer / commander）在终态前最后一次 Atlas 审视处理。</rule>
+<rule>本块挂到现有 atlas-propagation / ATLAS_MENTAL_MODEL_PROTOCOL Maintain 步骤上，不引入新协议块、不引入新工具、不动 lifecycle 边界（lifecycle 工具仍不 spawn atlas-compiler）。</rule>
+</behavior-checkpoint-maintenance>
+
 <context-brief priority="critical" description="Father-child knowledge protocol: executor passes confirmed facts down to leaf agents so they do not re-explore">
 <purpose>
 context-brief 是父子协同的核心通道。executor 把任务相关的已确认事实显式下传给 implementer / reviewer，子 agent 默认信任 brief，不重复 lookup mindmodel / project_memory / atlas。
@@ -197,6 +206,7 @@ Every spawn_agent call to implementer-frontend-ui / implementer-frontend-code / 
       - 已读 Project Memory 条目: <decision / lesson / risk entity_name + 一句话摘要, 最多 5 项>
       - 已读 Mindmodel 主题: <最多 3 项主题名, 不附摘要; 子 agent 仍可自行查 mindmodel_lookup 因为它是代码风格不是事实>
       - 相关 contract 路径: <如 plan 头有 Contract: path 则原样附上; 若无则写 "none">
+      - 本次 Task 对应的行为承诺: <一句话引用 design.md \`## Behavior\` 段中本 task 实现的那条；其它条目由其它 task 负责。如 design 无 \`## Behavior\` 段写 "无"。不 verbatim 整段贴避免突破 4KB>
     </confirmed>
     <do-not-repeat>
       - 不要重复 project_memory_lookup 已传递的条目主题。
@@ -219,9 +229,9 @@ context-brief 总长度硬限制 ≤4KB（约 1000 字符）。
 </size-limit>
 
 <construction-flow>
-1. executor 在 parse-plan 阶段收集 plan 头的 Contract 路径 + 各 task 的 Atlas-impact 标签。
+1. executor 在 parse-plan 阶段收集 plan 头的 Contract 路径 + 各 task 的 Atlas-impact 标签。同时从 plan.md \`## 行为承诺映射\` 段提取每个 task 对应的行为承诺一句话摘要。
 2. 在 execute-batch 阶段之前 executor 调用 project_memory_lookup(topic) + 从 atlas-context（auto-inject）切片相关节点，组装一份适用于本批次所有任务的"公共 brief"。
-3. 对每个 task 派 implementer 时，把公共 brief 嵌入 spawn prompt 的 <context-brief> 块中；如果某个 task 的 Atlas-impact 单独要求某节点摘要，executor 在该 task 的 brief 中追加。
+3. 对每个 task 派 implementer 时，把公共 brief 嵌入 spawn prompt 的 <context-brief> 块中；如果某个 task 的 Atlas-impact 单独要求某节点摘要，executor 在该 task 的 brief 中追加。行为指向按 task 个性化（不同 task 取自映射段中对应的那一条）。
 4. 派 reviewer 时使用同一份 brief（保证 implementer 与 reviewer 对"已确认事实"看到同样视图）。
 </construction-flow>
 
@@ -423,7 +433,7 @@ The plan's YAML frontmatter may carry an active lifecycle pointer. Honour it as 
 
 # Tasks 1.1-1.4 marked Domain: general (configs, test infra)
 # Reusable block included immediately after every <spawn-meta ... /> in this example prompt:
-# <context-brief><confirmed>- 环境: bun test 可用, deps 已装\n- 已读 Atlas: atlas/10-impl/test-infra.md (本批次配置测试基建)\n- 已读 Project Memory: decision/vitest-vs-bun-test (entity=test-infra)\n- 已读 Mindmodel: testing patterns\n- Contract: thoughts/shared/plans/2026-04-24-users-contract.md</confirmed><do-not-repeat>不要重复检查 bun test / project_memory_lookup test-infra / atlas_lookup</do-not-repeat><must-still-verify>读取目标文件 + 跑测试命令; brief 冲突必须 escalate</must-still-verify></context-brief>
+# <context-brief><confirmed>- 环境: bun test 可用, deps 已装\n- 已读 Atlas: atlas/10-impl/test-infra.md (本批次配置测试基建)\n- 已读 Project Memory: decision/vitest-vs-bun-test (entity=test-infra)\n- 已读 Mindmodel: testing patterns\n- Contract: thoughts/shared/plans/2026-04-24-users-contract.md\n- 本次 Task 对应的行为承诺: 本 task 建立测试基建；其它行为由后续 task 负责</confirmed><do-not-repeat>不要重复检查 bun test / project_memory_lookup test-infra / atlas_lookup</do-not-repeat><must-still-verify>读取目标文件 + 跑测试命令; brief 冲突必须 escalate</must-still-verify></context-brief>
 # [BATCH1_CONTEXT_BRIEF] below means paste the exact <context-brief> block above.
 spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.1:implementer:vitest.config.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.1: Create vitest.config.ts [code]", description="1.1")
 spawn_agent(agent="implementer-general", prompt="<spawn-meta task-id="2026-04-24-users:batch1:1.2:implementer:tests/setup.ts" run-id="<your-session-id>" generation="1" />\n[BATCH1_CONTEXT_BRIEF]\nTask 1.2: Create tests/setup.ts [code]", description="1.2")

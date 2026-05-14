@@ -92,6 +92,30 @@ describe("planner agent", () => {
     expect(source).toContain("BATCH-N-TASK-Y");
   });
 
+  it("should require a behavior commitment mapping section before dependency graph", async () => {
+    const fs = await import("node:fs/promises");
+    const source = await fs.readFile("src/agents/planner.ts", "utf-8");
+
+    expect(source).toContain(
+      '<behavior-mapping-rules priority="critical" description="BDD 防漂移层：plan.md 必须在文件开头含 ## 行为承诺映射 段">',
+    );
+    expect(source).toContain("## 行为承诺映射");
+    expect(source).toContain("**未对应任何 task 的行为**");
+
+    const mappingIndex = source.indexOf("## 行为承诺映射");
+    const dependencyGraphIndex = source.indexOf("## Dependency Graph");
+    expect(mappingIndex).toBeGreaterThan(0);
+    expect(dependencyGraphIndex).toBeGreaterThan(mappingIndex);
+  });
+
+  it("should instruct planner to atlas_lookup behavior nodes after reading Behavior", async () => {
+    const { plannerAgent } = await import("../../src/agents/planner");
+    const prompt = plannerAgent.prompt ?? "";
+
+    expect(prompt).toContain("如果 design 含 `## Behavior` 段");
+    expect(prompt).toContain("立即 `atlas_lookup` 查相关 atlas/20-behavior 节点");
+  });
+
   it("should still parse as a valid module and export plannerAgent", async () => {
     const mod = await import("../../src/agents/planner");
     expect(mod.plannerAgent).toBeDefined();

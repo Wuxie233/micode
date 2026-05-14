@@ -26,6 +26,7 @@ const formatCandidates = (candidates: readonly LifecycleCandidateSummary[]): rea
   return ["", "**candidates:**", "", header, sep, ...rows];
 };
 
+// eslint-disable-next-line no-restricted-syntax -- "List" here describes the markdown bullet-list output shape, not a Hungarian data-structure tag; pairs with formatScalar/formatCandidates above
 const formatList = (label: string, items: readonly string[]): readonly string[] => {
   if (items.length === 0) return [];
   return ["", `**${label}:**`, "", ...items.map((it) => `- \`${it}\``)];
