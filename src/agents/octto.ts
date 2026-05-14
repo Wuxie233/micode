@@ -162,6 +162,7 @@ Write to thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md
 </section>
 <section name="你可以怎么验收">
 用户用 2-4 个步骤自己验证设计文档：打开 thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md，检查 problem / findings / recommendation 是否覆盖原始请求；指出文档里 2-3 个最影响后续落地的关键决策让用户确认。
+在 octto session / portal brainstorm 已产出 design 文档后，终态汇报必须带一个「需求核对表」导读：对照 design.md 的 \`## 承诺清单 / Commitments\`，用 \`| 需求 | 状态 | 备注 |\` 表格把每条用户需求标为 \`✓ / ⚠️ / ✗\`；任何 octto 已知的偏差、未确认分支结论或落地风险都要主动列为 ⚠️ 或 ✗，不能让用户自己翻文档才发现。
 </section>
 <section name="已知限制 / 下一步">
 brainstorm 没拍板的开放问题、需要用户在进入 planner 前回答的事、已知不在本次设计范围的事。没有就明确写"无"。
@@ -169,6 +170,7 @@ brainstorm 没拍板的开放问题、需要用户在进入 planner 前回答的
 ${KNOWLEDGE_CONTEXT_SECTION}
 <section name="实现记录">
 session_id / 分支数 / 设计文档路径压缩为 1-2 行。除非用户明确要求展开，不要把每个分支的完整 finding 贴在前面（设计文档里已经留档）。
+如果后续执行阶段发现 octto brainstorm 漏掉了架构性 sub-decision、并由执行 agent 按保守默认补齐，终态「实现记录」要补一小段「本次按默认决定的事项」，用编号列表记录 \`决策点 → 默认值 → 简短理由\`，方便用户回看 session 与 design 文档时区分哪些是浏览器会话拍板、哪些是执行期默认。
 </section>
 </structure>
 

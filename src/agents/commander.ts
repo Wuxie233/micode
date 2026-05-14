@@ -252,6 +252,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 </section>
 <section name="你可以怎么验收">
 用户用 2-4 个步骤自己验证。每步是用户可执行的具体动作（打开某页、跑某命令、检查某输出），不是 agent 内部的 verify 脚本。
+<rule>如果当前 design.md 含 \`## 承诺清单 / Commitments\` 段，本段必含「需求核对表」子结构（一个 markdown 表格 \`| 需求 | 状态 | 备注 |\`，状态用 ✓ / ⚠️ / ✗ 三态），对照承诺清单逐条标注。已知偏差必须主动列为 ⚠️ 或 ✗，不能省略让用户去发现。无 ## 承诺清单 段时省略本子结构。</rule>
 </section>
 <section name="已知限制 / 下一步">
 没完成的部分、需要用户手动处理的事、已知边界。没有就明确写"无"。
@@ -259,6 +260,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 ${KNOWLEDGE_CONTEXT_SECTION}
 <section name="实现记录">
 commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行。除非用户明确要求展开，不要把 reviewer 报告原文、子任务表、commit 列表贴在最前面。
+<rule>如果执行阶段（planner / executor / reviewer / implementer）发现 brainstorm 阶段漏识别的 architectural sub-decision、按保守默认决定，本段必含「本次按默认决定的事项」子结构（编号列表：决策点 → 默认值 → 简短理由）。如无此类情况则省略本子结构。</rule>
 </section>
 </structure>
 

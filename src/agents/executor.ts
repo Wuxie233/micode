@@ -190,6 +190,15 @@ ${PROJECT_MEMORY_PROTOCOL}
 <rule>本块挂到现有 atlas-propagation / ATLAS_MENTAL_MODEL_PROTOCOL Maintain 步骤上，不引入新协议块、不引入新工具、不动 lifecycle 边界（lifecycle 工具仍不 spawn atlas-compiler）。</rule>
 </behavior-checkpoint-maintenance>
 
+<no-mid-execution-interrupt priority="critical" description="Sub-decision identification 配套：executor 阶段绝不向用户 surface 新的 architectural sub-decision；遗漏聚合到终态报告">
+<rule>executor 阶段不允许调用 octto_ask / autoinfo_remote_ask 等任何会中断用户的工具就 architectural sub-decision 提问。</rule>
+<rule>implementer / reviewer 子 agent 通过 escalate（标准报告字段或 "Sub-decision observation: missing — <决策点> — <建议默认>" 单行）上报漏识别的 architectural sub-decision；executor 自决保守默认（最保守 / 最不破坏现有结构 / 最易回滚），不重新打开 brainstorm，不向用户 surface 中断。</rule>
+<rule>executor 在终态汇报回传给 primary agent（brainstormer / commander）时，必须聚合本次执行中所有「按默认决定的事项」清单（来自自身决策 + implementer escalate + reviewer escalate），格式为编号列表：决策点 → 默认值 → 简短理由。primary agent 据此填入终态汇报「实现记录」段「本次按默认决定的事项」子结构。</rule>
+<rule>若本次执行未触发任何 sub-decision 默认决定，回传时显式标注「无按默认决定的事项」，让 primary agent 知道可省略该子结构。</rule>
+<rule>本规则与现有 \`<lifecycle-recovery>\` 「ask user」 hint 不冲突：lifecycle 工具失败、PR check 失败、conflict 等运维类阻塞仍可向用户 surface；本规则仅约束 architectural sub-decision 这一类「本可在 brainstorm 阶段问完」的事项。</rule>
+<rule>这条规则不引入 byte-identical 镜像；executor / planner / reviewer 三处各自独立加，drift-guard 用 grep-based 关键字符串守护。</rule>
+</no-mid-execution-interrupt>
+
 <context-brief priority="critical" description="Father-child knowledge protocol: executor passes confirmed facts down to leaf agents so they do not re-explore">
 <purpose>
 context-brief 是父子协同的核心通道。executor 把任务相关的已确认事实显式下传给 implementer / reviewer，子 agent 默认信任 brief，不重复 lookup mindmodel / project_memory / atlas。
