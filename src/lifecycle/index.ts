@@ -1,13 +1,15 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import * as v from "valibot";
 
 import { type CompletionNotifier, NOTIFICATION_STATUSES, type NotificationStatus } from "@/notifications";
-import { getDefaultStore, type ProjectMemoryStore, type PromoteOutcome, promoteMarkdown } from "@/project-memory";
+import {
+  type ScheduleMaintenanceInput,
+  type ScheduleMaintenanceOutcome,
+  scheduleProjectMemoryMaintenance,
+} from "@/project-memory/maintenance/scheduler";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
-import { resolveProjectId } from "@/utils/project-id";
 import { type CommitAndPushInput, commitAndPush } from "./commits";
 import { resolveDefaultBranch } from "./default-branch";
 import { detectBlockedTasks } from "./finish-guards";
@@ -90,6 +92,7 @@ export interface LifecycleStoreInput {
   readonly journal?: JournalStore;
   readonly lease?: LeaseStore;
   readonly notifier?: CompletionNotifier;
+  readonly maintenanceScheduler?: ProjectMemoryMaintenanceScheduler;
   readonly preStageHook?: CommitAndPushInput["preStageHook"];
   readonly prePushHook?: CommitAndPushInput["prePushHook"];
 }
@@ -108,11 +111,14 @@ interface LifecycleContext {
   readonly journal: JournalStore;
   readonly lease: LeaseStore;
   readonly notifier?: CompletionNotifier;
+  readonly maintenanceScheduler: ProjectMemoryMaintenanceScheduler;
   readonly preStageHook?: CommitAndPushInput["preStageHook"];
   readonly prePushHook?: CommitAndPushInput["prePushHook"];
 }
 
-type ProjectMemoryProvider = () => Promise<ProjectMemoryStore>;
+export type ProjectMemoryMaintenanceScheduler = (
+  input: ScheduleMaintenanceInput,
+) => Promise<ScheduleMaintenanceOutcome>;
 
 const OK_EXIT_CODE = 0;
 const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
@@ -140,15 +146,10 @@ const PRE_FLIGHT_FAILED = "pre_flight_failed";
 const EXECUTOR_BLOCKED = "executor_blocked";
 const ISSUES_DISABLED_UPSTREAM = "issues_disabled_upstream";
 const GITHUB_REPO_BASE_URL = "https://github.com";
-const MEMORY_PROMOTION_FAILED = "memory_promotion_failed";
-const MEMORY_PROMOTED = "memory_promoted";
-const MEMORY_REJECTED = "memory_rejected";
-const MEMORY_NO_SOURCE = "no_markdown_source";
-const MEMORY_NO_CANDIDATES = "no_candidates";
 const ISSUE_POINTER_PREFIX = "issue/";
-const ISSUE_ENTITY_PREFIX = "issue-";
-const PROJECT_MEMORY_SOURCE_KIND = "lifecycle";
 const RESOLVED_BASE_PREFIX = "resolved-base";
+const PROJECT_MEMORY_TERMINAL_TRIGGER = "lifecycle.finish";
+const OUTCOME_POINTER_PREFIX = "outcome/";
 
 const GH_ISSUE = "issue";
 const GH_REPO = "repo";
@@ -515,68 +516,47 @@ const applyFinishOutcome = (record: LifecycleRecord, outcome: FinishOutcome): Li
   return touch(advanceTo(advanceTo(next, LIFECYCLE_STATES.CLOSED), LIFECYCLE_STATES.CLEANED));
 };
 
-const resolvePointerPath = (cwd: string, pointer: string): string => {
-  if (isAbsolute(pointer)) return pointer;
-  return join(cwd, pointer);
+const isExecutorBlockedOutcome = (outcome: FinishOutcome): boolean =>
+  outcome.note?.startsWith(EXECUTOR_BLOCKED) ?? false;
+
+const shouldScheduleTerminalMaintenance = (outcome: FinishOutcome): boolean => {
+  if (!config.projectMemory.maintenanceEnabled || !config.projectMemory.maintenanceTerminalTriggerEnabled) return false;
+  return outcome.merged || isExecutorBlockedOutcome(outcome);
 };
 
-const readLatestLedger = async (record: LifecycleRecord, cwd: string): Promise<string | null> => {
-  const pointer = record.artifacts[ARTIFACT_KINDS.LEDGER].at(-1);
-  if (!pointer) return null;
-
-  try {
-    const markdown = await readFile(resolvePointerPath(cwd, pointer), "utf8");
-    if (markdown.trim().length > 0) return markdown;
-    return null;
-  } catch {
-    // Ledger pointers can refer to artifacts removed with a worktree; issue body remains the fallback.
-    return null;
-  }
+const artifactPointersForMaintenance = (record: LifecycleRecord): readonly string[] => {
+  const pointers = [`${ISSUE_POINTER_PREFIX}${record.issueNumber}`];
+  pointers.push(record.branch);
+  for (const pointer of Object.values(record.artifacts).flat()) pointers.push(pointer);
+  return pointers;
 };
 
-const readPromotionMarkdown = async (record: LifecycleRecord, context: LifecycleContext): Promise<string | null> => {
-  const ledger = await readLatestLedger(record, context.cwd);
-  if (ledger) return ledger;
-
-  const body = await readIssueBody(context.runner, record.issueNumber, context.cwd);
-  if (body && body.trim().length > 0) return body;
-  return null;
+const outcomePointerForMaintenance = (outcome: FinishOutcome): string => {
+  if (outcome.merged) return `${OUTCOME_POINTER_PREFIX}merged`;
+  if (isExecutorBlockedOutcome(outcome)) return `${OUTCOME_POINTER_PREFIX}${EXECUTOR_BLOCKED}`;
+  return `${OUTCOME_POINTER_PREFIX}not-merged`;
 };
 
-const getRejectionReason = (outcome: PromoteOutcome): string => {
-  if (outcome.refusedReason) return outcome.refusedReason;
-  return outcome.rejected[0]?.reason ?? MEMORY_NO_CANDIDATES;
-};
-
-const formatPromotionNote = (outcome: PromoteOutcome): string => {
-  if (outcome.accepted.length > 0) return `${MEMORY_PROMOTED}: ${outcome.accepted.length} entries`;
-  return `${MEMORY_REJECTED}: ${getRejectionReason(outcome)}`;
-};
-
-const promoteFinishedRecord = async (
+const scheduleTerminalMaintenance = (
+  context: LifecycleContext,
   record: LifecycleRecord,
   outcome: FinishOutcome,
-  context: LifecycleContext,
-  getStore: ProjectMemoryProvider = getDefaultStore,
-): Promise<LifecycleRecord> => {
-  if (!outcome.merged || !config.projectMemory.promoteOnLifecycleFinish) return record;
+): void => {
+  if (!shouldScheduleTerminalMaintenance(outcome)) return;
 
   try {
-    const markdown = await readPromotionMarkdown(record, context);
-    if (!markdown) return appendNote(record, `${MEMORY_REJECTED}: ${MEMORY_NO_SOURCE}`);
-    const store = await getStore();
-    const identity = await resolveProjectId(context.cwd);
-    const promoted = await promoteMarkdown({
-      store,
-      identity,
-      markdown,
-      defaultEntityName: `${ISSUE_ENTITY_PREFIX}${record.issueNumber}`,
-      sourceKind: PROJECT_MEMORY_SOURCE_KIND,
-      pointer: `${ISSUE_POINTER_PREFIX}${record.issueNumber}`,
-    });
-    return appendNote(record, formatPromotionNote(promoted));
+    void context
+      .maintenanceScheduler({
+        reason: "terminal",
+        triggeredBy: PROJECT_MEMORY_TERMINAL_TRIGGER,
+        directory: context.cwd,
+        sourcePointers: [...artifactPointersForMaintenance(record), outcomePointerForMaintenance(outcome)],
+      })
+      .catch((error: unknown) => {
+        log.warn("lifecycle.project-memory-maintenance", `schedule failed: ${extractErrorMessage(error)}`);
+      });
   } catch (error) {
-    return appendNote(record, `${MEMORY_PROMOTION_FAILED}: ${extractErrorMessage(error)}`);
+    log.warn("lifecycle.project-memory-maintenance", `schedule failed: ${extractErrorMessage(error)}`);
   }
 };
 
@@ -679,6 +659,7 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
       const note = buildExecutorBlockedNote(blocked);
       const outcome = buildExecutorBlockedOutcome(note);
       const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
+      scheduleTerminalMaintenance(context, blockedRecord, outcome);
       await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
       return outcome;
     }
@@ -701,8 +682,8 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
     });
     const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
     const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
-    const promoted = await promoteFinishedRecord(merging, outcome, context);
-    const final = await saveAndSync(context, applyFinishOutcome(promoted, outcome));
+    const final = await saveAndSync(context, applyFinishOutcome(merging, outcome));
+    scheduleTerminalMaintenance(context, final, outcome);
     await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
     if (outcome.merged) {
       await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
@@ -841,6 +822,7 @@ export function createLifecycleStore(input: LifecycleStoreInput): LifecycleHandl
     journal,
     lease,
     notifier: input.notifier,
+    maintenanceScheduler: input.maintenanceScheduler ?? scheduleProjectMemoryMaintenance,
     preStageHook: input.preStageHook,
     prePushHook: input.prePushHook,
   };

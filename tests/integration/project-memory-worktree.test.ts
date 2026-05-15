@@ -10,7 +10,7 @@ import { createProjectMemoryStore, type ProjectMemoryStore } from "@/project-mem
 import { createProjectMemoryLookupTool } from "@/tools/project-memory/lookup";
 import { createProjectMemoryPromoteTool } from "@/tools/project-memory/promote";
 import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
-import { resolveProjectId } from "@/utils/project-id";
+import { normalizeProjectOrigin, projectIdForSource, resolveProjectId } from "@/utils/project-id";
 
 const ROOT_PREFIX = "project-memory-worktree-";
 const ORIGIN_URL = "https://github.com/Wuxie233/micode.git";
@@ -29,6 +29,8 @@ const DECISION = "Worktree durability survives worktree deletion through shared 
 const QUERY = "worktree durability";
 const LOOKUP_LIMIT = 5;
 const EXPECTED_ENTRY_COUNT = 1;
+const EXPECTED_ORIGIN_SOURCE = normalizeProjectOrigin(ORIGIN_URL);
+const EXPECTED_PROJECT_ID = projectIdForSource(EXPECTED_ORIGIN_SOURCE);
 
 interface FixturePaths {
   readonly repo: string;
@@ -106,9 +108,9 @@ async function promoteFrom(directory: string): Promise<string> {
   });
 }
 
-async function lookupFrom(directory: string): Promise<string> {
+async function lookupFrom(directory: string, args: Record<string, unknown> = {}): Promise<string> {
   const toolDef = createProjectMemoryLookupTool(createContext(directory)).project_memory_lookup;
-  return executeTool(toolDef, { query: QUERY, limit: LOOKUP_LIMIT });
+  return executeTool(toolDef, { query: QUERY, limit: LOOKUP_LIMIT, ...args });
 }
 
 describe("project memory worktree durability", () => {
@@ -135,6 +137,9 @@ describe("project memory worktree durability", () => {
     expect(paths.store.startsWith(paths.right)).toBe(false);
     expect(leftIdentity.kind).toBe("origin");
     expect(rightIdentity.kind).toBe("origin");
+    expect(leftIdentity.source).toBe(EXPECTED_ORIGIN_SOURCE);
+    expect(rightIdentity.source).toBe(EXPECTED_ORIGIN_SOURCE);
+    expect(leftIdentity.projectId).toBe(EXPECTED_PROJECT_ID);
     expect(rightIdentity.projectId).toBe(leftIdentity.projectId);
     expect(rightIdentity.source).toBe(leftIdentity.source);
 
@@ -153,5 +158,15 @@ describe("project memory worktree durability", () => {
     const afterDelete = await lookupFrom(paths.right);
     expect(afterDelete).toContain(DECISION);
     expect(afterDelete).toContain(POINTER);
+
+    const outsideDirectory = join(root, "outside-project");
+    mkdirSync(outsideDirectory);
+    const outsideIdentity = await resolveProjectId(outsideDirectory);
+    expect(outsideIdentity.kind).toBe("path");
+    expect(outsideIdentity.projectId).not.toBe(leftIdentity.projectId);
+
+    const explicitOriginLookup = await lookupFrom(outsideDirectory, { project_origin: ORIGIN_URL });
+    expect(explicitOriginLookup).toContain(DECISION);
+    expect(explicitOriginLookup).toContain(POINTER);
   });
 });

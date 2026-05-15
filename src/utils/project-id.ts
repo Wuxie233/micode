@@ -19,7 +19,11 @@ function hash(input: string): string {
   return createHash("sha1").update(input).digest("hex").slice(0, ID_LENGTH);
 }
 
-function normalizeRemote(remote: string): string {
+export function projectIdForSource(source: string): string {
+  return hash(source);
+}
+
+export function normalizeProjectOrigin(remote: string): string {
   const trimmed = remote.trim();
   const sshMatch = SSH_REMOTE_PATTERN.exec(trimmed);
   if (sshMatch) {
@@ -35,6 +39,10 @@ function normalizeRemote(remote: string): string {
   } catch {
     return trimmed.toLowerCase().replace(TRAILING_GIT, "");
   }
+}
+
+export function isDegradedProjectIdentity(identity: ProjectIdentity): boolean {
+  return identity.kind !== "origin";
 }
 
 async function readOrigin(cwd: string): Promise<string | null> {
@@ -61,9 +69,9 @@ async function readToplevel(cwd: string): Promise<string> {
 export async function resolveProjectId(cwd: string): Promise<ProjectIdentity> {
   const origin = await readOrigin(cwd);
   if (origin) {
-    const source = normalizeRemote(origin);
-    return { projectId: hash(source), kind: "origin", source };
+    const source = normalizeProjectOrigin(origin);
+    return { projectId: projectIdForSource(source), kind: "origin", source };
   }
   const toplevel = await readToplevel(cwd);
-  return { projectId: hash(toplevel), kind: "path", source: toplevel };
+  return { projectId: projectIdForSource(toplevel), kind: "path", source: toplevel };
 }

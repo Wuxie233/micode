@@ -3,6 +3,24 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SCAN_DIRS = ["src/lifecycle", "src/tools/lifecycle"];
+const MAINTENANCE_DIR = "src/project-memory/maintenance";
+
+const PROJECT_MEMORY_PROMOTE_TOOL_PATTERN = /\bproject_memory_promote\b/u;
+const PROMOTE_MARKDOWN_CALL_PATTERN = /\bpromoteMarkdown\s*\(/u;
+const PROMOTE_MARKDOWN_IMPORT_PATTERN = /import\s+[\s\S]*\bpromoteMarkdown\b[\s\S]*from\s+["']@\/project-memory["']/u;
+const FORBIDDEN_LIFECYCLE_MAINTENANCE_PATTERNS = [
+  /\brunProjectMemoryMaintenance\b/u,
+  /from\s+["']@\/project-memory\/maintenance\/(?:classifier|worker)["']/u,
+  /from\s+["']\.\.\/project-memory\/maintenance\/(?:classifier|worker)["']/u,
+  /from\s+["']\.\.\/\.\.\/project-memory\/maintenance\/(?:classifier|worker)["']/u,
+] as const;
+const FORBIDDEN_PROJECT_MEMORY_MAINTENANCE_PATTERNS = [
+  /\batlas_lookup\b/u,
+  /atlas-compiler/u,
+  /writeFileSync\(\s*["']atlas/u,
+  /\bproject_memory_promote\b/u,
+  /\bproject_memory_forget\b/u,
+] as const;
 
 const walk = (dir: string, out: string[]): void => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -12,11 +30,7 @@ const walk = (dir: string, out: string[]): void => {
   }
 };
 
-const ALLOWED_PROMOTE_SITES = new Set([
-  // Single gated call site that respects config.projectMemory.promoteOnLifecycleFinish.
-  // promoteFinishedRecord is the ONLY function in lifecycle that may call promoteMarkdown.
-  "src/lifecycle/index.ts",
-]);
+const ALLOWED_PROMOTE_SITES = new Set<string>();
 
 describe("lifecycle does not auto-write Project Memory", () => {
   for (const dir of SCAN_DIRS) {
@@ -41,19 +55,72 @@ describe("lifecycle does not auto-write Project Memory", () => {
     });
   }
 
+  it("lifecycle has no direct Project Memory promotion call sites", () => {
+    const files: string[] = [];
+    for (const dir of SCAN_DIRS) walk(dir, files);
+    expect(files.length).toBeGreaterThan(0);
+
+    const promoteMarkdownCallSites: string[] = [];
+    const promoteMarkdownImportSites: string[] = [];
+
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      if (PROMOTE_MARKDOWN_CALL_PATTERN.test(src)) promoteMarkdownCallSites.push(f);
+      if (PROMOTE_MARKDOWN_IMPORT_PATTERN.test(src)) promoteMarkdownImportSites.push(f);
+      expect({ file: f, promoteTool: PROJECT_MEMORY_PROMOTE_TOOL_PATTERN.test(src) }).toEqual({
+        file: f,
+        promoteTool: false,
+      });
+    }
+
+    expect(new Set(promoteMarkdownCallSites)).toEqual(ALLOWED_PROMOTE_SITES);
+    expect(new Set(promoteMarkdownImportSites)).toEqual(ALLOWED_PROMOTE_SITES);
+  });
+
+  it("lifecycle may schedule Project Memory maintenance but not import worker internals", () => {
+    const files: string[] = [];
+    for (const dir of SCAN_DIRS) walk(dir, files);
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      for (const pat of FORBIDDEN_LIFECYCLE_MAINTENANCE_PATTERNS) {
+        expect({ file: f, matched: pat.toString(), hit: pat.test(src) }).toEqual({
+          file: f,
+          matched: pat.toString(),
+          hit: false,
+        });
+      }
+    }
+  });
+
+  it("Project Memory maintenance does not write Atlas or call MCP memory tools", () => {
+    const files: string[] = [];
+    walk(MAINTENANCE_DIR, files);
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      for (const pat of FORBIDDEN_PROJECT_MEMORY_MAINTENANCE_PATTERNS) {
+        expect({ file: f, matched: pat.toString(), hit: pat.test(src) }).toEqual({
+          file: f,
+          matched: pat.toString(),
+          hit: false,
+        });
+      }
+    }
+  });
+
   it("default config.projectMemory.promoteOnLifecycleFinish is false", () => {
     // This guards the default-flip from being silently reverted.
     const configSrc = readFileSync("src/utils/config.ts", "utf8");
     expect(configSrc).toMatch(/promoteOnLifecycleFinish:\s*false/);
   });
 
-  it("the allowed call site is gated by the config flag", () => {
-    // promoteFinishedRecord in src/lifecycle/index.ts MUST guard with the config flag.
-    // Without the guard, flipping the default does nothing.
+  it("the legacy promoteOnLifecycleFinish flag is not used by lifecycle finish", () => {
     const indexSrc = readFileSync("src/lifecycle/index.ts", "utf8");
-    expect(indexSrc).toContain("config.projectMemory.promoteOnLifecycleFinish");
-    // Check that the check appears in a short-circuit return position
-    expect(indexSrc).toMatch(/if\s*\([^)]*!config\.projectMemory\.promoteOnLifecycleFinish[^)]*\)\s*return/);
+    expect(indexSrc).not.toContain("promoteOnLifecycleFinish");
+    expect(indexSrc).not.toContain("promoteFinishedRecord");
   });
 
   it("agents Atlas Shared Mental Model section mirrors Project Memory boundary", () => {

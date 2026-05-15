@@ -12,6 +12,7 @@ export {
   createProjectMemoryForgetTool,
   createProjectMemoryHealthTool,
   createProjectMemoryLookupTool,
+  createProjectMemoryMaintainTool,
   createProjectMemoryPromoteTool,
 } from "./project-memory";
 export { createPTYManager, createPtyTools, loadBunPty } from "./pty";

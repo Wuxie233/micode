@@ -9,7 +9,7 @@ import {
   SourceKindValues,
 } from "@/project-memory";
 import { extractErrorMessage } from "@/utils/errors";
-import { getIdentity, getStore } from "./runtime";
+import { getStore, getWriteIdentity, type ProjectMemoryToolTargetArgs } from "./runtime";
 
 const DESCRIPTION = `Promote markdown decisions, lessons, risks, and notes into durable project memory.
 
@@ -31,6 +31,13 @@ const NO_ACCEPTED = "No accepted candidates.";
 const NO_REJECTED = "No rejected candidates.";
 const DEGRADED_IDENTITY_REASON = "degraded_identity";
 const LINE_BREAK = "\n";
+
+interface ProjectMemoryPromoteArgs extends ProjectMemoryToolTargetArgs {
+  readonly markdown: string;
+  readonly entity_name: string;
+  readonly source_kind: (typeof SourceKindValues)[number];
+  readonly pointer: string;
+}
 
 function escapeCell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
@@ -73,6 +80,21 @@ function formatRefusal(reason: string): string {
   return `${REFUSED_HEADER}${LINE_BREAK}${LINE_BREAK}Promotion refused: ${escapeCell(reason)}.`;
 }
 
+function formatError(error: unknown): string {
+  const message = extractErrorMessage(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes("degraded identity")) {
+    return `${ERROR_HEADER}${LINE_BREAK}${LINE_BREAK}${REFUSED_HEADER}${LINE_BREAK}${LINE_BREAK}Promotion refused because degraded identity cannot write durable project memory. Configure a stable git origin or pass an explicit project origin.`;
+  }
+  if (normalized.includes("ambiguous")) {
+    return `${ERROR_HEADER}${LINE_BREAK}${LINE_BREAK}${REFUSED_HEADER}${LINE_BREAK}${LINE_BREAK}Promotion refused because project identity is ambiguous. ${escapeCell(message)}.`;
+  }
+  if (normalized.includes("unresolved")) {
+    return `${ERROR_HEADER}${LINE_BREAK}${LINE_BREAK}${REFUSED_HEADER}${LINE_BREAK}${LINE_BREAK}Promotion refused because project identity could not be resolved. ${escapeCell(message)}.`;
+  }
+  return `${ERROR_HEADER}${LINE_BREAK}${LINE_BREAK}${message}`;
+}
+
 function formatNote(outcome: PromoteOutcome): string {
   return `**Note**: ${outcome.accepted.length} accepted, ${outcome.rejected.length} rejected`;
 }
@@ -98,11 +120,17 @@ export function createProjectMemoryPromoteTool(ctx: PluginInput): { project_memo
       entity_name: tool.schema.string().describe("Default entity name for extracted candidates"),
       source_kind: tool.schema.enum(SourceKindValues).describe("Source kind for promotion provenance"),
       pointer: tool.schema.string().describe("Stable source pointer for promotion provenance"),
+      project_target: tool.schema.string().optional().describe("Optional explicit project target identity"),
+      project_origin: tool.schema.string().optional().describe("Optional explicit project git origin"),
+      project_alias: tool.schema.string().optional().describe("Optional explicit project alias"),
+      project_worktree: tool.schema.string().optional().describe("Optional explicit project worktree path"),
+      session_project_origin: tool.schema.string().optional().describe("Optional session project git origin"),
+      lifecycle_project_origin: tool.schema.string().optional().describe("Optional lifecycle project git origin"),
     },
     execute: async (args) => {
       try {
         const store = await getStore();
-        const identity = await getIdentity(ctx.directory);
+        const identity = await getWriteIdentity(ctx.directory, args as ProjectMemoryPromoteArgs);
         const outcome = await promoteMarkdown({
           store,
           identity,
@@ -113,7 +141,11 @@ export function createProjectMemoryPromoteTool(ctx: PluginInput): { project_memo
         });
         return formatOutcome(outcome);
       } catch (error) {
-        return `${ERROR_HEADER}${LINE_BREAK}${LINE_BREAK}${extractErrorMessage(error)}`;
+        const message = extractErrorMessage(error);
+        if (message.includes("degraded identity cannot write durable project memory")) {
+          return formatRefusal(DEGRADED_IDENTITY_REASON);
+        }
+        return formatError(error);
       }
     },
   });

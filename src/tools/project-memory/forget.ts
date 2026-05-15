@@ -10,7 +10,7 @@ import {
 } from "@/project-memory";
 import { extractErrorMessage } from "@/utils/errors";
 import type { ProjectIdentity } from "@/utils/project-id";
-import { getIdentity, getStore } from "./runtime";
+import { getStore, getWriteIdentity, type ProjectMemoryToolTargetArgs } from "./runtime";
 
 const TARGETS = {
   project: "project",
@@ -22,15 +22,18 @@ const TARGET_VALUES = [TARGETS.project, TARGETS.entity, TARGETS.entry, TARGETS.s
 const PROJECT_PREFIX_LENGTH = 8;
 const DESCRIPTION = `Hard-delete durable project memory entries scoped to the current project.
 
+Use only on explicit user request. Maintenance workers must not use this tool; secret cleanup must go through the store API instead.
+
 Args:
 - target: project, entity, entry, or source
 - entity_id: required when target=entity
 - entry_id: required when target=entry
-- source_kind and pointer: required when target=source`;
+- source_kind and pointer: required when target=source
+- project_target/project_origin/project_alias/project_worktree/session_project_origin/lifecycle_project_origin: optional explicit project target`;
 
 type TargetKind = (typeof TARGET_VALUES)[number];
 
-interface ForgetArgs {
+interface ForgetArgs extends ProjectMemoryToolTargetArgs {
   readonly target: TargetKind;
   readonly entity_id?: string;
   readonly entry_id?: string;
@@ -109,11 +112,17 @@ export function createProjectMemoryForgetTool(ctx: PluginInput): { project_memor
       entry_id: tool.schema.string().optional().describe("Entry id, required when target=entry"),
       source_kind: tool.schema.enum(SourceKindValues).optional().describe("Source kind, required when target=source"),
       pointer: tool.schema.string().optional().describe("Source pointer, required when target=source"),
+      project_target: tool.schema.string().optional().describe("Optional explicit project target identity"),
+      project_origin: tool.schema.string().optional().describe("Optional explicit project git origin"),
+      project_alias: tool.schema.string().optional().describe("Optional explicit project alias"),
+      project_worktree: tool.schema.string().optional().describe("Optional explicit project worktree path"),
+      session_project_origin: tool.schema.string().optional().describe("Optional session project git origin"),
+      lifecycle_project_origin: tool.schema.string().optional().describe("Optional lifecycle project git origin"),
     },
     execute: async (args: ForgetArgs) => {
       try {
         const store = await getStore();
-        const identity = await getIdentity(ctx.directory);
+        const identity = await getWriteIdentity(ctx.directory, args);
         const target = buildTarget(args);
         const counts = await countProject(store, identity, target);
         const outcome = await forget({ store, identity, target });

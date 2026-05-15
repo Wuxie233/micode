@@ -15,12 +15,16 @@ export interface LookupInput {
 }
 
 const ELLIPSIS = "…";
+export const DEFAULT_LOOKUP_STATUS: Status = "active";
 const STATUS_RANK: Record<Status, number> = {
   active: 0,
   tentative: 1,
   hypothesis: 2,
-  superseded: 3,
-  deprecated: 4,
+  stale: 3,
+  superseded: 4,
+  deprecated: 5,
+  archived: 6,
+  tombstoned: 7,
 };
 
 function trimSnippet(summary: string): string {
@@ -65,7 +69,7 @@ export async function lookup(input: LookupInput): Promise<readonly LookupHit[]> 
   const limit = input.limit ?? config.projectMemory.defaultLookupLimit;
   const hits = await input.store.searchEntries(input.identity.projectId, input.query, {
     type: input.type,
-    status: input.status,
+    status: input.status ?? DEFAULT_LOOKUP_STATUS,
     entityId: input.entityId,
     sensitivityCeiling: input.sensitivityCeiling,
     limit,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -7,11 +7,15 @@ import type { ToolContext, ToolResult } from "@opencode-ai/plugin/tool";
 import { $ } from "bun";
 import type { Entity, Entry, Source } from "@/project-memory";
 import { createProjectMemoryStore, type ProjectMemoryStore } from "@/project-memory";
+import { createProjectRegistry } from "@/project-memory/registry";
 import { createProjectMemoryForgetTool } from "@/tools/project-memory/forget";
 import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
-import { type ProjectIdentity, resolveProjectId } from "@/utils/project-id";
+import { config } from "@/utils/config";
+import { type ProjectIdentity, projectIdForSource, resolveProjectId } from "@/utils/project-id";
 
 const REMOTE = "https://github.com/Wuxie233/micode.git";
+const OTHER_REMOTE = "https://github.com/Wuxie233/other-project.git";
+const OTHER_REMOTE_SOURCE = "github.com/wuxie233/other-project";
 const TOOL_CONTEXT = {} as unknown as ToolContext;
 const ENTITY_ID = "entity-one";
 const OTHER_ENTITY_ID = "entity-two";
@@ -24,6 +28,7 @@ const DESIGN_POINTER = "thoughts/shared/designs/example.md";
 const CREATED_AT = 1;
 const UPDATED_AT = 2;
 const PROJECT_PREFIX_LENGTH = 8;
+const ALIAS = "micode";
 
 type ExecuteSignature = (raw: unknown, ctx: ToolContext) => Promise<ToolResult>;
 
@@ -31,10 +36,13 @@ let workdir: string;
 let dir: string;
 let store: ProjectMemoryStore;
 let identity: ProjectIdentity;
+let originalRegistryFile: string;
 
 beforeEach(async () => {
   workdir = mkdtempSync(join(tmpdir(), "pm-forget-tool-work-"));
   dir = mkdtempSync(join(tmpdir(), "pm-forget-tool-store-"));
+  originalRegistryFile = config.projectMemory.registryFile;
+  (config.projectMemory as { registryFile: string }).registryFile = join(dir, "registry.json");
   await $`git init -q`.cwd(workdir);
   await $`git remote add origin ${REMOTE}`.cwd(workdir);
   identity = await resolveProjectId(workdir);
@@ -45,6 +53,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await resetProjectMemoryRuntimeForTest();
+  (config.projectMemory as { registryFile: string }).registryFile = originalRegistryFile;
   rmSync(workdir, { recursive: true, force: true });
   rmSync(dir, { recursive: true, force: true });
 });
@@ -55,6 +64,10 @@ function pluginInput(): PluginInput {
 
 function projectPrefix(): string {
   return identity.projectId.slice(0, PROJECT_PREFIX_LENGTH);
+}
+
+function prefix(projectId: string): string {
+  return projectId.slice(0, PROJECT_PREFIX_LENGTH);
 }
 
 function stringify(outcome: ToolResult): string {
@@ -108,6 +121,14 @@ function source(overrides: Partial<Source> = {}): Source {
     createdAt: CREATED_AT,
     ...overrides,
   };
+}
+
+function entityFor(projectId: string, overrides: Partial<Entity> = {}): Entity {
+  return entity({ projectId, ...overrides });
+}
+
+function entryFor(projectId: string, overrides: Partial<Entry> = {}): Entry {
+  return entry({ projectId, ...overrides });
 }
 
 async function seedEntry(): Promise<void> {
@@ -183,5 +204,77 @@ describe("project_memory_forget tool", () => {
     const output = await executeForget({ target: "project" });
 
     expect(output.startsWith("## Error\n\n")).toBe(true);
+  });
+
+  it("forgets by explicit origin from a non-project directory", async () => {
+    const nonProjectDir = join(dir, "plain");
+    mkdirSync(nonProjectDir);
+    const targetProjectId = projectIdForSource(OTHER_REMOTE_SOURCE);
+    await store.upsertEntity(entityFor(identity.projectId));
+    await store.upsertEntry(entryFor(identity.projectId));
+    await store.upsertEntity(entityFor(targetProjectId, { id: OTHER_ENTITY_ID, name: "billing" }));
+    await store.upsertEntry(
+      entryFor(targetProjectId, { id: OTHER_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Other", summary: "other" }),
+    );
+
+    const tools = createProjectMemoryForgetTool({ directory: nonProjectDir } as unknown as PluginInput);
+    const exec = tools.project_memory_forget.execute.bind(tools.project_memory_forget) as unknown as ExecuteSignature;
+    const output = stringify(
+      await exec({ target: "entry", entry_id: OTHER_ENTRY_ID, project_origin: OTHER_REMOTE }, TOOL_CONTEXT),
+    );
+
+    expect(output).toContain(`Removed 1 entry ${OTHER_ENTRY_ID} for project ${prefix(targetProjectId)}`);
+    expect(await store.loadEntry(targetProjectId, OTHER_ENTRY_ID)).toBeNull();
+    expect(await store.loadEntry(identity.projectId, ENTRY_ID)).not.toBeNull();
+  });
+
+  it("refuses degraded write identity and leaves the store unchanged", async () => {
+    const plainDir = join(dir, "degraded");
+    mkdirSync(plainDir);
+    await seedEntry();
+
+    const tools = createProjectMemoryForgetTool({ directory: plainDir } as unknown as PluginInput);
+    const exec = tools.project_memory_forget.execute.bind(tools.project_memory_forget) as unknown as ExecuteSignature;
+    const output = stringify(await exec({ target: "entry", entry_id: ENTRY_ID }, TOOL_CONTEXT));
+
+    expect(output).toContain("## Error");
+    expect(output.toLowerCase()).toContain("degraded identity");
+    expect(await store.loadEntry(identity.projectId, ENTRY_ID)).not.toBeNull();
+  });
+
+  it("refuses ambiguous write identity and leaves the store unchanged", async () => {
+    const firstProjectId = identity.projectId;
+    const secondProjectId = projectIdForSource(OTHER_REMOTE_SOURCE);
+    const registry = createProjectRegistry({ filePath: config.projectMemory.registryFile });
+    await registry.upsert({
+      projectId: firstProjectId,
+      origin: REMOTE,
+      aliases: [ALIAS],
+      worktrees: [],
+      updatedAt: UPDATED_AT,
+    });
+    await registry.upsert({
+      projectId: secondProjectId,
+      origin: OTHER_REMOTE,
+      aliases: [ALIAS],
+      worktrees: [],
+      updatedAt: UPDATED_AT,
+    });
+    await store.upsertEntity(entityFor(firstProjectId));
+    await store.upsertEntry(entryFor(firstProjectId));
+    await store.upsertEntity(entityFor(secondProjectId, { id: OTHER_ENTITY_ID, name: "billing" }));
+    await store.upsertEntry(
+      entryFor(secondProjectId, { id: OTHER_ENTRY_ID, entityId: OTHER_ENTITY_ID, title: "Other", summary: "other" }),
+    );
+
+    const output = await executeForget({
+      target: "project",
+      project_alias: ALIAS,
+    });
+
+    expect(output).toContain("## Error");
+    expect(output.toLowerCase()).toContain("ambiguous");
+    expect(await store.countEntries(firstProjectId)).toBe(1);
+    expect(await store.countEntries(secondProjectId)).toBe(1);
   });
 });
