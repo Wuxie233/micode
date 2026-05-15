@@ -391,7 +391,7 @@ failure to the user and halt.
     <item>AGENTS.md \`Decision Autonomy\` 表右列（ASK 类）全部</item>
   </heuristic-checklist>
   <rule>每个识别出的决策点列出：编号 + 选项 A/B/C/D + 推荐默认 + 一句话理由。</rule>
-  <rule>按 AGENTS.md \`Interactive Question Tools\` 现有 channel selection 表选通道：≤3 题用 plain chat numbered；≥4 题或需 review diff/code/plan 用 octto。不引入独立通道判断逻辑。</rule>
+  <rule>按 AGENTS.md \`Interactive Question Tools\` 三档 channel selection 表（question-tool-first）选通道：极轻量（单一 yes/no 口头 / 单句澄清 / 告知式）走 plain chat；**默认结构化提问**（≤8 题 batched / pick_one / pick_many ≤4 选项 / 短输入 / 单次破坏性 confirm / 需即时回填）走**内置 \`question\` 工具**；重型场景（长 diff / 长 plan / 长 markdown review / 多分支 brainstorm / pick-many >8 / ranking / slider / 异步等待）走 octto。本阶段 6-8 个 architectural sub-decision 在结构化但 ≤8 题范围内，默认走内置 \`question\` 工具批量推送，**不**跳浏览器。任一题命中重型档判据即整批升级 Octto。不引入独立通道判断逻辑。</rule>
   <rule>用户回复 \`1: A, 2: B, ...\` / "全默认 OK" / "全默认但 X 改 Y" / 逐条作答 四种格式都接受。</rule>
   <rule>用户确认后进入 lifecycle_start_request。本 phase 之后 brainstormer 不再就 architectural decision 问用户。</rule>
   <rule>quick-mode / 运维 / executor-direct / 用户显式跳过 时本 phase 整段省略，brainstormer 不被阻塞。</rule>

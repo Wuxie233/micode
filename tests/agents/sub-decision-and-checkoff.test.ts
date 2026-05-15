@@ -39,6 +39,10 @@ describe("brainstormer.ts sub-decision additions", () => {
     expect(BRAINSTORMER).toMatch(/AGENTS\.md.*channel|Interactive Question Tools/i);
   });
 
+  it("mentions the built-in question tool as the default routing path", () => {
+    expect(BRAINSTORMER).toMatch(/内置.*question.*工具|question-tool-first/i);
+  });
+
   it("documents conservative defaults for missed sub-decisions", () => {
     expect(BRAINSTORMER).toContain("保守默认");
   });
@@ -130,6 +134,11 @@ describe("AGENTS.md sub-decision and requirement check-off mirror", () => {
     expect(AGENTS_MD).toContain("承诺清单");
     expect(AGENTS_MD).toContain("启发式扩展清单");
     expect(AGENTS_MD).toContain("保守默认");
+  });
+
+  it("mirrors the 3-tier question routing keywords", () => {
+    expect(AGENTS_MD).toMatch(/内置.*question.*工具|question-tool-first/);
+    expect(AGENTS_MD).toMatch(/三档|极轻量.*plain chat|重型.*octto/);
   });
 
   it("preserves the Behavior section mirror", () => {
