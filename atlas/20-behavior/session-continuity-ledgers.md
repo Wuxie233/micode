@@ -12,13 +12,13 @@ sources:
 
 micode 用 `thoughts/ledgers/CONTINUITY_*.md` 和 artifact search 保存跨会话上下文，让长期任务可以在压缩或重开后继续。
 
-## Mechanics
+## 机制
 
 - `/ledger` 创建或更新当前会话账本。
 - `ledger-loader` hook 会把最新账本注入上下文。
 - `auto-compact` 在上下文接近阈值时总结并写 ledger。
 - `artifact-auto-index` 与 `artifact_search` 支持检索过往 plans 和 ledgers。
 
-## Links
+## 链接
 
 - [[Artifact 索引]] 提供搜索能力。

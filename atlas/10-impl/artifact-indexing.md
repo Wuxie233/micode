@@ -10,13 +10,13 @@ sources:
 
 Artifact indexing 将 `thoughts/` 中的 plans、ledgers、milestone artifacts 和历史材料转成可检索索引，帮助后续 session 复用上下文。
 
-## Responsibilities
+## 职责
 
 - `artifact_search` 查询历史 plans 与 ledgers。
 - `milestone_artifact_search` 按 milestone 查询 feature、decision、session artifacts。
 - `artifact-auto-index` hook 在写入关键 artifact 后自动入库。
 - `src/indexing/` 负责 milestone artifact 分类和 ingestion。
 
-## Links
+## 链接
 
 - [[会话连续性账本]] 依赖该索引提高跨会话恢复能力。
