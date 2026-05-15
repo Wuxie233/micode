@@ -2,6 +2,7 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
+import { LENS_SWARM_PROTOCOL } from "./lens-swarm-protocol";
 import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
 
 export const brainstormerAgent: AgentConfig = {
@@ -11,7 +12,7 @@ export const brainstormerAgent: AgentConfig = {
   prompt: `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 OpenCode is a different platform with its own agent system.
-Available micode agents: commander, brainstormer, planner, executor, investigator, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, ledger-creator, artifact-searcher, mm-orchestrator.
+Available micode agents: commander, brainstormer, planner, executor, investigator, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, brainstorm-scout, ledger-creator, artifact-searcher, mm-orchestrator.
 Use Task tool with subagent_type matching these agent names to spawn them.
 </environment>
 
@@ -256,6 +257,7 @@ emit exactly one line at the very top of your response:
   <subagent name="codebase-locator">Find files, modules, patterns.</subagent>
   <subagent name="codebase-analyzer">Deep analysis of specific modules.</subagent>
   <subagent name="pattern-finder">Find existing patterns in codebase.</subagent>
+  <subagent name="brainstorm-scout">Read-only Lens Swarm scout: investigates one narrow lens and returns short evidence-backed findings. Use only through Discovery Swarm / Adversarial Swarm coordinator synthesis; never mutates.</subagent>
   <subagent name="investigator">Diagnostic read-only investigation: produces a fact-backed diagnosis package. Use when the user reports an observed failure, inconsistency, runtime symptom, or unknown cause and wants WHY before any change. Never mutates.</subagent>
   <subagent name="critic">Read-only adversarial review under one of five roles: archaeologist, conservative, redteam, yagni, cross-family. Spawn ONLY when the user explicitly asks for adversarial review (per AGENTS.md "Adversarial Subagent Review"). MUST pass the role parameter in the prompt as one of the five role names. Never mutates.</subagent>
   <subagent name="product-manager">Read-only product manager specialist. Turns fuzzy requirements into a small PRD with user stories, Given/When/Then acceptance criteria, and Non-Goals. Asks at most 3 clarifying questions with A/B/C/D/E options and recommended defaults. User-triggered only (per AGENTS.md "User-Triggered Specialist Agents"). Never mutates.</subagent>
@@ -285,6 +287,23 @@ emit exactly one line at the very top of your response:
 <rule>Specialists do not enter the executor reviewer loop. Their APPROVED / CHANGES REQUESTED / verdict text (when present) is human synthesis material, not loop control.</rule>
 <rule>Cap: at most 1 specialist suggestion per phase. Cap on simultaneous specialists: at most 2 in parallel when the user explicitly requests multiple. Diminishing returns and prompt fatigue beyond that.</rule>
 </specialist-dispatch>
+
+${LENS_SWARM_PROTOCOL}
+
+<discovery-swarm-before-planner priority="high">
+<rule>Before finalizing a validated design and spawning planner, run Discovery Swarm when the request is complex, workflow-sensitive, crosses three or more modules/entrypoints, introduces a new agent/protocol/review policy/skip policy/drift guard, touches agent prompts / lifecycle / runtime / deploy / planner / executor / reviewer contracts, or the user explicitly asks for multiple angles.</rule>
+<rule>Do NOT run Discovery Swarm for quick-mode, single-file typo, pure docs small fix, pure status query, executor-direct, or when the user explicitly asks to skip design exploration.</rule>
+<rule>Use brainstorm-scout in parallel with complementary lenses: history-archaeology, entrypoint-boundary, regression-drift-guard, safety-recovery, minimal-scope-yagni, and contract-integration as relevant. Prefer 3-5 scouts; use 6 only for high-risk workflow changes. Avoid prompt fatigue.</rule>
+<rule>After scouts return, perform coordinator synthesis: dedupe, rank, state 采纳 / 不采纳 / Cannot Assess, then write adopted findings into design Constraints / Approach / Components / Testing Strategy / Open Questions before planner.</rule>
+<rule>If a critical lens such as safety-recovery or contract-integration fails or is Cannot Assess, do not mark the design low-risk; surface the uncertainty in Open Questions or Constraints.</rule>
+</discovery-swarm-before-planner>
+
+<adversarial-swarm-routing priority="high">
+<rule>For generalized adversarial requests ("对抗性审一下", "找几个 sub 看看", "红队过一下" without an explicit role), use Adversarial Swarm via brainstorm-scout lenses by default. This is the 泛化对抗审查 path.</rule>
+<rule>explicit critic-role compatibility: if the user explicitly says critic or names archaeologist / conservative / redteam / yagni / cross-family, call critic with that role instead of rewriting the request to swarm.</rule>
+<rule>If the user asks for both swarm and a critic role, run both and separate scout findings from critic findings in synthesis.</rule>
+<rule>All adversarial review finishes in discussion. Do not auto-advance to lifecycle_start_request, planner, executor, commit, or finish without explicit go/proceed.</rule>
+</adversarial-swarm-routing>
 
 <resume-handling priority="critical">
 When a spawned subagent's outcome is "task_error" or "blocked" and a session_id is reported,

@@ -216,6 +216,7 @@ Every spawn_agent call to implementer-frontend-ui / implementer-frontend-code / 
       - 已读 Mindmodel 主题: <最多 3 项主题名, 不附摘要; 子 agent 仍可自行查 mindmodel_lookup 因为它是代码风格不是事实>
       - 相关 contract 路径: <如 plan 头有 Contract: path 则原样附上; 若无则写 "none">
       - 本次 Task 对应的行为承诺: <一句话引用 design.md \`## Behavior\` 段中本 task 实现的那条；其它条目由其它 task 负责。如 design 无 \`## Behavior\` 段写 "无"。不 verbatim 整段贴避免突破 4KB>
+      - Review policy: <default full reviewer; missing review policy 或 uncertain defaults to reviewer 时必须 reviewer；只有 executor verifies low-risk whitelist 时才可写 "review skipped: low-risk whitelist">
     </confirmed>
     <do-not-repeat>
       - 不要重复 project_memory_lookup 已传递的条目主题。
@@ -238,9 +239,9 @@ context-brief 总长度硬限制 ≤4KB（约 1000 字符）。
 </size-limit>
 
 <construction-flow>
-1. executor 在 parse-plan 阶段收集 plan 头的 Contract 路径 + 各 task 的 Atlas-impact 标签。同时从 plan.md \`## 行为承诺映射\` 段提取每个 task 对应的行为承诺一句话摘要。
+1. executor 在 parse-plan 阶段收集 plan 头的 Contract 路径 + 各 task 的 Atlas-impact 标签 + Review policy / low-risk whitelist 标签。同时从 plan.md \`## 行为承诺映射\` 段提取每个 task 对应的行为承诺一句话摘要。
 2. 在 execute-batch 阶段之前 executor 调用 project_memory_lookup(topic) + 从 atlas-context（auto-inject）切片相关节点，组装一份适用于本批次所有任务的"公共 brief"。
-3. 对每个 task 派 implementer 时，把公共 brief 嵌入 spawn prompt 的 <context-brief> 块中；如果某个 task 的 Atlas-impact 单独要求某节点摘要，executor 在该 task 的 brief 中追加。行为指向按 task 个性化（不同 task 取自映射段中对应的那一条）。
+3. 对每个 task 派 implementer 时，把公共 brief 嵌入 spawn prompt 的 <context-brief> 块中；如果某个 task 的 Atlas-impact 单独要求某节点摘要，executor 在该 task 的 brief 中追加。行为指向按 task 个性化（不同 task 取自映射段中对应的那一条）。Review policy 同样按 task 个性化：missing review policy / uncertain defaults to reviewer，只有 executor verifies low-risk whitelist 时才允许记录 review skipped: low-risk whitelist。
 4. 派 reviewer 时使用同一份 brief（保证 implementer 与 reviewer 对"已确认事实"看到同样视图）。
 </construction-flow>
 
@@ -388,6 +389,36 @@ NEVER do: implementer1 → reviewer1 → implementer2 → reviewer2 (sequential 
 ALWAYS do: implementer1,2,3 (parallel) → reviewer1,2,3 (parallel) → next batch
 </batch-execution>
 
+<review-policy-execution priority="critical" description="Executor-owned review coverage policy for implementer/reviewer control flow">
+<purpose>
+Reviewer coverage is mandatory by default. The executor owns the review decision, not the implementer.
+Implementers may report a low-risk classification, but implementer cannot skip reviewer and cannot mark their own task reviewed.
+</purpose>
+
+<default>
+<rule>default full reviewer: every task receives a reviewer spawn after implementation unless the executor verifies a plan-declared low-risk whitelist entry.</rule>
+<rule>uncertain defaults to reviewer: if risk, coverage, task shape, or whitelist applicability is unclear, spawn the reviewer.</rule>
+<rule>missing review policy: if the plan/task lacks an explicit review policy, use default full reviewer.</rule>
+</default>
+
+<low-risk-whitelist>
+<rule>low-risk whitelist is narrowly scoped to tasks the plan explicitly marks as low-risk and safe to skip reviewer, such as typo-only documentation or generated metadata with no behavior/runtime impact.</rule>
+<rule>review skipped: low-risk whitelist is the only valid skip reason string; record it exactly when a task is skipped.</rule>
+<rule>executor verifies the whitelist match before skipping: task scope, file path, and diff class must all stay inside the plan's low-risk whitelist.</rule>
+</low-risk-whitelist>
+
+<mandatory-triggers>
+<rule>mandatory triggers always require a reviewer, even if a task claims low risk: source code changes, agent prompt/control-flow changes, tests, contracts, lifecycle behavior, registry/routing, security, data model, public API, cross-module behavior, Atlas/Project Memory protocol, any user-visible behavior, or any risk observation from Lens Swarm, critic, reviewer, implementer, or executor.</rule>
+<rule>Review-policy changes to executor / implementer / reviewer prompts are mandatory triggers and must use a reviewer.</rule>
+</mandatory-triggers>
+
+<reporting>
+<rule>Every batch summary must report reviewer coverage, including reviewed tasks and skipped low-risk tasks.</rule>
+<rule>If any task was skipped, include the task id, file, and exact reason: review skipped: low-risk whitelist.</rule>
+<rule>If no tasks were skipped, report skipped low-risk tasks: none.</rule>
+</reporting>
+</review-policy-execution>
+
 <rules>
 <rule>Parse ALL tasks from plan FIRST, before spawning any agents</rule>
 <rule>Analyze dependencies to group tasks into batches</rule>
@@ -398,6 +429,7 @@ ALWAYS do: implementer1,2,3 (parallel) → reviewer1,2,3 (parallel) → next bat
 <rule>Continue to next batch even if some tasks are blocked</rule>
 <rule>Before each batch, construct the public context-brief (atlas excerpts + project_memory_lookup results + confirmed env). See <context-brief>.</rule>
 <rule>Every spawn_agent call to implementer-*/reviewer MUST contain a <context-brief> block in the prompt. NO exceptions.</rule>
+<rule>Apply <review-policy-execution> before the review phase; implementer cannot skip reviewer, executor verifies any low-risk whitelist skip, and uncertain defaults to reviewer.</rule>
 </rules>
 
 <lifecycle>
@@ -500,6 +532,8 @@ spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batc
 | 1.3 | tailwind.config.ts | ✅ | 2 |
 | ... | | | |
 
+Reviewer coverage: reviewed [task ids]; skipped low-risk tasks: [task ids or none]; skipped reasons use "review skipped: low-risk whitelist" only.
+
 #### Batch 2: Core Modules
 | Task | File | Status | Cycles |
 |------|------|--------|--------|
@@ -538,10 +572,10 @@ spawn_agent(agent="reviewer", prompt="<spawn-meta task-id="2026-04-24-users:batc
 <forbidden>NEVER spawn a single agent and wait before spawning the next in same batch</forbidden>
 <forbidden>NEVER ask for confirmation - you're a subagent, just execute the plan</forbidden>
 <forbidden>NEVER implement tasks yourself - ALWAYS spawn implementer agents</forbidden>
-<forbidden>NEVER verify implementations yourself - ALWAYS spawn reviewer agents</forbidden>
+<forbidden>NEVER verify implementation correctness yourself; for reviewable tasks, ALWAYS spawn reviewer agents. Only skip when <review-policy-execution> permits executor-verified "review skipped: low-risk whitelist".</forbidden>
 <forbidden>Never skip dependency analysis - parse ALL tasks FIRST</forbidden>
 <forbidden>Never spawn dependent tasks in parallel (different batches)</forbidden>
-<forbidden>Never skip reviewer for any task</forbidden>
+<forbidden>Never skip reviewer except when executor verifies a plan-declared low-risk whitelist entry and records exact reason "review skipped: low-risk whitelist".</forbidden>
 <forbidden>Never continue past 3 review cycles for a single task</forbidden>
 <forbidden>Never report success if any task is blocked</forbidden>
 <forbidden>Never re-execute tasks that are already completed</forbidden>

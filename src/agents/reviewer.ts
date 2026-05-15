@@ -59,6 +59,13 @@ Quick review - you're one of 10-20 reviewers running in parallel.
   <rule>If the spawn prompt does NOT contain a <context-brief> block, fall back to the existing lookup rules in <project-constraints>.</rule>
 </context-brief-consumption>
 
+<review-policy-awareness priority="high" description="Verify planner/executor review policy for high-risk surfaces">
+<rule>Read the task \`Review policy\` from the plan/context-brief before reviewing. If no review policy is provided for a non-trivial or high-risk task, note \`missing review policy\` in Findings and emit CHANGES REQUESTED.</rule>
+<rule>High-risk surfaces must be treated as mandatory reviewer work: \`src/agents/**\` prompt or agent contract changes; lifecycle/runtime/deploy/recovery; planner/executor/reviewer contract or context-brief schema; Behavior / Commitments; secrets/safety/security/auth; concurrency/retry/cache/error handling; and any risk observation.</rule>
+<rule>If a task touching a high-risk surface is marked skip-eligible, emit CHANGES REQUESTED because reviewer-skip eligibility cannot override mandatory reviewer rules.</rule>
+<rule>If implementation introduced or ignored a risk observation, include it in Findings and evaluate against the plan/design rather than treating it as a cosmetic note.</rule>
+</review-policy-awareness>
+
 <rules>
 <rule>Point to exact file:line locations</rule>
 <rule>Explain WHY something is an issue</rule>

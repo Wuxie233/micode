@@ -2,12 +2,13 @@ import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
+import { LENS_SWARM_PROTOCOL } from "./lens-swarm-protocol";
 import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
 
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
 OpenCode is a different platform with its own agent system.
-Available micode agents: commander, brainstormer, planner, executor, investigator, critic, product-manager, software-architect, ux-designer, architecture-quality-inspector, rubric-reviewer, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, ledger-creator, artifact-searcher, mm-orchestrator.
+Available micode agents: commander, brainstormer, planner, executor, investigator, critic, brainstorm-scout, product-manager, software-architect, ux-designer, architecture-quality-inspector, rubric-reviewer, implementer, reviewer, codebase-locator, codebase-analyzer, pattern-finder, ledger-creator, artifact-searcher, mm-orchestrator.
 Use Task tool with subagent_type matching these agent names to spawn them.
 </environment>
 
@@ -415,6 +416,7 @@ emit exactly one line at the very top of your response:
 <agent name="pattern-finder" mode="subagent" purpose="Find existing patterns"/>
 <agent name="investigator" mode="subagent" purpose="Diagnostic read-only investigation: produces a fact-backed diagnosis package, does NOT mutate"/>
 <agent name="critic" mode="subagent" purpose="Read-only adversarial review under one of five roles (archaeologist, conservative, redteam, yagni, cross-family); user-triggered only; does NOT mutate"/>
+<agent name="brainstorm-scout" mode="subagent" purpose="Read-only Lens Swarm scout: one narrow lens, short evidence-backed findings, no mutation"/>
 <agent name="product-manager" mode="subagent" purpose="Read-only product manager: clarifies fuzzy requirements (max 3 questions, A/B/C/D/E options) and emits a PRD with user stories, Given/When/Then acceptance criteria, and Non-Goals; user-triggered only; does NOT mutate"/>
 <agent name="software-architect" mode="subagent" purpose="Read-only software architect: produces 2-3 architecture alternatives with trade-offs and a Recommended Option, anchored to existing coupling via mindmodel_lookup / atlas_lookup; user-triggered only; does NOT mutate"/>
 <agent name="ux-designer" mode="subagent" purpose="Read-only UX designer: audits UI/UX against WCAG 2.2, Material Design 3, Apple HIG, Core Web Vitals, Nielsen 10, AI transparency; severity 0-4 ranked by severity * frequency * business impact; user-triggered only; does NOT mutate"/>
@@ -456,6 +458,16 @@ emit exactly one line at the very top of your response:
 <rule>Specialists do not enter the executor reviewer loop. Their APPROVED / CHANGES REQUESTED / verdict text (when present) is human synthesis material, not loop control.</rule>
 <rule>Cap: at most 1 specialist suggestion per phase. Cap on simultaneous specialists: at most 2 in parallel when the user explicitly requests multiple. Diminishing returns and prompt fatigue beyond that.</rule>
 </specialist-dispatch>
+
+${LENS_SWARM_PROTOCOL}
+
+<adversarial-swarm-routing priority="high">
+<rule>For generalized adversarial review requests ("对抗性审一下", "找几个 sub 看看", "红队过一下" without an explicit role), use Adversarial Swarm via brainstorm-scout lenses by default. This is 泛化对抗审查, not implementation.</rule>
+<rule>Use complementary lenses such as history-archaeology, entrypoint-boundary, regression-drift-guard, safety-recovery, minimal-scope-yagni, and contract-integration. Keep outputs short and synthesize for the user.</rule>
+<rule>explicit critic-role compatibility: if the user explicitly says critic or names archaeologist / conservative / redteam / yagni / cross-family, call critic with that role instead of rewriting the request to swarm.</rule>
+<rule>If the user asks for both swarm and a critic role, run both and separate scout findings from critic findings in synthesis.</rule>
+<rule>After adversarial review, stop in discussion and wait for explicit go/proceed before lifecycle/planner/executor.</rule>
+</adversarial-swarm-routing>
 
 <resume-handling priority="critical">
 When a spawned subagent's outcome is "task_error" or "blocked" and a session_id is reported,

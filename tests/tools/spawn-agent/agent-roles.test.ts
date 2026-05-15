@@ -11,6 +11,7 @@ describe("agent-roles", () => {
     expect(agentRoleLabel("reviewer")).toBe("代码审查");
     expect(agentRoleLabel("planner")).toBe("规划");
     expect(agentRoleLabel("brainstormer")).toBe("方案探索");
+    expect(agentRoleLabel("brainstorm-scout")).toBe("视角侦察");
     expect(agentRoleLabel("executor")).toBe("执行调度");
     expect(agentRoleLabel("commander")).toBe("总指挥");
     expect(agentRoleLabel("codebase-analyzer")).toBe("代码分析");
@@ -44,6 +45,10 @@ describe("agent-roles", () => {
     expect(AGENT_ROLE_LABELS.critic).toBe("对抗审查");
     expect(AGENT_ROLE_LABELS["implementer-frontend-ui"]).toBe("前端UI实现");
     expect(AGENT_ROLE_LABELS["implementer-frontend-code"]).toBe("前端代码实现");
+  });
+
+  it("exposes brainstorm-scout in the label map", () => {
+    expect(AGENT_ROLE_LABELS["brainstorm-scout"]).toBe("视角侦察");
   });
 
   it("returns Chinese labels for the five specialist agents", () => {
