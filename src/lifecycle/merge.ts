@@ -76,8 +76,6 @@ const GH_SQUASH_FLAG = "--squash";
 
 const GIT_MERGE = "merge";
 const GIT_NO_FF_FLAG = "--no-ff";
-const GIT_FF_ONLY_FLAG = "--ff-only";
-const GIT_FETCH = "fetch";
 const GIT_PUSH = "push";
 const GIT_DIFF = "diff";
 const GIT_NAME_ONLY = "--name-only";
@@ -520,19 +518,6 @@ const prepareTempMergeWorktree = async (
     return { kind: "failed", outcome: createTempWorktreeFailureOutcome(input, issueNumber, create.reason, tmpPath) };
   }
 
-  const fetchNote = await runGitStep(runner, [GIT_FETCH, GIT_ORIGIN, baseBranch], create.path, "git_fetch");
-  if (fetchNote)
-    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, fetchNote, create.path) };
-
-  const ffOnlyNote = await runGitStep(
-    runner,
-    [GIT_MERGE, GIT_FF_ONLY_FLAG, `${GIT_ORIGIN}/${baseBranch}`],
-    create.path,
-    "git_ff_only",
-  );
-  if (ffOnlyNote)
-    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, ffOnlyNote, create.path) };
-
   return { kind: "created", path: create.path };
 };
 
@@ -610,7 +595,7 @@ const pushMergedBaseBranch = async (
   baseBranch: string,
   worktree: string,
 ): Promise<FinishOutcome | null> => {
-  const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, baseBranch], { cwd: worktree });
+  const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, `HEAD:${baseBranch}`], { cwd: worktree });
   if (completed(pushed)) return null;
 
   const pushNote = formatCommandFailure("git_push", pushed);

@@ -154,7 +154,7 @@ describe("finishLifecycle", () => {
     });
   });
 
-  it("local merge uses a temp worktree and pushes the resolved master branch", async () => {
+  it("local merge uses a detached temp worktree from remote base and pushes the resolved master branch", async () => {
     const runner = createRunner({
       gh: [createRun("[]")],
       git: [createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun()],
@@ -174,17 +174,24 @@ describe("finishLifecycle", () => {
     const gitCalls = runner.calls.filter((call) => call.bin === "git");
     expect(gitCalls[0]).toEqual({
       bin: "git",
-      args: ["worktree", "add", "/tmp/micode-merge-issue-1", "master"],
+      args: ["fetch", "origin", "master"],
       cwd: CWD,
     });
-    expect(gitCalls[1]).toEqual({ bin: "git", args: ["fetch", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
-    expect(gitCalls[2]).toEqual({
+    expect(gitCalls[1]).toEqual({
       bin: "git",
-      args: ["merge", "--ff-only", "origin/master"],
+      args: ["worktree", "add", "--detach", "/tmp/micode-merge-issue-1", "origin/master"],
+      cwd: CWD,
+    });
+    expect(gitCalls[2]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls[3]).toEqual({
+      bin: "git",
+      args: ["push", "origin", "HEAD:master"],
       cwd: "/tmp/micode-merge-issue-1",
     });
-    expect(gitCalls[3]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
-    expect(gitCalls[4]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls.some((call) => call.args.join(" ") === "worktree add /tmp/micode-merge-issue-1 master")).toBe(
+      false,
+    );
+    expect(gitCalls.some((call) => call.args.join(" ") === "merge --ff-only origin/master")).toBe(false);
   });
 
   it("returns an actionable recovery hint when temp worktree creation fails", async () => {
@@ -545,7 +552,6 @@ describe("finishLifecycle autonomy-first cleanup", () => {
     try {
       const runner = createRunner({
         git: [
-          createRun(),
           createRun(),
           createRun(),
           createRun(),
