@@ -3,9 +3,10 @@ import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 
 import { buildLifecycleCommitMessage, type CommitMessageInput } from "./commit-message";
+import { assertRemoteMutationAllowed, type PreFlightResult } from "./pre-flight";
 import { buildHint, type LifecycleRecoveryHint } from "./recovery/hint";
 import type { LifecycleRunner, RunResult } from "./runner";
-import type { CommitOutcome } from "./types";
+import type { CommitOutcome, LifecycleMode } from "./types";
 
 export interface CommitAndPushInput {
   readonly cwd: string;
@@ -15,6 +16,9 @@ export interface CommitAndPushInput {
   readonly scope: string;
   readonly summary: string;
   readonly push: boolean;
+  readonly mode?: LifecycleMode;
+  readonly remoteCapable?: boolean;
+  readonly preflight?: PreFlightResult | (() => PreFlightResult | Promise<PreFlightResult>);
   readonly marker?: string;
   readonly preStageHook?: (cwd: string, issueNumber: number) => Promise<void>;
   readonly prePushHook?: (cwd: string, issueNumber: number, changedPaths: readonly string[]) => Promise<void>;
@@ -39,6 +43,8 @@ const SHA_FAILED_NOTE = "Commit SHA lookup failed";
 const PUSH_FAILED_NOTE = "Push failed after retry";
 const PRE_STAGE_HOOK_FAILED_NOTE = "preStageHook failed";
 const PRE_PUSH_BLOCKED_NOTE = "Pre-push hook blocked push";
+const LOCAL_ONLY_PUSH_UNAVAILABLE_NOTE = "local-only remote push is unavailable; commit retained locally";
+const REMOTE_PUSH_UNAVAILABLE_NOTE = "remote push is unavailable for this lifecycle; commit retained locally";
 const LOG_MODULE = "lifecycle.commits";
 
 const buildPushArgs = (branch: string): readonly string[] => [PUSH_COMMAND, SET_UPSTREAM_FLAG, ORIGIN_REMOTE, branch];
@@ -100,6 +106,16 @@ const pushFailureHint = (input: CommitAndPushInput, summary: string): LifecycleR
     issueNumber: input.issueNumber,
     branch: input.branch,
     safeToRetry: true,
+  });
+
+const preFlightFailedHint = (input: CommitAndPushInput, summary: string): LifecycleRecoveryHint =>
+  buildHint({
+    failureKind: "pre_flight_failed",
+    recommendedNextAction: "ask_user",
+    summary,
+    issueNumber: input.issueNumber,
+    branch: input.branch,
+    safeToRetry: false,
   });
 
 const succeeded = (run: RunResult): boolean => run.exitCode === SUCCESS_EXIT_CODE;
@@ -167,6 +183,44 @@ const runPrePushHook = async (
   }
 };
 
+const resolvePreflight = async (input: CommitAndPushInput): Promise<PreFlightResult | null> => {
+  if (!input.preflight) return null;
+  if (typeof input.preflight !== "function") return input.preflight;
+  return input.preflight();
+};
+
+const blockUnavailableRemotePush = (input: CommitAndPushInput, sha: string): CommitOutcome | null => {
+  if (input.mode === "local-only") {
+    return retainedOutcome(
+      sha,
+      false,
+      LOCAL_ONLY_PUSH_UNAVAILABLE_NOTE,
+      preFlightFailedHint(input, LOCAL_ONLY_PUSH_UNAVAILABLE_NOTE),
+    );
+  }
+
+  if (input.remoteCapable === false) {
+    return retainedOutcome(
+      sha,
+      false,
+      REMOTE_PUSH_UNAVAILABLE_NOTE,
+      preFlightFailedHint(input, REMOTE_PUSH_UNAVAILABLE_NOTE),
+    );
+  }
+
+  return null;
+};
+
+const blockDisallowedRemotePush = async (input: CommitAndPushInput, sha: string): Promise<CommitOutcome | null> => {
+  const preflight = await resolvePreflight(input);
+  if (preflight === null) return null;
+
+  const allowed = assertRemoteMutationAllowed(preflight, "push");
+  if (allowed.ok) return null;
+
+  return retainedOutcome(sha, false, allowed.note, preFlightFailedHint(input, allowed.note));
+};
+
 const pushWithRetry = async (
   runner: LifecycleRunner,
   input: CommitAndPushInput,
@@ -211,6 +265,10 @@ export async function commitAndPush(runner: LifecycleRunner, input: CommitAndPus
   const sha = await readSha(runner, input.cwd);
   if (sha === null) return retainedOutcome(null, false, SHA_FAILED_NOTE, unknownFailureHint(input, SHA_FAILED_NOTE));
   if (!input.push) return completedOutcome(sha, false, false);
+  const unavailableRemotePush = blockUnavailableRemotePush(input, sha);
+  if (unavailableRemotePush !== null) return unavailableRemotePush;
+  const disallowedRemotePush = await blockDisallowedRemotePush(input, sha);
+  if (disallowedRemotePush !== null) return disallowedRemotePush;
   const blocked = await runPrePushHook(runner, input, sha);
   if (blocked !== null) return retainedOutcome(sha, false, blocked, unknownFailureHint(input, blocked));
   return pushWithRetry(runner, input, sha);

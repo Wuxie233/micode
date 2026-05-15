@@ -81,7 +81,7 @@ describe("lifecycle notifier integration", () => {
     expect(completed[0].issueNumber).toBe(started.issueNumber);
   });
 
-  it("emits failed_stop when start is aborted", async () => {
+  it("does not emit failed_stop when unsafe ownership starts local-only", async () => {
     const upstream = JSON.stringify({
       nameWithOwner: "vtemian/micode",
       isFork: false,
@@ -99,8 +99,9 @@ describe("lifecycle notifier integration", () => {
       notifier,
     });
     const record = await handle.start({ summary: "demo", goals: [], constraints: [] });
-    expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
-    expect(events.some((event) => event.status === NOTIFICATION_STATUSES.FAILED_STOP)).toBe(true);
+    expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+    expect(record.mode).toBe("local-only");
+    expect(events.some((event) => event.status === NOTIFICATION_STATUSES.FAILED_STOP)).toBe(false);
   });
 
   it("emits blocked when notifyBlocked is invoked", async () => {

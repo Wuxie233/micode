@@ -12,10 +12,10 @@ sources:
 ## Responsibilities
 
 - 用 `LIFECYCLE_STATES` 管理 `PROPOSED` 到 `CLEANED` 的状态迁移。
-- 在 start 阶段执行 repo ownership preflight，创建 issue、branch 和 worktree。
-- 在 commit 阶段将 checkpoint 变更提交并推送到 `origin`。
-- 在 finish 阶段选择 PR-first 或 local merge，并关闭 issue、清理 worktree。
-- 通过 recovery hint、temp worktree 和 quarantine 支持有界自主恢复。
+- 在 start 阶段先发现有效项目 repo root；remote-capable 场景执行 repo ownership preflight 后创建 GitHub issue、branch 和 worktree，无法确认远端所有权或未初始化时创建 `mode: "local-only"` 本地记录。
+- 在 commit 阶段将 checkpoint 变更提交；只有 remote-capable 且 ownership gate 允许时才推送到 `origin`，local-only / remote-disabled / disallowed preflight 会保留本地提交并跳过远端推送。
+- 在 finish 阶段选择 PR-first 或 local merge；远端 PR / push / merge 路径先经过 ownership gate，local-only finish 返回本地可恢复结果而不执行远端 mutation。
+- 通过 recovery hint、temp worktree、quarantine 与 lifecycle branch audit/prune 支持有界自主恢复；branch 删除只使用安全删除与 origin-scoped gate。
 
 ## Links
 

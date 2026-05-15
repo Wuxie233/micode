@@ -44,6 +44,19 @@ describe("project AGENTS.md: Knowledge Bootstrap Commands section", () => {
     expect(AGENTS_MD).not.toContain("DEFAULT_BOOTSTRAP_ANSWERS");
   });
 
+  it("states the three commands do not require lifecycle ownership preflight", () => {
+    expect(AGENTS_MD).toMatch(
+      /\/all-init.*\/all-rebuild.*\/all-status[\s\S]*(不需要|do not require).*lifecycle ownership preflight|三条命令[\s\S]*(不需要|do not require).*lifecycle ownership preflight/,
+    );
+  });
+
+  it("states the three commands do not start lifecycle or run lifecycle git setup", () => {
+    expect(AGENTS_MD).toMatch(/(不启动|do not start).*lifecycle|不进入 lifecycle|不会.*lifecycle_start_request/);
+    expect(AGENTS_MD).toMatch(/(不创建|do not create).*GitHub issues?|不创建.*GitHub issue/);
+    expect(AGENTS_MD).toMatch(/(不创建|do not create).*lifecycle branches?|不创建.*lifecycle branch/);
+    expect(AGENTS_MD).toMatch(/(不运行|do not run).*ownership preflight|不执行.*ownership preflight/);
+  });
+
   it("states the three commands do NOT replace /init /mindmodel /atlas-init", () => {
     expect(AGENTS_MD).toMatch(/不替换|do not replace|保留.*\/init.*\/mindmodel.*\/atlas-init/);
   });

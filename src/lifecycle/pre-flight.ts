@@ -11,7 +11,27 @@ export const REPO_KIND = {
 
 export type RepoKind = (typeof REPO_KIND)[keyof typeof REPO_KIND];
 
-export interface PreFlightResult {
+export type PreFlightUnknownReason =
+  | "no-origin"
+  | "unparseable-origin"
+  | "gh-failed"
+  | "invalid-gh-output"
+  | "view-mismatch";
+
+export const REMOTE_MUTATION_KIND = {
+  ISSUE_CREATE: "issue-create",
+  ISSUE_EDIT: "issue-edit",
+  ISSUE_CLOSE: "issue-close",
+  PUSH: "push",
+  PR_CREATE: "pr-create",
+  PR_MERGE: "pr-merge",
+  REMOTE_BRANCH_DELETE: "remote-branch-delete",
+  ENABLE_ISSUES: "enable-issues",
+} as const;
+
+export type RemoteMutationKind = (typeof REMOTE_MUTATION_KIND)[keyof typeof REMOTE_MUTATION_KIND];
+
+interface PreFlightResultBase {
   readonly kind: RepoKind;
   readonly origin: string;
   readonly nameWithOwner: string;
@@ -19,6 +39,22 @@ export interface PreFlightResult {
   readonly issuesEnabled: boolean;
   readonly upstreamUrl: string | null;
 }
+
+interface KnownPreFlightResult extends PreFlightResultBase {
+  readonly kind: Exclude<RepoKind, typeof REPO_KIND.UNKNOWN>;
+  readonly reason?: never;
+}
+
+interface UnknownPreFlightResult extends PreFlightResultBase {
+  readonly kind: typeof REPO_KIND.UNKNOWN;
+  readonly reason: PreFlightUnknownReason;
+}
+
+export type PreFlightResult = KnownPreFlightResult | UnknownPreFlightResult;
+
+export type RemoteMutationPreFlightResult =
+  | { readonly ok: true; readonly repoTarget: string }
+  | { readonly ok: false; readonly note: string; readonly failureKind: "pre_flight_failed" };
 
 const OK_EXIT_CODE = 0;
 const EMPTY_OUTPUT = "";
@@ -29,8 +65,8 @@ const OWNER_PERMISSIONS: readonly string[] = ["ADMIN", "MAINTAIN", "WRITE"];
 
 // Patterns for common GitHub remote URL forms.
 // Group 1: owner, Group 2: repo (without .git suffix).
-const HTTPS_ORIGIN_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/;
-const SSH_ORIGIN_PATTERN = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/;
+const HTTPS_ORIGIN_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/;
+const SSH_ORIGIN_PATTERN = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/;
 
 interface RepoParent {
   readonly nameWithOwner: string;
@@ -84,8 +120,9 @@ const RepoViewSchema: v.GenericSchema<unknown, RepoViewInput> = v.object({
 type LegacyRepoParent = v.InferOutput<typeof LegacyRepoParentSchema>;
 type ParsedRepoParent = v.InferOutput<typeof RepoParentSchema>;
 
-const createUnknown = (origin = EMPTY_OUTPUT): PreFlightResult => ({
+const createUnknown = (reason: PreFlightUnknownReason, origin = EMPTY_OUTPUT): PreFlightResult => ({
   kind: REPO_KIND.UNKNOWN,
+  reason,
   origin,
   nameWithOwner: EMPTY_OUTPUT,
   viewerLogin: null,
@@ -160,6 +197,23 @@ const createResult = (origin: string, view: RepoView): PreFlightResult => {
   };
 };
 
+export const assertRemoteMutationAllowed = (
+  preflight: PreFlightResult,
+  operation: RemoteMutationKind,
+): RemoteMutationPreFlightResult => {
+  if (preflight.kind === REPO_KIND.FORK || preflight.kind === REPO_KIND.OWN) {
+    return { ok: true, repoTarget: preflight.nameWithOwner };
+  }
+
+  const reasonNote = preflight.kind === REPO_KIND.UNKNOWN ? ` reason=${preflight.reason};` : EMPTY_OUTPUT;
+
+  return {
+    ok: false,
+    failureKind: "pre_flight_failed",
+    note: `Remote mutation blocked: operation=${operation}; repoKind=${preflight.kind};${reasonNote} run ownership pre-flight before mutating remotes.`,
+  };
+};
+
 /**
  * Parses a GitHub remote URL into "owner/repo" form.
  * Returns null when the URL does not match any known GitHub remote format,
@@ -180,21 +234,23 @@ const viewMatchesOrigin = (nameWithOwner: string, target: string): boolean =>
 
 export async function classifyRepo(runner: LifecycleRunner, cwd: string): Promise<PreFlightResult> {
   const remote = await runner.git(GIT_ORIGIN_ARGS, { cwd });
-  if (!completed(remote)) return createUnknown();
+  if (!completed(remote)) return createUnknown("no-origin");
 
   const origin = remote.stdout.trim();
+  if (origin.length === 0) return createUnknown("no-origin");
+
   const target = parseOriginTarget(origin);
   // If we cannot parse the origin into owner/repo, we cannot safely target gh.
-  if (!target) return createUnknown(origin);
+  if (!target) return createUnknown("unparseable-origin", origin);
 
   const inspected = await runner.gh(["repo", "view", target, "--json", GH_FIELDS], { cwd });
-  if (!completed(inspected)) return createUnknown(origin);
+  if (!completed(inspected)) return createUnknown("gh-failed", origin);
 
   const view = parseRepoView(inspected.stdout);
-  if (!view) return createUnknown(origin);
+  if (!view) return createUnknown("invalid-gh-output", origin);
 
   // Reject silently if gh returned metadata for a different repo (e.g. inferred upstream).
-  if (!viewMatchesOrigin(view.nameWithOwner, target)) return createUnknown(origin);
+  if (!viewMatchesOrigin(view.nameWithOwner, target)) return createUnknown("view-mismatch", origin);
 
   return createResult(origin, view);
 }

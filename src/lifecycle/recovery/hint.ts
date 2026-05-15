@@ -50,7 +50,7 @@ export interface LifecycleRecoveryHint {
 }
 
 export interface BuildHintInput {
-  readonly failureKind: LifecycleFailureKind;
+  readonly failureKind: LifecycleFailureKind | "pre_flight_failed";
   readonly recommendedNextAction: LifecycleRecommendedAction;
   readonly summary: string;
   readonly safeToRetry?: boolean;

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import * as v from "valibot";
@@ -17,10 +18,11 @@ import { JOURNAL_EVENT_KINDS, type JournalEvent, type JournalEventInput } from "
 import { createLeaseStore, type LeaseStore } from "./lease/store";
 import { buildExecutionMarker, parseExecutionMarker } from "./markers";
 import { finishLifecycle } from "./merge";
-import { classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
+import { assertRemoteMutationAllowed, classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
 import { probeRuntimeIdentity } from "./recovery/identity";
 import { inspectRecovery } from "./recovery/inspect";
 import type { RecoveryDecision } from "./recovery/types";
+import { REPO_DISCOVERY_KIND, type RepoDiscoveryResult, resolveEffectiveProjectRoot } from "./repo-discovery";
 import { collectReviewSummary, renderReviewSummarySection } from "./review-summary";
 import type { LifecycleRunner, RunResult } from "./runner";
 import { createLifecycleStore as createJsonLifecycleStore, type LifecycleStore } from "./store";
@@ -35,7 +37,7 @@ import type {
   LifecycleState,
   StartRequestInput,
 } from "./types";
-import { ARTIFACT_KINDS, LIFECYCLE_STATES } from "./types";
+import { ARTIFACT_KINDS, isLocalOnlyLifecycleRecord, LIFECYCLE_MODES, LIFECYCLE_STATES } from "./types";
 
 export type { LifecycleRunner } from "./runner";
 export type {
@@ -149,6 +151,13 @@ const ISSUE_POINTER_PREFIX = "issue/";
 const ISSUE_ENTITY_PREFIX = "issue-";
 const PROJECT_MEMORY_SOURCE_KIND = "lifecycle";
 const RESOLVED_BASE_PREFIX = "resolved-base";
+const LOCAL_ONLY_START = "local-only";
+const LOCAL_ONLY_NO_GIT_WORKTREE = "local-only: no git worktree available";
+const UNINITIALIZED_DISCOVERY_NOTE = "No git repository was discovered";
+const DISCOVERY_BLOCKED = "repo_discovery_blocked";
+const DISCOVERY_AMBIGUOUS = "repo_discovery_ambiguous";
+const LOCAL_ID_PREFIX = "local";
+const LOCAL_ID_HASH_MULTIPLIER = 31;
 
 const GH_ISSUE = "issue";
 const GH_REPO = "repo";
@@ -292,6 +301,15 @@ const getPreFlightNote = (preflight: PreFlightResult): string | null => {
   return null;
 };
 
+const getLocalOnlyPreflightNote = (preflight: PreFlightResult): string | null => {
+  const note = getPreFlightNote(preflight);
+  if (note) return `${LOCAL_ONLY_START}: ${note}`;
+  return null;
+};
+
+const shouldUseLocalOnlyForPreflight = (preflight: PreFlightResult): boolean =>
+  preflight.kind === REPO_KIND.UNKNOWN || preflight.kind === REPO_KIND.UPSTREAM;
+
 const isUserOwned = (preflight: PreFlightResult): boolean => {
   return preflight.kind === REPO_KIND.FORK || preflight.kind === REPO_KIND.OWN;
 };
@@ -314,16 +332,54 @@ const createRecord = (
   identity: IssueIdentity,
   state: LifecycleState,
   notes: readonly string[] = [],
+  options: {
+    readonly mode?: LifecycleRecord["mode"];
+    readonly localId?: string | null;
+    readonly repoRoot?: string;
+    readonly remoteCapable?: boolean;
+    readonly worktree?: string;
+  } = {},
 ): LifecycleRecord => ({
   issueNumber: identity.issueNumber,
   issueUrl: identity.issueUrl,
+  mode: options.mode ?? LIFECYCLE_MODES.REMOTE,
+  localId: options.localId ?? null,
+  repoRoot: options.repoRoot ?? worktreeFor(worktreesRoot, identity.issueNumber, input.summary),
+  remoteCapable: options.remoteCapable ?? true,
   branch: branchFor(identity.issueNumber, input.summary),
-  worktree: worktreeFor(worktreesRoot, identity.issueNumber, input.summary),
+  worktree: options.worktree ?? worktreeFor(worktreesRoot, identity.issueNumber, input.summary),
   state,
   artifacts: createArtifacts(),
   notes,
   updatedAt: Date.now(),
 });
+
+const makeLocalId = (summary: string): string => `${LOCAL_ID_PREFIX}-${Date.now()}-${slugify(summary)}`;
+
+const localIssueNumberFor = (localId: string): number => {
+  let hash = 0;
+  for (const char of localId) hash = (hash * LOCAL_ID_HASH_MULTIPLIER + char.charCodeAt(0)) >>> 0;
+  return -Math.max(1, hash);
+};
+
+const createLocalOnlyRecord = (
+  input: StartRequestInput,
+  root: string,
+  notes: readonly string[],
+  worktree: string = root,
+): LifecycleRecord => {
+  const localId = makeLocalId(input.summary);
+  const issueNumber = localIssueNumberFor(localId);
+  return createRecord(input, root, { issueNumber, issueUrl: EMPTY_TEXT }, LIFECYCLE_STATES.BRANCH_READY, notes, {
+    mode: LIFECYCLE_MODES.LOCAL_ONLY,
+    localId,
+    repoRoot: root,
+    remoteCapable: false,
+    worktree,
+  });
+};
+
+const hasGitMetadata = (root: string): boolean => existsSync(join(root, ".git"));
 
 const advanceTo = (record: LifecycleRecord, state: LifecycleState): LifecycleRecord => {
   const current = STATE_PATH.indexOf(record.state);
@@ -360,6 +416,7 @@ const readIssueBody = async (runner: LifecycleRunner, issueNumber: number, cwd: 
 };
 
 const syncIssueBody = async (runner: LifecycleRunner, record: LifecycleRecord, cwd: string): Promise<void> => {
+  if (isLocalOnlyLifecycleRecord(record) || !record.remoteCapable) return;
   const existing = await readIssueBody(runner, record.issueNumber, cwd);
   const body = renderIssueBody(record, existing);
   await runner.gh([GH_ISSUE, GH_EDIT, String(record.issueNumber), GH_BODY_FLAG, body], { cwd });
@@ -475,15 +532,22 @@ const abortStart = async (
   input: StartRequestInput,
   preflight: PreFlightResult,
   note: string,
+  repoRoot = context.cwd,
 ): Promise<LifecycleRecord> => {
   const identity = {
     issueNumber: ABORTED_ISSUE_NUMBER,
     issueUrl: issueUrlFor(preflight, ABORTED_ISSUE_NUMBER),
   };
-  const record = createRecord(input, context.worktreesRoot, identity, LIFECYCLE_STATES.ABORTED, [
-    note,
-    ABORTED_SENTINEL_NOTE,
-  ]);
+  const record = createRecord(
+    input,
+    context.worktreesRoot,
+    identity,
+    LIFECYCLE_STATES.ABORTED,
+    [note, ABORTED_SENTINEL_NOTE],
+    {
+      repoRoot,
+    },
+  );
   await context.store.save(record);
   await safeNotify(context, NOTIFICATION_STATUSES.FAILED_STOP, record, note);
   return record;
@@ -498,6 +562,31 @@ const abortRecord = async (
   const saved = await saveAndSync(context, aborted);
   await safeNotify(context, NOTIFICATION_STATUSES.FAILED_STOP, saved, note);
   return saved;
+};
+
+const abortDiscovery = async (
+  context: LifecycleContext,
+  input: StartRequestInput,
+  discovery: RepoDiscoveryResult,
+): Promise<LifecycleRecord> => {
+  const prefix = discovery.kind === REPO_DISCOVERY_KIND.AMBIGUOUS ? DISCOVERY_AMBIGUOUS : DISCOVERY_BLOCKED;
+  const candidates = discovery.candidates.length > 0 ? ` candidates=${discovery.candidates.join(",")}` : EMPTY_TEXT;
+  const note = `${prefix}: ${discovery.note}${candidates}`;
+  const identity = { issueNumber: ABORTED_ISSUE_NUMBER, issueUrl: EMPTY_TEXT };
+  const record = createRecord(
+    input,
+    context.worktreesRoot,
+    identity,
+    LIFECYCLE_STATES.ABORTED,
+    [note, ABORTED_SENTINEL_NOTE],
+    {
+      repoRoot: discovery.root,
+      remoteCapable: false,
+    },
+  );
+  await context.store.save(record);
+  await safeNotify(context, NOTIFICATION_STATUSES.FAILED_STOP, record, note);
+  return record;
 };
 
 const applyCommitOutcome = (record: LifecycleRecord, outcome: CommitOutcome): LifecycleRecord => {
@@ -537,6 +626,7 @@ const readLatestLedger = async (record: LifecycleRecord, cwd: string): Promise<s
 const readPromotionMarkdown = async (record: LifecycleRecord, context: LifecycleContext): Promise<string | null> => {
   const ledger = await readLatestLedger(record, context.cwd);
   if (ledger) return ledger;
+  if (isLocalOnlyLifecycleRecord(record) || !record.remoteCapable) return null;
 
   const body = await readIssueBody(context.runner, record.issueNumber, context.cwd);
   if (body && body.trim().length > 0) return body;
@@ -580,27 +670,114 @@ const promoteFinishedRecord = async (
   }
 };
 
-const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
-  return async (request) => {
-    const preflight = await classifyRepo(context.runner, context.cwd);
-    const note = getPreFlightNote(preflight);
-    if (note) return abortStart(context, request, preflight, note);
-
-    const enableNote = await ensureIssuesEnabled(context.runner, preflight, context.cwd);
-    if (enableNote) return abortStart(context, request, preflight, enableNote);
-
-    const identity = await createIssue(context.runner, request, context.cwd, preflight.nameWithOwner);
-    const opened = createRecord(request, context.worktreesRoot, identity, LIFECYCLE_STATES.ISSUE_OPEN);
-    const worktreeNote = await createWorktree(context.runner, opened, context.cwd);
-    if (worktreeNote) return abortRecord(context, opened, worktreeNote);
-
-    const ready = touch(
-      addArtifact(transitionTo(opened, LIFECYCLE_STATES.BRANCH_READY), ARTIFACT_KINDS.WORKTREE, opened.worktree),
-    );
-    const saved = await saveAndSync(context, ready);
-    await safeEmit(context, saved.issueNumber, `Lifecycle started: branch=${saved.branch}, worktree=${saved.worktree}`);
-    return saved;
+const normalizeRepoDiscovery = (discovery: RepoDiscoveryResult): RepoDiscoveryResult => {
+  if (discovery.kind !== REPO_DISCOVERY_KIND.UNINITIALIZED || !hasGitMetadata(discovery.root)) return discovery;
+  return {
+    kind: REPO_DISCOVERY_KIND.REPO,
+    root: discovery.root,
+    source: "current",
+    candidates: [discovery.root],
+    note: null,
   };
+};
+
+const saveStartedLocalOnly = async (context: LifecycleContext, record: LifecycleRecord): Promise<LifecycleRecord> => {
+  await context.store.save(record);
+  await safeEmit(context, record.issueNumber, `Lifecycle started locally: ${record.localId ?? record.issueNumber}`);
+  return record;
+};
+
+const startUninitializedLifecycle = async (
+  context: LifecycleContext,
+  request: StartRequestInput,
+  discovery: RepoDiscoveryResult,
+): Promise<LifecycleRecord> => {
+  const record = createLocalOnlyRecord(
+    request,
+    discovery.root,
+    [`${LOCAL_ONLY_START}: ${discovery.note}`],
+    discovery.root,
+  );
+  return saveStartedLocalOnly(context, record);
+};
+
+const startPreflightLocalOnlyLifecycle = async (
+  context: LifecycleContext,
+  request: StartRequestInput,
+  repoRoot: string,
+  preflight: PreFlightResult,
+): Promise<LifecycleRecord> => {
+  const note = getLocalOnlyPreflightNote(preflight) ?? `${LOCAL_ONLY_START}: remote ownership unavailable`;
+  const record = createLocalOnlyRecord(request, repoRoot, [note], repoRoot);
+  return saveStartedLocalOnly(context, record);
+};
+
+const prepareRemoteLifecycle = (
+  request: StartRequestInput,
+  context: LifecycleContext,
+  identity: IssueIdentity,
+  repoRoot: string,
+): LifecycleRecord => {
+  return createRecord(request, context.worktreesRoot, identity, LIFECYCLE_STATES.ISSUE_OPEN, [], {
+    repoRoot,
+    remoteCapable: true,
+  });
+};
+
+const startRemoteLifecycle = async (
+  context: LifecycleContext,
+  request: StartRequestInput,
+  repoRoot: string,
+  preflight: PreFlightResult,
+): Promise<LifecycleRecord> => {
+  const note = getPreFlightNote(preflight);
+  if (note) return abortStart(context, request, preflight, note, repoRoot);
+
+  const enableAllowed = assertRemoteMutationAllowed(preflight, "enable-issues");
+  if (!enableAllowed.ok) return abortStart(context, request, preflight, enableAllowed.note, repoRoot);
+  const issueCreateAllowed = assertRemoteMutationAllowed(preflight, "issue-create");
+  if (!issueCreateAllowed.ok) return abortStart(context, request, preflight, issueCreateAllowed.note, repoRoot);
+
+  const enableNote = await ensureIssuesEnabled(context.runner, preflight, repoRoot);
+  if (enableNote) return abortStart(context, request, preflight, enableNote, repoRoot);
+
+  const identity = await createIssue(context.runner, request, repoRoot, preflight.nameWithOwner);
+  const opened = prepareRemoteLifecycle(request, context, identity, repoRoot);
+  const worktreeNote = await createWorktree(context.runner, opened, repoRoot);
+  if (worktreeNote) return abortRecord(context, opened, worktreeNote);
+
+  const ready = touch(
+    addArtifact(transitionTo(opened, LIFECYCLE_STATES.BRANCH_READY), ARTIFACT_KINDS.WORKTREE, opened.worktree),
+  );
+  const saved = await saveAndSync(context, ready);
+  await safeEmit(context, saved.issueNumber, `Lifecycle started: branch=${saved.branch}, worktree=${saved.worktree}`);
+  return saved;
+};
+
+const startLifecycle = async (context: LifecycleContext, request: StartRequestInput): Promise<LifecycleRecord> => {
+  const discovery = await resolveEffectiveProjectRoot(context.runner, { cwd: context.cwd });
+  const effectiveDiscovery = normalizeRepoDiscovery(discovery);
+  if (
+    effectiveDiscovery.kind === REPO_DISCOVERY_KIND.AMBIGUOUS ||
+    effectiveDiscovery.kind === REPO_DISCOVERY_KIND.BLOCKED
+  ) {
+    return abortDiscovery(context, request, effectiveDiscovery);
+  }
+
+  if (effectiveDiscovery.kind === REPO_DISCOVERY_KIND.UNINITIALIZED) {
+    return startUninitializedLifecycle(context, request, effectiveDiscovery);
+  }
+
+  const repoRoot = effectiveDiscovery.root;
+  const preflight = await classifyRepo(context.runner, repoRoot);
+  if (shouldUseLocalOnlyForPreflight(preflight)) {
+    return startPreflightLocalOnlyLifecycle(context, request, repoRoot, preflight);
+  }
+  return startRemoteLifecycle(context, request, repoRoot, preflight);
+};
+
+const createStart = (context: LifecycleContext): LifecycleHandle["start"] => {
+  return (request) => startLifecycle(context, request);
 };
 
 const createArtifactRecorder = (context: LifecycleContext): LifecycleHandle["recordArtifact"] => {
@@ -646,69 +823,157 @@ const recordCommitObserved = async (
   });
 };
 
+const isUninitializedLocalOnlyRecord = (record: LifecycleRecord): boolean => {
+  return isLocalOnlyLifecycleRecord(record) && record.notes.some((note) => note.includes(UNINITIALIZED_DISCOVERY_NOTE));
+};
+
+const buildLocalOnlyNoWorktreeOutcome = (): CommitOutcome => ({
+  committed: false,
+  sha: null,
+  pushed: false,
+  retried: false,
+  note: LOCAL_ONLY_NO_GIT_WORKTREE,
+});
+
+const handleLocalOnlyNoWorktreeCommit = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  record: LifecycleRecord,
+): Promise<CommitOutcome> => {
+  const outcome = buildLocalOnlyNoWorktreeOutcome();
+  await saveAndSync(context, applyCommitOutcome(record, outcome));
+  await safeEmit(context, issueNumber, LOCAL_ONLY_NO_GIT_WORKTREE);
+  return outcome;
+};
+
+const runCommitAndPush = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  commitInput: CommitInput,
+  record: LifecycleRecord,
+  marker: string | undefined,
+): Promise<CommitOutcome> => {
+  return commitAndPush(context.runner, {
+    cwd: record.worktree,
+    issueNumber,
+    branch: record.branch,
+    type: DEFAULT_COMMIT_TYPE,
+    scope: commitInput.scope,
+    summary: commitInput.summary,
+    push: commitInput.push,
+    mode: record.mode,
+    remoteCapable: record.remoteCapable,
+    preflight: async () => classifyRepo(context.runner, record.repoRoot),
+    marker,
+    preStageHook: context.preStageHook,
+    prePushHook: context.prePushHook,
+  });
+};
+
+const commitLifecycle = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  commitInput: CommitInput,
+): Promise<CommitOutcome> => {
+  const record = await requireRecord(context.store, issueNumber);
+  if (isUninitializedLocalOnlyRecord(record)) return handleLocalOnlyNoWorktreeCommit(context, issueNumber, record);
+
+  const marker = await createCommitMarker(context, issueNumber, commitInput);
+  const outcome = await runCommitAndPush(context, issueNumber, commitInput, record, marker);
+  await saveAndSync(context, applyCommitOutcome(record, outcome));
+  await recordCommitObserved(context, issueNumber, commitInput, outcome, marker);
+  const pushed = outcome.pushed ? "true" : "false";
+  await safeEmit(context, issueNumber, `Committed ${outcome.sha ?? "(no-op)"}, pushed=${pushed}`, marker);
+  return outcome;
+};
+
 const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] => {
-  return async (issueNumber, commitInput) => {
-    const record = await requireRecord(context.store, issueNumber);
-    const marker = await createCommitMarker(context, issueNumber, commitInput);
-    const outcome = await commitAndPush(context.runner, {
-      cwd: record.worktree,
-      issueNumber,
-      branch: record.branch,
-      type: DEFAULT_COMMIT_TYPE,
-      scope: commitInput.scope,
-      summary: commitInput.summary,
-      push: commitInput.push,
-      marker,
-      preStageHook: context.preStageHook,
-      prePushHook: context.prePushHook,
-    });
-    await saveAndSync(context, applyCommitOutcome(record, outcome));
-    await recordCommitObserved(context, issueNumber, commitInput, outcome, marker);
-    const pushed = outcome.pushed ? "true" : "false";
-    await safeEmit(context, issueNumber, `Committed ${outcome.sha ?? "(no-op)"}, pushed=${pushed}`, marker);
-    return outcome;
-  };
+  return (issueNumber, commitInput) => commitLifecycle(context, issueNumber, commitInput);
+};
+
+const handleBlockedFinish = async (
+  context: LifecycleContext,
+  record: LifecycleRecord,
+  blocked: readonly string[],
+): Promise<FinishOutcome> => {
+  const note = buildExecutorBlockedNote(blocked);
+  const outcome = buildExecutorBlockedOutcome(note);
+  const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
+  await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
+  return outcome;
+};
+
+const runFinishLifecycle = async (
+  context: LifecycleContext,
+  finishInput: FinishInput,
+  merging: LifecycleRecord,
+  events: readonly JournalEvent[],
+): Promise<FinishOutcome> => {
+  const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
+  const reviewSummarySection = renderReviewSummarySection(summary);
+  const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: merging.repoRoot });
+  const finished = await finishLifecycle(context.runner, {
+    cwd: merging.repoRoot,
+    branch: merging.branch,
+    worktree: merging.worktree,
+    mergeStrategy: finishInput.mergeStrategy,
+    waitForChecks: finishInput.waitForChecks,
+    baseBranch: resolvedBranch.branch,
+    reviewSummarySection,
+    postSummaryComment: config.lifecycle.postPrSummaryComment,
+    issueNumber: merging.issueNumber,
+    artifactPointers: Object.values(merging.artifacts).flat(),
+    mode: merging.mode,
+    remoteCapable: merging.remoteCapable,
+    preflight: async () => classifyRepo(context.runner, merging.repoRoot),
+  });
+  return annotateWithResolvedBranch(finished, resolvedBranch);
+};
+
+const closeRemoteFinishOutcome = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  merging: LifecycleRecord,
+  annotated: FinishOutcome,
+): Promise<FinishOutcome> => {
+  if (isLocalOnlyLifecycleRecord(merging)) return annotated;
+  return closeMergedIssue(context.runner, issueNumber, annotated, merging.repoRoot);
+};
+
+const persistFinishOutcome = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  merging: LifecycleRecord,
+  outcome: FinishOutcome,
+): Promise<LifecycleRecord> => {
+  const promoted = await promoteFinishedRecord(merging, outcome, context);
+  const final = await saveAndSync(context, applyFinishOutcome(promoted, outcome));
+  await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
+  return final;
+};
+
+const finishLifecycleRecord = async (
+  context: LifecycleContext,
+  issueNumber: number,
+  finishInput: FinishInput,
+): Promise<FinishOutcome> => {
+  const record = await requireRecord(context.store, issueNumber);
+  const events = await context.journal.list(issueNumber);
+  const blocked = detectBlockedTasks(events);
+  if (blocked.length > 0) return handleBlockedFinish(context, record, blocked);
+
+  const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
+  const annotated = await runFinishLifecycle(context, finishInput, merging, events);
+  const outcome = await closeRemoteFinishOutcome(context, issueNumber, merging, annotated);
+  const final = await persistFinishOutcome(context, issueNumber, merging, outcome);
+  if (outcome.merged) {
+    await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
+  }
+  return outcome;
 };
 
 const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] => {
-  return async (issueNumber, finishInput) => {
-    const record = await requireRecord(context.store, issueNumber);
-    const events = await context.journal.list(issueNumber);
-    const blocked = detectBlockedTasks(events);
-    if (blocked.length > 0) {
-      const note = buildExecutorBlockedNote(blocked);
-      const outcome = buildExecutorBlockedOutcome(note);
-      const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
-      await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
-      return outcome;
-    }
-
-    const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
-    const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
-    const reviewSummarySection = renderReviewSummarySection(summary);
-    const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
-    const finished = await finishLifecycle(context.runner, {
-      cwd: context.cwd,
-      branch: merging.branch,
-      worktree: merging.worktree,
-      mergeStrategy: finishInput.mergeStrategy,
-      waitForChecks: finishInput.waitForChecks,
-      baseBranch: resolvedBranch.branch,
-      reviewSummarySection,
-      postSummaryComment: config.lifecycle.postPrSummaryComment,
-      issueNumber: merging.issueNumber,
-      artifactPointers: Object.values(merging.artifacts).flat(),
-    });
-    const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
-    const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
-    const promoted = await promoteFinishedRecord(merging, outcome, context);
-    const final = await saveAndSync(context, applyFinishOutcome(promoted, outcome));
-    await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
-    if (outcome.merged) {
-      await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
-    }
-    return outcome;
-  };
+  return (issueNumber, finishInput) => finishLifecycleRecord(context, issueNumber, finishInput);
 };
 
 const createBlockedNotifier = (context: LifecycleContext): LifecycleHandle["notifyBlocked"] => {

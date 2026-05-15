@@ -199,4 +199,97 @@ describe("runCleanup", () => {
     expect(outcome.kind).toBe("blocked-external");
     expect(calls.some((c) => c.args[0] === "worktree" && c.args[1] === "remove")).toBe(false);
   });
+
+  it("deletes a standard lifecycle branch after clean worktree removal when enabled", async () => {
+    const { runner, calls } = fakeRunner(
+      new Map([
+        ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n"), ok("")]],
+        ["status --porcelain", [ok("")]],
+        ["ls-files --others --exclude-standard", [ok("")]],
+        ["worktree remove /repo/micode-issue-1", [ok()]],
+        ["branch -d issue/1-x", [ok("Deleted branch issue/1-x.\n")]],
+      ]),
+    );
+
+    const outcome = await runCleanup(runner, baseInput({ cleanupBranch: true }));
+
+    expect(outcome.kind).toBe("removed");
+    expect(outcome.reason).toContain("deleted branch issue/1-x");
+    expect(calls.some((c) => c.args.join(" ") === "branch -d issue/1-x" && c.cwd === "/repo/micode")).toBe(true);
+  });
+
+  it("does not delete the branch when cleanupBranch is disabled", async () => {
+    const { runner, calls } = fakeRunner(
+      new Map([
+        ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n")]],
+        ["status --porcelain", [ok("")]],
+        ["ls-files --others --exclude-standard", [ok("")]],
+        ["worktree remove /repo/micode-issue-1", [ok()]],
+      ]),
+    );
+
+    const outcome = await runCleanup(runner, baseInput());
+
+    expect(outcome.kind).toBe("removed");
+    expect(calls.some((c) => c.args[0] === "branch")).toBe(false);
+  });
+
+  it("never force deletes a branch during cleanup", async () => {
+    const { runner, calls } = fakeRunner(
+      new Map([
+        ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n"), ok("")]],
+        ["status --porcelain", [ok("")]],
+        ["ls-files --others --exclude-standard", [ok("")]],
+        ["worktree remove /repo/micode-issue-1", [ok()]],
+        ["branch -d issue/1-x", [fail("not fully merged")]],
+      ]),
+    );
+
+    await runCleanup(runner, baseInput({ cleanupBranch: true }));
+
+    expect(calls.some((c) => c.args.join(" ") === "branch -D issue/1-x")).toBe(false);
+    expect(calls.some((c) => c.args.includes("-D"))).toBe(false);
+  });
+
+  it("reports branch deletion failure after worktree removal succeeds", async () => {
+    const { runner } = fakeRunner(
+      new Map([
+        ["worktree list --porcelain", [ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n"), ok("")]],
+        ["status --porcelain", [ok("")]],
+        ["ls-files --others --exclude-standard", [ok("")]],
+        ["worktree remove /repo/micode-issue-1", [ok()]],
+        ["branch -d issue/1-x", [fail("not fully merged")]],
+      ]),
+    );
+
+    const outcome = await runCleanup(runner, baseInput({ cleanupBranch: true }));
+
+    expect(outcome.kind).toBe("failed");
+    expect(outcome.reason).toContain("worktree removal succeeded");
+    expect(outcome.reason).toContain("branch cleanup failed");
+    expect(outcome.reason).toContain("not fully merged");
+  });
+
+  it("does not delete a branch checked out in another registered worktree", async () => {
+    const { runner, calls } = fakeRunner(
+      new Map([
+        [
+          "worktree list --porcelain",
+          [
+            ok("worktree /repo/micode-issue-1\nbranch refs/heads/issue/1-x\n"),
+            ok("worktree /repo/other\nbranch refs/heads/issue/1-x\n"),
+          ],
+        ],
+        ["status --porcelain", [ok("")]],
+        ["ls-files --others --exclude-standard", [ok("")]],
+        ["worktree remove /repo/micode-issue-1", [ok()]],
+      ]),
+    );
+
+    const outcome = await runCleanup(runner, baseInput({ cleanupBranch: true }));
+
+    expect(outcome.kind).toBe("removed");
+    expect(outcome.reason).toContain("branch cleanup skipped");
+    expect(calls.some((c) => c.args[0] === "branch")).toBe(false);
+  });
 });

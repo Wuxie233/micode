@@ -13,8 +13,9 @@ export interface CommitMessageInput {
 export function buildLifecycleCommitMessage(input: CommitMessageInput): string {
   if (!SCOPE_PATTERN.test(input.scope)) throw new Error(`Invalid commit scope: ${input.scope}`);
   if (NEWLINE_PATTERN.test(input.summary)) throw new Error("Commit summary must be single-line");
-  if (input.issueNumber <= 0) throw new Error(`Invalid issue number: ${input.issueNumber}`);
-  const headline = `${input.type}(${input.scope}): ${input.summary} (#${input.issueNumber})`;
+  if (input.issueNumber === 0) throw new Error(`Invalid issue number: ${input.issueNumber}`);
+  const identity = input.issueNumber > 0 ? `#${input.issueNumber}` : `local${input.issueNumber}`;
+  const headline = `${input.type}(${input.scope}): ${input.summary} (${identity})`;
   if (!input.marker || input.marker.length === 0) return headline;
   return `${headline}${MARKER_SEPARATOR}${input.marker}`;
 }

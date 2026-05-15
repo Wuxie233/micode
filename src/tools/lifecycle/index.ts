@@ -3,6 +3,8 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import type { LifecycleHandle } from "@/lifecycle";
 import type { ProgressLogger } from "@/lifecycle/progress";
 import type { Resolver } from "@/lifecycle/resolver";
+import type { LifecycleRunner } from "@/lifecycle/runner";
+import { createLifecycleAuditBranchesTool } from "./audit-branches";
 import { createLifecycleCommitTool } from "./commit";
 import { createLifecycleContextTool } from "./context";
 import { createLifecycleCurrentTool } from "./current";
@@ -14,6 +16,7 @@ import { createLifecycleResumeTool } from "./resume";
 import { createLifecycleStartRequestTool } from "./start-request";
 
 export interface LifecycleTools {
+  readonly lifecycle_audit_branches: ToolDefinition;
   readonly lifecycle_start_request: ToolDefinition;
   readonly lifecycle_record_artifact: ToolDefinition;
   readonly lifecycle_commit: ToolDefinition;
@@ -29,8 +32,16 @@ export function createLifecycleTools(
   handle: LifecycleHandle,
   resolver: Resolver,
   progress: ProgressLogger,
+  runner?: LifecycleRunner,
+  cwd?: string,
 ): LifecycleTools {
+  const auditRunner = runner ?? {
+    git: async () => ({ stdout: "", stderr: "missing runner", exitCode: 1 }),
+    gh: async () => ({ stdout: "", stderr: "missing runner", exitCode: 1 }),
+  };
+  const auditCwd = cwd ?? process.cwd();
   return {
+    lifecycle_audit_branches: createLifecycleAuditBranchesTool({ runner: auditRunner, resolver, cwd: auditCwd }),
     lifecycle_start_request: createLifecycleStartRequestTool(handle),
     lifecycle_record_artifact: createLifecycleRecordArtifactTool(handle),
     lifecycle_commit: createLifecycleCommitTool(handle),

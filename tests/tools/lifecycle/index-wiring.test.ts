@@ -6,7 +6,7 @@ import type { Resolver } from "@/lifecycle/resolver";
 import { createLifecycleTools } from "@/tools/lifecycle";
 
 describe("createLifecycleTools wiring", () => {
-  it("exposes lifecycle_recovery_decision among the returned tools", () => {
+  it("exposes lifecycle_recovery_decision and lifecycle_audit_branches among the returned tools", () => {
     const handle = {
       decideRecovery: async () => ({ kind: "clean_resume", nextBatchId: null, lastSeq: 0 }),
     } as unknown as LifecycleHandle;
@@ -15,6 +15,7 @@ describe("createLifecycleTools wiring", () => {
       resume: async () => {
         throw new Error("noop");
       },
+      listRecords: async () => [],
     } as unknown as Resolver;
     const progress = {
       log: async () => ({ issueNumber: 0, kind: "status", commentUrl: null }),
@@ -22,5 +23,6 @@ describe("createLifecycleTools wiring", () => {
     } as unknown as ProgressLogger;
     const tools = createLifecycleTools(handle, resolver, progress);
     expect(typeof tools.lifecycle_recovery_decision).toBe("object");
+    expect(typeof tools.lifecycle_audit_branches).toBe("object");
   });
 });

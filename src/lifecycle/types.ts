@@ -16,6 +16,13 @@ export const LIFECYCLE_STATES = {
 
 export type LifecycleState = (typeof LIFECYCLE_STATES)[keyof typeof LIFECYCLE_STATES];
 
+export const LIFECYCLE_MODES = {
+  REMOTE: "remote",
+  LOCAL_ONLY: "local-only",
+} as const;
+
+export type LifecycleMode = (typeof LIFECYCLE_MODES)[keyof typeof LIFECYCLE_MODES];
+
 export const TERMINAL_STATES = [LIFECYCLE_STATES.CLOSED, LIFECYCLE_STATES.CLEANED, LIFECYCLE_STATES.ABORTED] as const;
 
 export type TerminalState = (typeof TERMINAL_STATES)[number];
@@ -40,12 +47,36 @@ export interface StartRequestInput {
 export interface LifecycleRecord {
   readonly issueNumber: number;
   readonly issueUrl: string;
+  readonly mode: LifecycleMode;
+  readonly localId: string | null;
+  readonly repoRoot: string;
+  readonly remoteCapable: boolean;
   readonly branch: string;
   readonly worktree: string;
   readonly state: LifecycleState;
   readonly artifacts: Readonly<Record<ArtifactKind, readonly string[]>>;
   readonly notes: readonly string[];
   readonly updatedAt: number;
+}
+
+export function isRemoteLifecycleRecord(record: LifecycleRecord): boolean {
+  return record.mode === LIFECYCLE_MODES.REMOTE;
+}
+
+export function isLocalOnlyLifecycleRecord(record: LifecycleRecord): boolean {
+  return record.mode === LIFECYCLE_MODES.LOCAL_ONLY;
+}
+
+export function isLocalIssueNumber(issueNumber: number): boolean {
+  return Number.isSafeInteger(issueNumber) && issueNumber < 0;
+}
+
+export function formatLifecycleIdentity(record: LifecycleRecord): string {
+  if (isLocalOnlyLifecycleRecord(record)) {
+    return record.localId ?? String(record.issueNumber);
+  }
+
+  return `#${record.issueNumber}`;
 }
 
 export interface CommitInput {

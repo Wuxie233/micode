@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 
 import { type CommitAndPushInput, commitAndPush } from "@/lifecycle/commits";
+import { type PreFlightResult, REPO_KIND } from "@/lifecycle/pre-flight";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 import { config } from "@/utils/config";
 
@@ -14,6 +15,10 @@ const FAILURE_EXIT_CODE = 1;
 const CLEAN_OUTPUT = "On branch issue/42\nnothing to commit, working tree clean\n";
 const PUSH_FAILURE = "remote rejected push";
 const MESSAGE = "feat(lifecycle): add commit flow (#42)";
+const ORIGIN = "git@github.com:Wuxie233/micode.git";
+const REPO = "Wuxie233/micode";
+const OWNER = "Wuxie233";
+const PARENT_URL = "https://github.com/vtemian/micode";
 const STAGE_ARGS = ["add", "--all"] as const;
 const COMMIT_ARGS = ["commit", "-m", MESSAGE] as const;
 const SHA_ARGS = ["rev-parse", "HEAD"] as const;
@@ -36,6 +41,36 @@ const INPUT: CommitAndPushInput = {
   scope: "lifecycle",
   summary: "add commit flow",
   push: true,
+};
+
+const forkPreflight: PreFlightResult = {
+  kind: REPO_KIND.FORK,
+  origin: ORIGIN,
+  nameWithOwner: REPO,
+  viewerLogin: OWNER,
+  issuesEnabled: true,
+  upstreamUrl: PARENT_URL,
+};
+
+const ownPreflight: PreFlightResult = { ...forkPreflight, kind: REPO_KIND.OWN, upstreamUrl: null };
+
+const unknownPreflight: PreFlightResult = {
+  kind: REPO_KIND.UNKNOWN,
+  reason: "gh-failed",
+  origin: ORIGIN,
+  nameWithOwner: EMPTY_OUTPUT,
+  viewerLogin: null,
+  issuesEnabled: false,
+  upstreamUrl: null,
+};
+
+const upstreamPreflight: PreFlightResult = {
+  kind: REPO_KIND.UPSTREAM,
+  origin: "git@github.com:vtemian/micode.git",
+  nameWithOwner: "vtemian/micode",
+  viewerLogin: null,
+  issuesEnabled: false,
+  upstreamUrl: null,
 };
 
 const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE, stderr = EMPTY_OUTPUT): RunResult => ({
@@ -160,5 +195,108 @@ describe("commitAndPush", () => {
       args: ["push", "--set-upstream", "origin", BRANCH],
       cwd: CWD,
     });
+  });
+
+  it("keeps local-only commits local and never pushes", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`)]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, mode: "local-only" });
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.sha).toBe(SHA);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.retried).toBe(false);
+    expect(outcome.note).toContain("local-only");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(outcome.recoveryHint?.safeToRetry).toBe(false);
+    expect(runner.calls).toEqual([
+      { args: STAGE_ARGS, cwd: CWD },
+      { args: COMMIT_ARGS, cwd: CWD },
+      { args: SHA_ARGS, cwd: CWD },
+    ]);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("keeps remote-disabled commits local and never pushes", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`)]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, remoteCapable: false });
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.sha).toBe(SHA);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(outcome.note).toContain("remote push is unavailable");
+    expect(runner.calls.map((call) => call.args[0])).not.toContain("push");
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("blocks unknown preflight before git push and retains the local commit", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`)]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, preflight: unknownPreflight });
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.sha).toBe(SHA);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.retried).toBe(false);
+    expect(outcome.note).toContain("Remote mutation blocked");
+    expect(outcome.note).toContain(REPO_KIND.UNKNOWN);
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(outcome.recoveryHint?.safeToRetry).toBe(false);
+    expect(runner.calls.map((call) => call.args[0])).not.toContain("push");
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("blocks upstream preflight before git push and retains the local commit", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`)]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, preflight: upstreamPreflight });
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.sha).toBe(SHA);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.retried).toBe(false);
+    expect(outcome.note).toContain("Remote mutation blocked");
+    expect(outcome.note).toContain(REPO_KIND.UPSTREAM);
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(runner.calls.map((call) => call.args[0])).not.toContain("push");
+  });
+
+  it("allows fork preflight to push normally", async () => {
+    const runner = createRunner([createRun(), createRun(), createRun(`${SHA}\n`), createRun()]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, preflight: forkPreflight });
+
+    expect(outcome).toEqual({ committed: true, sha: SHA, pushed: true, retried: false, note: null });
+    expect(runner.calls).toEqual([
+      { args: STAGE_ARGS, cwd: CWD },
+      { args: COMMIT_ARGS, cwd: CWD },
+      { args: SHA_ARGS, cwd: CWD },
+      { args: PUSH_ARGS, cwd: CWD },
+    ]);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("allows own preflight to keep existing push retry behavior", async () => {
+    const runner = createRunner([
+      createRun(),
+      createRun(),
+      createRun(`${SHA}\n`),
+      createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE, PUSH_FAILURE),
+      createRun(),
+    ]);
+
+    const outcome = await commitAndPush(runner, { ...INPUT, preflight: ownPreflight });
+
+    expect(outcome).toEqual({ committed: true, sha: SHA, pushed: true, retried: true, note: null });
+    expect(runner.calls).toEqual([
+      { args: STAGE_ARGS, cwd: CWD },
+      { args: COMMIT_ARGS, cwd: CWD },
+      { args: SHA_ARGS, cwd: CWD },
+      { args: PUSH_ARGS, cwd: CWD },
+      { args: PUSH_ARGS, cwd: CWD },
+    ]);
+    expect(sleep).toHaveBeenCalledWith(config.lifecycle.pushRetryBackoffMs);
   });
 });

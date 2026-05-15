@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { classifyRepo, parseOriginTarget, REPO_KIND } from "@/lifecycle/pre-flight";
+import { assertRemoteMutationAllowed, classifyRepo, parseOriginTarget, REPO_KIND } from "@/lifecycle/pre-flight";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 
 const CWD = "/workspace/micode";
 const OWNER = "Wuxie233";
 const REPO = "Wuxie233/micode";
+const DOTTED_REPO = "Wuxie233/my.repo";
 const PARENT_OWNER = "vtemian";
 const PARENT_NAME = "micode";
 const PARENT_REPO = `${PARENT_OWNER}/${PARENT_NAME}`;
@@ -106,6 +107,14 @@ describe("parseOriginTarget", () => {
     expect(parseOriginTarget("ssh://git@github.com/Wuxie233/micode.git")).toBe("Wuxie233/micode");
   });
 
+  it("parses https remote with dotted repo name and .git suffix", () => {
+    expect(parseOriginTarget("https://github.com/Wuxie233/my.repo.git")).toBe(DOTTED_REPO);
+  });
+
+  it("parses ssh remote with dotted repo name and .git suffix", () => {
+    expect(parseOriginTarget("git@github.com:Wuxie233/my.repo.git")).toBe(DOTTED_REPO);
+  });
+
   it("returns null for non-github remotes", () => {
     expect(parseOriginTarget("https://gitlab.com/owner/repo.git")).toBeNull();
   });
@@ -160,6 +169,20 @@ describe("classifyRepo", () => {
     expect(ghCall?.args[2]).toBe(REPO);
   });
 
+  it("passes dotted origin target to gh repo view after stripping only trailing .git", async () => {
+    const runner = createRunner(
+      { gh: createRun(createRepoView({ nameWithOwner: DOTTED_REPO, isFork: false, parent: null })) },
+      `https://github.com/${DOTTED_REPO}.git`,
+    );
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.OWN);
+    expect(preflight.nameWithOwner).toBe(DOTTED_REPO);
+    const ghCall = runner.calls.find((call) => call.bin === "gh");
+    expect(ghCall?.args).toEqual(["repo", "view", DOTTED_REPO, "--json", GH_FIELDS]);
+  });
+
   it("returns unknown when gh nameWithOwner does not case-insensitively match origin", async () => {
     // gh returned metadata for vtemian/micode (upstream) instead of Wuxie233/micode (origin)
     const runner = createRunner({
@@ -177,6 +200,7 @@ describe("classifyRepo", () => {
     const preflight = await classifyRepo(runner, CWD);
 
     expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("view-mismatch");
     expect(preflight.nameWithOwner).toBe(EMPTY_OUTPUT);
   });
 
@@ -186,8 +210,29 @@ describe("classifyRepo", () => {
     const preflight = await classifyRepo(runner, CWD);
 
     expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("unparseable-origin");
     // Should not have called gh at all since origin is unparseable
     expect(runner.calls.filter((c) => c.bin === "gh")).toHaveLength(0);
+  });
+
+  it("returns unknown with gh-failed reason when gh repo view fails", async () => {
+    const runner = createRunner({ gh: createRun("fatal: not authenticated", FAILURE_EXIT_CODE) });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("gh-failed");
+    expect(preflight.origin).toBe(ORIGIN_SSH);
+  });
+
+  it("returns unknown with invalid-gh-output reason for invalid JSON", async () => {
+    const runner = createRunner({ gh: createRun("not-json") });
+
+    const preflight = await classifyRepo(runner, CWD);
+
+    expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("invalid-gh-output");
+    expect(preflight.origin).toBe(ORIGIN_SSH);
   });
 
   it("classifies forks when parent uses { name, owner.login } shape", async () => {
@@ -322,6 +367,7 @@ describe("classifyRepo", () => {
 
     expect(preflight).toEqual({
       kind: REPO_KIND.UNKNOWN,
+      reason: "no-origin",
       origin: EMPTY_OUTPUT,
       nameWithOwner: EMPTY_OUTPUT,
       viewerLogin: null,
@@ -397,6 +443,7 @@ describe("classifyRepo", () => {
     const preflight = await classifyRepo(runner, CWD);
 
     expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("unparseable-origin");
     expect(preflight.origin).toBe(nonGithubOrigin.trim());
     // gh must NOT be invoked when origin is unparseable: fail-closed.
     expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
@@ -408,6 +455,70 @@ describe("classifyRepo", () => {
     const preflight = await classifyRepo(runner, CWD);
 
     expect(preflight.kind).toBe(REPO_KIND.UNKNOWN);
+    expect(preflight.reason).toBe("no-origin");
     expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
+  });
+});
+
+describe("assertRemoteMutationAllowed", () => {
+  it("allows fork and own repos and returns repo target", () => {
+    const fork = {
+      kind: REPO_KIND.FORK,
+      origin: ORIGIN_SSH,
+      nameWithOwner: REPO,
+      viewerLogin: OWNER,
+      issuesEnabled: true,
+      upstreamUrl: PARENT_URL,
+    };
+    const own = { ...fork, kind: REPO_KIND.OWN, upstreamUrl: null };
+
+    expect(assertRemoteMutationAllowed(fork, "push")).toEqual({ ok: true, repoTarget: REPO });
+    expect(assertRemoteMutationAllowed(own, "issue-create")).toEqual({ ok: true, repoTarget: REPO });
+  });
+
+  it("blocks unknown repos with operation-specific note and reason", () => {
+    const result = assertRemoteMutationAllowed(
+      {
+        kind: REPO_KIND.UNKNOWN,
+        reason: "gh-failed",
+        origin: ORIGIN_SSH,
+        nameWithOwner: EMPTY_OUTPUT,
+        viewerLogin: null,
+        issuesEnabled: false,
+        upstreamUrl: null,
+      },
+      "pr-create",
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failureKind).toBe("pre_flight_failed");
+      expect(result.note).toContain("pr-create");
+      expect(result.note).toContain(REPO_KIND.UNKNOWN);
+      expect(result.note).toContain("gh-failed");
+      expect(result.note).not.toContain("fatal:");
+    }
+  });
+
+  it("blocks upstream repos with operation-specific note", () => {
+    const result = assertRemoteMutationAllowed(
+      {
+        kind: REPO_KIND.UPSTREAM,
+        origin: "git@github.com:vtemian/micode.git",
+        nameWithOwner: "vtemian/micode",
+        viewerLogin: null,
+        issuesEnabled: false,
+        upstreamUrl: null,
+      },
+      "remote-branch-delete",
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failureKind).toBe("pre_flight_failed");
+      expect(result.note).toContain("remote-branch-delete");
+      expect(result.note).toContain(REPO_KIND.UPSTREAM);
+      expect(result.note).not.toContain("fatal:");
+    }
   });
 });

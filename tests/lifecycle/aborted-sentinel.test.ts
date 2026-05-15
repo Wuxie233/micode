@@ -101,14 +101,15 @@ describe("lifecycle aborted sentinel", () => {
     rmSync(worktreesRoot, { recursive: true, force: true });
   });
 
-  it("aborted records use a sentinel issue number that cannot collide with real issues", async () => {
+  it("local-only records use negative issue numbers that cannot collide with real issues", async () => {
     const handle = createLifecycleHandle({ runner: createRunner(), worktreesRoot, cwd: worktreesRoot, baseDir });
 
     const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
-    expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
-    expect(record.issueNumber).toBe(SENTINEL_ISSUE);
-    expect(record.notes).toContain(SENTINEL_NOTE);
+    expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+    expect(record.issueNumber).toBeLessThan(0);
+    expect(record.mode).toBe("local-only");
+    expect(record.remoteCapable).toBe(false);
   });
 
   it("aborting does not overwrite a pre-existing real issue #1 record", async () => {
@@ -119,6 +120,6 @@ describe("lifecycle aborted sentinel", () => {
     await store.save(seeded);
     await handle.start({ summary: SUMMARY, goals: [], constraints: [], ownerLogin: OWNER, repo: REPO });
 
-    await expect(handle.load(ISSUE_ONE)).resolves.toEqual(seeded);
+    await expect(handle.load(ISSUE_ONE)).resolves.toMatchObject(seeded);
   });
 });

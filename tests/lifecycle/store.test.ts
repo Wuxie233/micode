@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createLifecycleStore } from "@/lifecycle/store";
-import { ARTIFACT_KINDS, LIFECYCLE_STATES, type LifecycleRecord } from "@/lifecycle/types";
+import { ARTIFACT_KINDS, LIFECYCLE_MODES, LIFECYCLE_STATES, type LifecycleRecord } from "@/lifecycle/types";
 
 const PREFIX = "micode-lifecycle-store-";
 const ISSUE_ONE = 1;
@@ -18,6 +18,10 @@ const MALFORMED_JSON = "{";
 const createRecord = (issueNumber = ISSUE_ONE): LifecycleRecord => ({
   issueNumber,
   issueUrl: `https://github.com/Wuxie233/micode/issues/${issueNumber}`,
+  mode: LIFECYCLE_MODES.REMOTE,
+  localId: null,
+  repoRoot: `/tmp/micode-issue-${issueNumber}`,
+  remoteCapable: true,
   branch: `issue/${issueNumber}-lifecycle`,
   worktree: `/tmp/micode-issue-${issueNumber}`,
   state: LIFECYCLE_STATES.PROPOSED,

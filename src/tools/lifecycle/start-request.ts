@@ -2,12 +2,13 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
 import { LIFECYCLE_STATES, type LifecycleHandle, type LifecycleRecord, type StartRequestInput } from "@/lifecycle";
+import { formatLifecycleIdentity, isLocalOnlyLifecycleRecord, LIFECYCLE_MODES } from "@/lifecycle/types";
 import { sequenceSchema } from "@/tools/sequence";
 import { extractErrorMessage } from "@/utils/errors";
 
 const DESCRIPTION = `Start an issue-driven lifecycle request.
 
-Calls the lifecycle handle to create the GitHub issue, branch, and worktree, then returns the lifecycle summary.`;
+Calls the lifecycle handle to create a remote lifecycle or local-only lifecycle, then returns the lifecycle summary.`;
 
 const PREFLIGHT_CATEGORY = "pre_flight_failed";
 const ISSUES_DISABLED_CATEGORY = "issues_disabled_upstream";
@@ -15,14 +16,18 @@ const WORKTREE_CONFLICT_CATEGORY = "worktree_conflict";
 const PREFLIGHT_HEADER = "## Lifecycle pre-flight failed";
 const ISSUES_DISABLED_HEADER = "## Lifecycle aborted: issues disabled on upstream";
 const WORKTREE_CONFLICT_HEADER = "## Worktree conflict";
+const LOCAL_ONLY_STARTED_HEADER = "## Local-only lifecycle started";
 const LINE_BREAK = "\n";
 const DOUBLE_LINE_BREAK = "\n\n";
-const TABLE_HEADER = "| Issue # | Branch | Worktree | State |";
+const REMOTE_TABLE_HEADER = "| Issue # | Branch | Worktree | State |";
+const LOCAL_ONLY_TABLE_HEADER = "| Local ID | Branch | Worktree | State |";
 const TABLE_SEPARATOR = "|---|---|---|---|";
 const ABORTED_ISSUE_NUMBER = Number.MAX_SAFE_INTEGER;
 const ABORTED_ISSUE_LABEL = "(aborted)";
 const ABORTED_BRANCH_LABEL = "(not created)";
 const ABORTED_WORKTREE_LABEL = "(not created)";
+const DETAILS_HEADER = "### Details";
+const GUIDANCE_HEADER = "### Guidance";
 const INVALID_REQUEST_HEADER = "## Invalid lifecycle start request";
 const JSON_OBJECT_PREFIX = "{";
 const JSON_ARRAY_PREFIX = "[";
@@ -49,8 +54,13 @@ type NormalizeResult = { readonly ok: true; readonly input: StartRequestInput } 
 
 const isAbortedSentinel = (issueNumber: number): boolean => issueNumber === ABORTED_ISSUE_NUMBER;
 
-const displayIssue = (record: LifecycleRecord): string => {
+const displayIdentity = (record: LifecycleRecord): string => {
   return isAbortedSentinel(record.issueNumber) ? ABORTED_ISSUE_LABEL : String(record.issueNumber);
+};
+
+const displayLifecycleIdentity = (record: LifecycleRecord): string => {
+  if (record.state === LIFECYCLE_STATES.ABORTED && isAbortedSentinel(record.issueNumber)) return ABORTED_ISSUE_LABEL;
+  return formatLifecycleIdentity(record);
 };
 
 const displayBranch = (record: LifecycleRecord): string => {
@@ -124,16 +134,40 @@ const normalizeRequest = (raw: Record<string, unknown>): NormalizeResult => {
 const formatInvalidRequest = (message: string): string => `${INVALID_REQUEST_HEADER}${DOUBLE_LINE_BREAK}${message}`;
 
 const formatRecordRow = (record: LifecycleRecord): string => {
-  return `| ${displayIssue(record)} | \`${displayBranch(record)}\` | \`${displayWorktree(record)}\` | \`${record.state}\` |`;
+  return `| ${displayIdentity(record)} | \`${displayBranch(record)}\` | \`${displayWorktree(record)}\` | \`${record.state}\` |`;
+};
+
+const formatLifecycleRecordRow = (record: LifecycleRecord): string => {
+  return `| ${displayLifecycleIdentity(record)} | \`${record.branch}\` | \`${record.worktree}\` | \`${record.state}\` |`;
 };
 
 const formatRecordTable = (record: LifecycleRecord): string => {
-  return [TABLE_HEADER, TABLE_SEPARATOR, formatRecordRow(record)].join(LINE_BREAK);
+  if (record.state === LIFECYCLE_STATES.ABORTED)
+    return [REMOTE_TABLE_HEADER, TABLE_SEPARATOR, formatRecordRow(record)].join(LINE_BREAK);
+  const header = isLocalOnlyLifecycleRecord(record) ? LOCAL_ONLY_TABLE_HEADER : REMOTE_TABLE_HEADER;
+  return [header, TABLE_SEPARATOR, formatLifecycleRecordRow(record)].join(LINE_BREAK);
+};
+
+const formatDetails = (record: LifecycleRecord): string => {
+  const mode = record.mode ?? LIFECYCLE_MODES.REMOTE;
+  const repoRoot = record.repoRoot ?? record.worktree;
+  const remoteCapable = record.remoteCapable ?? !isLocalOnlyLifecycleRecord(record);
+  return [
+    DETAILS_HEADER,
+    `Mode: \`${mode}\``,
+    `Repo root: \`${repoRoot}\``,
+    `Remote capable: \`${String(remoteCapable)}\``,
+  ].join(LINE_BREAK);
 };
 
 const formatNotes = (notes: readonly string[]): string => {
   if (notes.length === 0) return "";
   return `${notes.join(LINE_BREAK)}${DOUBLE_LINE_BREAK}`;
+};
+
+const formatGuidance = (notes: readonly string[]): string => {
+  if (notes.length === 0) return "";
+  return `${GUIDANCE_HEADER}${DOUBLE_LINE_BREAK}${notes.join(LINE_BREAK)}${DOUBLE_LINE_BREAK}`;
 };
 
 const headerFor = (record: LifecycleRecord): string => {
@@ -145,7 +179,13 @@ const headerFor = (record: LifecycleRecord): string => {
 
 const formatRecord = (record: LifecycleRecord): string => {
   const table = formatRecordTable(record);
-  if (record.state !== LIFECYCLE_STATES.ABORTED) return table;
+  if (record.state !== LIFECYCLE_STATES.ABORTED) {
+    const details = formatDetails(record);
+    if (isLocalOnlyLifecycleRecord(record)) {
+      return `${LOCAL_ONLY_STARTED_HEADER}${DOUBLE_LINE_BREAK}${formatGuidance(record.notes)}${table}${DOUBLE_LINE_BREAK}${details}`;
+    }
+    return `${table}${DOUBLE_LINE_BREAK}${details}`;
+  }
   return `${headerFor(record)}${DOUBLE_LINE_BREAK}${formatNotes(record.notes)}${table}`;
 };
 

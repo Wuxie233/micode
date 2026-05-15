@@ -908,7 +908,13 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     prePushHook: skillAutopilotEnabled ? createSkillPrePushHook() : undefined,
   });
   const lifecycleToolHandle = createSkillAwareLifecycleHandle(lifecycleHandle, ctx.directory, skillAutopilotEnabled);
-  const lifecycleTools = createLifecycleTools(lifecycleToolHandle, lifecycleResolver, lifecycleProgress);
+  const lifecycleTools = createLifecycleTools(
+    lifecycleToolHandle,
+    lifecycleResolver,
+    lifecycleProgress,
+    createLifecycleRunner(),
+    ctx.directory,
+  );
 
   // Octto (browser-based brainstorming) tools
   const persistedSessionStore = createPersistedSessionStore({});

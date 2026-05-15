@@ -1,15 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-
+import { isLocalIssueNumber } from "@/lifecycle/types";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
-
 import { parseLeaseRecord } from "./schemas";
 import type { LeaseAcquireInput, LeaseAcquireOutcome, LeaseRecord } from "./types";
 
 const LOG_SCOPE = "lifecycle.lease";
-const MIN_ISSUE_NUMBER = 1;
 const TEMP_SUFFIX = ".tmp";
 const JSON_INDENT = 2;
 
@@ -27,7 +25,7 @@ export interface LeaseStore {
 }
 
 const validateIssueNumber = (issueNumber: number): void => {
-  if (Number.isSafeInteger(issueNumber) && issueNumber >= MIN_ISSUE_NUMBER) return;
+  if (Number.isSafeInteger(issueNumber) && (issueNumber > 0 || isLocalIssueNumber(issueNumber))) return;
   throw new Error(`Invalid issue number: ${issueNumber}`);
 };
 

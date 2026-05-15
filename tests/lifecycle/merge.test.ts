@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { ISSUE_BODY_MARKERS } from "@/lifecycle/issue-body-markers";
 import { finishLifecycle, PR_CHECK_POLL_MS } from "@/lifecycle/merge";
+import { REPO_KIND } from "@/lifecycle/pre-flight";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
 
 const OK_EXIT_CODE = 0;
@@ -16,6 +17,32 @@ const BRANCH = "issue/1-lifecycle";
 const PR_URL = "https://github.com/Wuxie233/micode/pull/12";
 const PR_NUMBER = 12;
 const REVIEW_SUMMARY = "## AI Review Summary\n- Looks safe";
+const FORK_PREFLIGHT = {
+  kind: REPO_KIND.FORK,
+  origin: "git@github.com:Wuxie233/micode.git",
+  nameWithOwner: "Wuxie233/micode",
+  viewerLogin: "Wuxie233",
+  issuesEnabled: true,
+  upstreamUrl: "https://github.com/vtemian/micode",
+} as const;
+const OWN_PREFLIGHT = { ...FORK_PREFLIGHT, kind: REPO_KIND.OWN, upstreamUrl: null } as const;
+const UPSTREAM_PREFLIGHT = {
+  kind: REPO_KIND.UPSTREAM,
+  origin: "git@github.com:vtemian/micode.git",
+  nameWithOwner: "vtemian/micode",
+  viewerLogin: null,
+  issuesEnabled: false,
+  upstreamUrl: null,
+} as const;
+const UNKNOWN_PREFLIGHT = {
+  kind: REPO_KIND.UNKNOWN,
+  reason: "gh-failed",
+  origin: "git@github.com:unknown/micode.git",
+  nameWithOwner: "",
+  viewerLogin: null,
+  issuesEnabled: false,
+  upstreamUrl: null,
+} as const;
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -88,6 +115,9 @@ describe("finishLifecycle", () => {
       waitForChecks: true,
       baseBranch: "main",
       sleep: async () => {},
+      mode: "remote",
+      remoteCapable: true,
+      preflight: FORK_PREFLIGHT,
     });
 
     expect(outcome.merged).toBe(true);
@@ -168,6 +198,9 @@ describe("finishLifecycle", () => {
       waitForChecks: true,
       baseBranch: "master",
       sleep: async () => {},
+      mode: "remote",
+      remoteCapable: true,
+      preflight: OWN_PREFLIGHT,
     });
 
     expect(outcome.merged).toBe(true);
@@ -185,6 +218,115 @@ describe("finishLifecycle", () => {
     });
     expect(gitCalls[3]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
     expect(gitCalls[4]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
+  });
+
+  it("blocks local-only PR finish before any gh pr calls", async () => {
+    const runner = createRunner({ gh: [createRun(`${PR_URL}\n`)] });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: false,
+      baseBranch: "main",
+      mode: "local-only",
+      remoteCapable: false,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toBe("local-only: remote merge unavailable");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(outcome.recoveryHint?.safeToRetry).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr")).toBe(false);
+  });
+
+  it("blocks local-only auto finish before any gh probing", async () => {
+    const runner = createRunner({ gh: [createRun(JSON.stringify([{ state: "SUCCESS", name: "ci" }]))] });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "auto",
+      waitForChecks: false,
+      baseBranch: "main",
+      mode: "local-only",
+      remoteCapable: false,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toBe("local-only: remote merge unavailable");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
+  });
+
+  it("blocks upstream preflight PR finish before remote mutation", async () => {
+    const runner = createRunner({ gh: [createRun(`${PR_URL}\n`)] });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: false,
+      baseBranch: "main",
+      mode: "remote",
+      remoteCapable: true,
+      preflight: UPSTREAM_PREFLIGHT,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("operation=pr-create");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(runner.calls.some((call) => call.bin === "gh" && ["create", "merge"].includes(call.args[1] ?? ""))).toBe(
+      false,
+    );
+  });
+
+  it("blocks unknown preflight local merge before git push", async () => {
+    const runner = createRunner({
+      git: [createRun(), createRun(), createRun(), createRun(), createRun()],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "local-merge",
+      waitForChecks: false,
+      baseBranch: "main",
+      mode: "remote",
+      remoteCapable: true,
+      preflight: UNKNOWN_PREFLIGHT,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("operation=push");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(runner.calls.some((call) => call.bin === "git" && call.args[0] === "push")).toBe(false);
+  });
+
+  it("blocks local-only local merge before git push", async () => {
+    const runner = createRunner({
+      git: [createRun(), createRun(), createRun(), createRun(), createRun()],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "local-merge",
+      waitForChecks: false,
+      baseBranch: "main",
+      mode: "local-only",
+      remoteCapable: false,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("local-only: remote push unavailable");
+    expect(outcome.recoveryHint?.failureKind).toBe("pre_flight_failed");
+    expect(runner.calls.some((call) => call.bin === "git" && call.args[0] === "push")).toBe(false);
   });
 
   it("returns an actionable recovery hint when temp worktree creation fails", async () => {

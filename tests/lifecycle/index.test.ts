@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,8 @@ const PR_URL = "https://github.com/Wuxie233/micode/pull/1";
 const PR_NUMBER = 1;
 const APPROVED_TASK = "task-approved";
 const BLOCKED_TASK = "task-blocked";
+const TOPLEVEL_ARGS = ["rev-parse", "--show-toplevel"] as const;
+const GIT_INIT = "init";
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -46,7 +48,11 @@ interface RunnerOptions {
   readonly prCreate?: RunResult;
   readonly prView?: RunResult;
   readonly prComments?: RunResult;
+  readonly repoRoot?: string | null;
+  readonly childRepos?: Readonly<Record<string, string | null>>;
 }
+
+const childRepoRootFor = (options: RunnerOptions, cwd: string): string | null | undefined => options.childRepos?.[cwd];
 
 const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE, stderr = EMPTY_OUTPUT): RunResult => ({
   stdout,
@@ -77,8 +83,20 @@ const createRunner = (repoView = createRepoView(), options: RunnerOptions = {}):
   return {
     calls,
     edits,
-    git: async (args, options) => {
-      calls.push({ bin: "git", args, cwd: options?.cwd });
+    git: async (args, runOptions) => {
+      calls.push({ bin: "git", args, cwd: runOptions?.cwd });
+      if (isArgs(args, TOPLEVEL_ARGS)) {
+        const cwd = runOptions?.cwd ?? worktreesRoot;
+        const childRoot = childRepoRootFor(options, cwd);
+        if (childRoot !== undefined) {
+          if (childRoot === null) return createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE);
+          return createRun(`${childRoot}\n`);
+        }
+        if (options.repoRoot === null && options.childRepos !== undefined)
+          return createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE);
+        if (options.repoRoot === null) return createRun(EMPTY_OUTPUT, FAILURE_EXIT_CODE);
+        return createRun(`${options.repoRoot ?? cwd}\n`);
+      }
       if (isArgs(args, ["remote", "get-url", "origin"])) return createRun(`${ORIGIN}\n`);
       if (isArgs(args, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])) return createRun(originHead);
       if (isArgs(args, ["rev-parse", "HEAD"])) return createRun(`${SHA}\n`);
@@ -164,7 +182,7 @@ describe("lifecycle handle", () => {
       worktreeRemoved: true,
       cleanupOutcome: {
         kind: "already-missing",
-        reason: "worktree path does not exist on disk",
+        reason: expect.stringContaining("worktree path does not exist on disk"),
         retried: false,
       },
       note: null,
@@ -173,6 +191,68 @@ describe("lifecycle handle", () => {
     expect(record?.artifacts[ARTIFACT_KINDS.COMMIT]).toEqual([SHA]);
     expect(runner.calls.some((call) => isArgs(call.args, ["issue", "close", "1"]))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
+  });
+
+  it("discovers a parent repo root from a nested cwd before remote lifecycle operations", async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), `${PREFIX}repo-`));
+    const nestedCwd = join(repoRoot, "src", "lifecycle");
+    try {
+      const runner = createRunner(createRepoView(), { repoRoot });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd: nestedCwd, baseDir });
+
+      const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+      expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+      expect(record.repoRoot).toBe(repoRoot);
+      expect(record.remoteCapable).toBe(true);
+      const remoteCall = runner.calls.find((call) => call.bin === "git" && isArgs(call.args, ["remote", "get-url"]));
+      const issueCreate = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["issue", "create"]));
+      const worktreeAdd = runner.calls.find((call) => call.bin === "git" && isArgs(call.args, ["worktree", "add"]));
+      expect(remoteCall?.cwd).toBe(repoRoot);
+      expect(issueCreate?.cwd).toBe(repoRoot);
+      expect(worktreeAdd?.cwd).toBe(repoRoot);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("discovers a unique child repo before starting a remote lifecycle", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), `${PREFIX}container-`));
+    const child = join(cwd, "micode");
+    try {
+      mkdirSync(child);
+      const runner = createRunner(createRepoView(), { repoRoot: null, childRepos: { [child]: child } });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+
+      const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+      expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+      expect(record.repoRoot).toBe(child);
+      expect(runner.calls.some((call) => call.cwd === child && isArgs(call.args, ["remote", "get-url"]))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("aborts ambiguous child repo discovery without remote mutation", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), `${PREFIX}container-`));
+    const child = join(cwd, "micode");
+    const other = join(cwd, "other");
+    try {
+      mkdirSync(child);
+      mkdirSync(other);
+      const runner = createRunner(createRepoView(), { repoRoot: null, childRepos: { [child]: child, [other]: other } });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+
+      const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+      expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
+      expect(record.notes.join("\n")).toContain("Multiple child git repositories");
+      expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
+      expect(runner.calls.some((call) => call.args.includes(GIT_INIT))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("targets the origin repo explicitly in gh issue create", async () => {
@@ -310,7 +390,7 @@ describe("lifecycle handle", () => {
     expect(runner.calls.some((call) => isArgs(call.args, ["issue", "create"]))).toBe(true);
   });
 
-  it("blocks unsafe upstream starts with an aborted record", async () => {
+  it("creates local-only records for unsafe upstream starts", async () => {
     const runner = createRunner(
       createRepoView({
         isFork: false,
@@ -324,9 +404,134 @@ describe("lifecycle handle", () => {
 
     const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
 
-    expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
+    expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+    expect(record.mode).toBe("local-only");
+    expect(record.issueNumber).toBeLessThan(0);
+    expect(record.localId).toBeString();
+    expect(record.remoteCapable).toBe(false);
     expect(record.notes.join("\n")).toContain("pre_flight_failed");
     expect(runner.calls.some((call) => isArgs(call.args, ["issue", "create"]))).toBe(false);
+  });
+
+  it("creates local-only records for unknown ownership without issue sync", async () => {
+    const runner = createRunner(createRepoView(), { repoRoot: worktreesRoot });
+    const originalGh = runner.gh;
+    const fakeRunner: FakeRunner = {
+      ...runner,
+      gh: async (args, options) => {
+        runner.calls.push({ bin: "gh", args, cwd: options?.cwd });
+        if (isArgs(args, ["repo", "view"])) return createRun("not-json", FAILURE_EXIT_CODE);
+        return createRun(EMPTY_OUTPUT);
+      },
+    };
+    void originalGh;
+    const handle = createLifecycleStore({ runner: fakeRunner, worktreesRoot, cwd: worktreesRoot, baseDir });
+
+    const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    await handle.recordArtifact(record.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
+    await handle.setState(record.issueNumber, LIFECYCLE_STATES.IN_DESIGN);
+
+    expect(record.mode).toBe("local-only");
+    expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+    expect(record.issueUrl).toBe(EMPTY_OUTPUT);
+    expect(record.remoteCapable).toBe(false);
+    expect(fakeRunner.calls.some((call) => isArgs(call.args, ["issue", "create"]))).toBe(false);
+    expect(fakeRunner.calls.some((call) => isArgs(call.args, ["issue", "edit"]))).toBe(false);
+  });
+
+  it("creates uninitialized local-only records without git init, worktree, or gh calls", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), `${PREFIX}uninitialized-`));
+    try {
+      const runner = createRunner(createRepoView(), { repoRoot: null });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+
+      const record = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+      expect(record.mode).toBe("local-only");
+      expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+      expect(record.repoRoot).toBe(cwd);
+      expect(record.worktree).toBe(cwd);
+      expect(record.issueNumber).toBeLessThan(0);
+      expect(record.notes.join("\n")).toContain("No git repository was discovered");
+      expect(runner.calls.some((call) => call.bin === "gh")).toBe(false);
+      expect(runner.calls.some((call) => call.args.includes(GIT_INIT))).toBe(false);
+      expect(runner.calls.some((call) => isArgs(call.args, ["worktree", "add"]))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks local-only commit pushes without calling git push", async () => {
+    const runner = createRunner(
+      createRepoView({ isFork: false, owner: { login: "vtemian" }, viewerPermission: "READ", parent: null }),
+    );
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    const outcome = await handle.commit(started.issueNumber, { summary: "local only", scope: "lifecycle", push: true });
+
+    expect(outcome.committed).toBe(true);
+    expect(outcome.pushed).toBe(false);
+    expect(outcome.note).toContain("local-only");
+    expect(runner.calls.some((call) => call.bin === "git" && call.args[0] === "push")).toBe(false);
+  });
+
+  it("returns a non-throwing commit no-op for uninitialized local-only records", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), `${PREFIX}uninitialized-`));
+    try {
+      const runner = createRunner(createRepoView(), { repoRoot: null });
+      const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
+      const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+      const outcome = await handle.commit(started.issueNumber, {
+        summary: "local only",
+        scope: "lifecycle",
+        push: true,
+      });
+
+      expect(outcome).toEqual({
+        committed: false,
+        sha: null,
+        pushed: false,
+        retried: false,
+        note: "local-only: no git worktree available",
+      });
+      expect(runner.calls.some((call) => call.bin === "git" && isArgs(call.args, ["add", "--all"]))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks local-only PR finish without calling PR commands", async () => {
+    const runner = createRunner(
+      createRepoView({ isFork: false, owner: { login: "vtemian" }, viewerPermission: "READ", parent: null }),
+    );
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("local-only: remote merge unavailable");
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr")).toBe(false);
+  });
+
+  it("blocks local-only local-merge finish before parsing negative issue branches or pushing", async () => {
+    const runner = createRunner(
+      createRepoView({ isFork: false, owner: { login: "vtemian" }, viewerPermission: "READ", parent: null }),
+    );
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+
+    expect(started.issueNumber).toBeLessThan(0);
+    expect(started.branch).toStartWith("issue/-");
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("local-only: remote push unavailable");
+    expect(outcome.note).not.toContain("invalid_issue_branch");
+    expect(runner.calls.some((call) => call.bin === "git" && call.args[0] === "push")).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "git" && isArgs(call.args, ["worktree", "add"]))).toBe(false);
   });
 
   it("records artifacts idempotently", async () => {
@@ -435,7 +640,8 @@ describe("lifecycle handle", () => {
       constraints: [],
     });
 
-    expect(record.state).toBe(LIFECYCLE_STATES.ABORTED);
+    expect(record.state).toBe(LIFECYCLE_STATES.BRANCH_READY);
+    expect(record.mode).toBe("local-only");
     expect(record.issueUrl).toBe("");
   });
 });

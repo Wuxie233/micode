@@ -6,6 +6,7 @@ import type { Resolver } from "@/lifecycle/resolver";
 import { createLifecycleTools } from "@/tools/lifecycle";
 
 const EXPECTED_TOOL_NAMES = [
+  "lifecycle_audit_branches",
   "lifecycle_commit",
   "lifecycle_context",
   "lifecycle_current",
@@ -34,6 +35,7 @@ const createHandle = (): LifecycleHandle => ({
 const createResolverFake = (): Resolver => ({
   current: async () => ({ kind: "none" }),
   resume: fail,
+  listRecords: async () => [],
 });
 
 const emptySnapshot: ContextSnapshot = {

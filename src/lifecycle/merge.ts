@@ -6,6 +6,7 @@ import { config } from "@/utils/config";
 import type { CleanupFsOps } from "./cleanup-policy";
 import { runCleanup } from "./cleanup-policy";
 import { postOnceSummaryComment, upsertPullRequest, writeReviewSummaryToPrBody } from "./pr";
+import { assertRemoteMutationAllowed, type PreFlightResult } from "./pre-flight";
 import { buildHint, type LifecycleRecoveryHint } from "./recovery/hint";
 import {
   computeTempWorktreePath,
@@ -14,7 +15,7 @@ import {
   removeTempMergeWorktree,
 } from "./recovery/temp-worktree";
 import type { LifecycleRunner, RunResult } from "./runner";
-import type { CleanupOutcome, FinishInput, FinishOutcome } from "./types";
+import type { CleanupOutcome, FinishInput, FinishOutcome, LifecycleMode } from "./types";
 
 export const PR_CHECK_POLL_MS = 30_000;
 
@@ -31,6 +32,9 @@ export interface FinishLifecycleInput {
   readonly issueNumber?: number;
   readonly artifactPointers?: readonly string[];
   readonly fsOps?: CleanupFsOps;
+  readonly mode?: LifecycleMode;
+  readonly remoteCapable?: boolean;
+  readonly preflight?: PreFlightResult | (() => PreFlightResult | Promise<PreFlightResult>);
 }
 
 const MERGE_STRATEGY = {
@@ -86,6 +90,9 @@ const ISSUE_BRANCH_RE = /^issue\/(\d+)-/;
 
 const CLEANUP_BLOCK_PREFIX = "cleanup_blocked";
 const CLEANUP_FAIL_PREFIX = "cleanup_failed";
+const LOCAL_ONLY_REMOTE_MERGE_UNAVAILABLE = "local-only: remote merge unavailable";
+const LOCAL_ONLY_REMOTE_PUSH_UNAVAILABLE = "local-only: remote push unavailable";
+const REMOTE_PUSH_UNAVAILABLE = "remote push unavailable";
 
 const CheckSchema = v.object({
   name: v.string(),
@@ -172,6 +179,21 @@ const unknownHint = (issueNumber: number, branch: string, detail: string, worktr
     safeToRetry: false,
   });
 
+const preFlightFailedHint = (
+  input: FinishLifecycleInput,
+  summary: string,
+  worktree = input.worktree,
+): LifecycleRecoveryHint =>
+  buildHint({
+    failureKind: "pre_flight_failed",
+    recommendedNextAction: "ask_user",
+    summary,
+    issueNumber: input.issueNumber ?? deriveIssueNumber(input.branch),
+    branch: input.branch,
+    worktree,
+    safeToRetry: false,
+  });
+
 const mergeNotes = (...notes: readonly (string | null | undefined)[]): string | null => {
   const present = notes.filter((note): note is string => note !== undefined && note !== null && note.length > 0);
   if (present.length === 0) return null;
@@ -179,6 +201,60 @@ const mergeNotes = (...notes: readonly (string | null | undefined)[]): string | 
 };
 
 const createPrChecksNote = (detail: string): string => `${PR_CHECKS_FAILED}${DETAIL_SEPARATOR}${detail}`;
+
+const resolvePreflight = async (input: FinishLifecycleInput): Promise<PreFlightResult | null> => {
+  if (!input.preflight) return null;
+  if (typeof input.preflight !== "function") return input.preflight;
+  return input.preflight();
+};
+
+const createRemoteBlockedOutcome = (
+  input: FinishLifecycleInput,
+  note: string,
+  worktree = input.worktree,
+): FinishOutcome => withHint(createPreCleanupOutcome(false, null, note), preFlightFailedHint(input, note, worktree));
+
+const blockUnavailableRemoteMutation = (
+  input: FinishLifecycleInput,
+  note: string,
+  worktree?: string,
+): FinishOutcome | null => {
+  if (input.mode === "local-only" || input.remoteCapable === false)
+    return createRemoteBlockedOutcome(input, note, worktree);
+  return null;
+};
+
+const blockDisallowedRemoteMutation = async (
+  input: FinishLifecycleInput,
+  operation: "push" | "pr-create" | "pr-merge",
+  worktree?: string,
+): Promise<FinishOutcome | null> => {
+  const preflight = await resolvePreflight(input);
+  if (preflight === null) return null;
+
+  const allowed = assertRemoteMutationAllowed(preflight, operation);
+  if (allowed.ok) return null;
+  return createRemoteBlockedOutcome(input, allowed.note, worktree);
+};
+
+const blockPrRemoteMutation = async (input: FinishLifecycleInput): Promise<FinishOutcome | null> => {
+  const unavailable = blockUnavailableRemoteMutation(input, LOCAL_ONLY_REMOTE_MERGE_UNAVAILABLE);
+  if (unavailable !== null) return unavailable;
+  return blockDisallowedRemoteMutation(input, "pr-create");
+};
+
+const blockPushRemoteMutation = async (
+  input: FinishLifecycleInput,
+  worktree: string,
+): Promise<FinishOutcome | null> => {
+  const unavailable = blockUnavailableRemoteMutation(
+    input,
+    input.mode === "local-only" ? LOCAL_ONLY_REMOTE_PUSH_UNAVAILABLE : REMOTE_PUSH_UNAVAILABLE,
+    worktree,
+  );
+  if (unavailable !== null) return unavailable;
+  return blockDisallowedRemoteMutation(input, "push", worktree);
+};
 
 const formatCommandFailure = (label: string, run: RunResult): string => {
   const pieces = [run.stderr.trim(), run.stdout.trim()].filter((piece) => piece.length > 0);
@@ -257,6 +333,12 @@ const resolveStrategy = async (runner: LifecycleRunner, input: FinishLifecycleIn
   return MERGE_STRATEGY.LOCAL;
 };
 
+const blockAutoRemoteProbe = (input: FinishLifecycleInput): FinishOutcome | null => {
+  const requested = input.mergeStrategy ?? config.lifecycle.mergeStrategy;
+  if (requested !== MERGE_STRATEGY.AUTO) return null;
+  return blockUnavailableRemoteMutation(input, LOCAL_ONLY_REMOTE_MERGE_UNAVAILABLE);
+};
+
 const waitForPrChecks = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<string | null> => {
   const sleep = input.sleep ?? sleepFor;
   const attempts = getCheckAttempts();
@@ -286,6 +368,7 @@ const runPostMergeCleanup = async (runner: LifecycleRunner, input: FinishLifecyc
     issueNumber: input.issueNumber ?? deriveIssueNumber(input.branch) ?? 0,
     artifactPointers: input.artifactPointers ?? [],
     fsOps: input.fsOps,
+    cleanupBranch: true,
   });
 };
 
@@ -315,6 +398,9 @@ const injectAndCommentIfNeeded = async (
 };
 
 const finishViaPr = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
+  const prCreateBlocked = await blockPrRemoteMutation(input);
+  if (prCreateBlocked !== null) return prCreateBlocked;
+
   const upserted = await upsertPullRequest(runner, {
     cwd: input.cwd,
     branch: input.branch,
@@ -327,6 +413,9 @@ const finishViaPr = async (runner: LifecycleRunner, input: FinishLifecycleInput)
 
   const checksNote = input.waitForChecks ? await waitForPrChecks(runner, input) : null;
   if (checksNote) return createPreCleanupOutcome(false, injected.prUrl, mergeNotes(injected.note, checksNote));
+
+  const prMergeBlocked = await blockDisallowedRemoteMutation(input, "pr-merge");
+  if (prMergeBlocked !== null) return { ...prMergeBlocked, prUrl: injected.prUrl };
 
   const merged = await runner.gh([GH_PR, GH_MERGE, input.branch, GH_SQUASH_FLAG], { cwd: input.cwd });
   if (!completed(merged))
@@ -467,6 +556,12 @@ const pushMergedBaseBranch = async (
   baseBranch: string,
   worktree: string,
 ): Promise<FinishOutcome | null> => {
+  const pushBlocked = await blockPushRemoteMutation(input, worktree);
+  if (pushBlocked !== null) {
+    await removeTempMergeWorktree(runner, { repoRoot: input.cwd, path: worktree });
+    return pushBlocked;
+  }
+
   const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, baseBranch], { cwd: worktree });
   if (completed(pushed)) return null;
 
@@ -500,6 +595,9 @@ const deleteBranchIfWorktreeRemoved = async (
 
 const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
   const baseBranch = getBaseBranch(input);
+  const pushBlocked = await blockPushRemoteMutation(input, input.worktree);
+  if (pushBlocked !== null) return pushBlocked;
+
   const issueNumber = deriveIssueNumber(input.branch);
   if (issueNumber === null) return createInvalidIssueNumberOutcome(input);
 
@@ -523,6 +621,9 @@ const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecyc
 };
 
 export async function finishLifecycle(runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> {
+  const autoProbeBlocked = blockAutoRemoteProbe(input);
+  if (autoProbeBlocked !== null) return autoProbeBlocked;
+
   const strategy = await resolveStrategy(runner, input);
   if (strategy === MERGE_STRATEGY.PR) return finishViaPr(runner, input);
   return finishViaLocalMerge(runner, input);

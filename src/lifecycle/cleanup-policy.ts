@@ -37,9 +37,13 @@ export interface CleanupPolicyInput {
    * uses node:fs `existsSync(worktree)`. Tests inject this to avoid touching disk.
    */
   readonly worktreeExistsOnDisk?: boolean;
+  /** Optional branch cleanup after successful worktree cleanup; defaults to false. */
+  readonly cleanupBranch?: boolean;
 }
 
 const OK = 0;
+const ALREADY_MISSING_KIND = "already-missing";
+const WORKTREE_LIST_PORCELAIN_ARGS = ["worktree", "list", "--porcelain"] as const;
 const completed = (run: RunResult): boolean => run.exitCode === OK;
 
 const defaultFsOps: CleanupFsOps = {
@@ -56,6 +60,13 @@ const splitLines = (s: string): readonly string[] =>
 const isWorktreeRegistered = (listOutput: string, worktreePath: string): boolean => {
   // `git worktree list --porcelain` emits stanzas starting with `worktree <path>`.
   return splitLines(listOutput).some((line) => line === `worktree ${worktreePath}`);
+};
+
+const isStandardLifecycleBranch = (branch: string): boolean => /^issue\/\d+-[^\s/]+$/.test(branch);
+
+const isBranchCheckedOutInAnyWorktree = (listOutput: string, branch: string): boolean => {
+  const branchRef = `branch refs/heads/${branch}`;
+  return splitLines(listOutput).some((line) => line === branchRef);
 };
 
 const filterUntrackedStatus = (status: string): string =>
@@ -87,7 +98,7 @@ const blocked = (classification: CleanupClassification): CleanupOutcome => {
     case "unknown-external":
       return { kind: "blocked-external", reason: classification.reason, retried: false };
     case "missing":
-      return { kind: "already-missing", reason: classification.reason, retried: false };
+      return { kind: ALREADY_MISSING_KIND, reason: classification.reason, retried: false };
     case "clean":
       // Should not reach here; clean is handled before blocked().
       return { kind: "failed", reason: "internal: clean classification routed to blocked()", retried: false };
@@ -104,6 +115,49 @@ const formatRunFailure = (run: RunResult): string => {
   const pieces = [run.stderr.trim(), run.stdout.trim()].filter((p) => p.length > 0);
   if (pieces.length === 0) return `exit ${run.exitCode}`;
   return pieces.join(" ");
+};
+
+const appendReason = (outcome: CleanupOutcome, suffix: string): CleanupOutcome => ({
+  ...outcome,
+  reason: `${outcome.reason}; ${suffix}`,
+});
+
+const cleanupBranchAfterWorktree = async (
+  runner: LifecycleRunner,
+  input: CleanupPolicyInput,
+  outcome: CleanupOutcome,
+): Promise<CleanupOutcome> => {
+  if (input.cleanupBranch !== true) return outcome;
+  if (outcome.kind !== "removed" && outcome.kind !== ALREADY_MISSING_KIND) return outcome;
+
+  if (!isStandardLifecycleBranch(input.branch)) {
+    return appendReason(outcome, `branch cleanup skipped: non-lifecycle branch ${input.branch}`);
+  }
+
+  const list = await runner.git(WORKTREE_LIST_PORCELAIN_ARGS, { cwd: input.cwd });
+  if (!completed(list)) {
+    return failed(
+      `worktree removal succeeded but branch cleanup failed: git_worktree_list: ${formatRunFailure(list)}`,
+      outcome.retried,
+    );
+  }
+
+  if (isBranchCheckedOutInAnyWorktree(list.stdout, input.branch)) {
+    return appendReason(
+      outcome,
+      `branch cleanup skipped: branch ${input.branch} is checked out in a registered worktree`,
+    );
+  }
+
+  const branchDelete = await runner.git(["branch", "-d", input.branch], { cwd: input.cwd });
+  if (completed(branchDelete)) {
+    return appendReason(outcome, `deleted branch ${input.branch}`);
+  }
+
+  return failed(
+    `worktree removal succeeded but branch cleanup failed: git_branch_delete: ${formatRunFailure(branchDelete)}`,
+    outcome.retried,
+  );
 };
 
 const buildBackupBase = (cwd: string, issueNumber: number, timestamp: Date): string =>
@@ -144,14 +198,14 @@ const removeWorktree = async (
 ): Promise<CleanupOutcome> => {
   const firstAttempt = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
   if (completed(firstAttempt)) {
-    return removed(reason, false);
+    return cleanupBranchAfterWorktree(runner, input, removed(reason, false));
   }
 
   // Safe retry: prune stale registrations once, then retry remove exactly once.
   await runner.git(["worktree", "prune"], { cwd: input.cwd });
   const retry = await runner.git(["worktree", "remove", input.worktree], { cwd: input.cwd });
   if (completed(retry)) {
-    return removed(reason, true);
+    return cleanupBranchAfterWorktree(runner, input, removed(reason, true));
   }
 
   return failed(`git_worktree_remove: ${formatRunFailure(retry)}`, true);
@@ -179,10 +233,14 @@ const handleAmbiguousCleanup = async (
 export async function runCleanup(runner: LifecycleRunner, input: CleanupPolicyInput): Promise<CleanupOutcome> {
   const exists = input.worktreeExistsOnDisk ?? existsSync(input.worktree);
   if (!exists) {
-    return { kind: "already-missing", reason: "worktree path does not exist on disk", retried: false };
+    return cleanupBranchAfterWorktree(runner, input, {
+      kind: ALREADY_MISSING_KIND,
+      reason: "worktree path does not exist on disk",
+      retried: false,
+    });
   }
 
-  const list = await runner.git(["worktree", "list", "--porcelain"], { cwd: input.cwd });
+  const list = await runner.git(WORKTREE_LIST_PORCELAIN_ARGS, { cwd: input.cwd });
   const isRegistered = completed(list) && isWorktreeRegistered(list.stdout, input.worktree);
 
   const status = await runner.git(["status", "--porcelain"], { cwd: input.worktree });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import * as v from "valibot";
 
 import { LifecycleRecordSchema } from "@/lifecycle/schemas";
-import { type LifecycleRecord, TERMINAL_STATES } from "@/lifecycle/types";
+import { isLocalIssueNumber, type LifecycleRecord, TERMINAL_STATES } from "@/lifecycle/types";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
@@ -25,14 +25,13 @@ const isTerminalState = (state: string): boolean => (TERMINAL_STATES as readonly
 
 const JSON_SUFFIX = ".json";
 const JSON_INDENT = 2;
-const MIN_ISSUE_NUMBER = 1;
 const DECIMAL_RADIX = 10;
 const LOG_SCOPE = "lifecycle.store";
 const ISSUE_SEPARATOR = "; ";
-const ISSUE_FILE_PATTERN = /^\d+$/;
+const ISSUE_FILE_PATTERN = /^-?\d+$/;
 
 const validateIssueNumber = (issueNumber: number): void => {
-  if (Number.isSafeInteger(issueNumber) && issueNumber >= MIN_ISSUE_NUMBER) return;
+  if (Number.isSafeInteger(issueNumber) && (issueNumber > 0 || isLocalIssueNumber(issueNumber))) return;
   throw new Error(`Invalid issue number: ${issueNumber}`);
 };
 
@@ -43,7 +42,7 @@ const toIssueNumber = (entry: string): number | null => {
   if (!ISSUE_FILE_PATTERN.test(stem)) return null;
 
   const issueNumber = Number.parseInt(stem, DECIMAL_RADIX);
-  if (Number.isSafeInteger(issueNumber) && issueNumber >= MIN_ISSUE_NUMBER) return issueNumber;
+  if (Number.isSafeInteger(issueNumber) && (issueNumber > 0 || isLocalIssueNumber(issueNumber))) return issueNumber;
   return null;
 };
 

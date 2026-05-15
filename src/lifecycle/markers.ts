@@ -1,6 +1,6 @@
 const MARKER_REGEX = /<!--\s*micode:lc\s+([^>]*?)\s*-->/;
 const FIELD_REGEX = /(\w+)=([^\s]+)/g;
-const INTEGER_REGEX = /^\d+$/;
+const INTEGER_REGEX = /^-?\d+$/;
 const DECIMAL_RADIX = 10;
 
 export interface ExecutionMarker {
@@ -53,7 +53,7 @@ export function parseExecutionMarker(text: string): ExecutionMarker | null {
   }
   const issueRaw = fields.get("issue");
   const issueNumber = issueRaw ? parseInteger(issueRaw) : null;
-  if (issueNumber === null || issueNumber <= 0) return null;
+  if (issueNumber === null || issueNumber === 0) return null;
   const attempt = parseInteger(fields.get("attempt") ?? "0") ?? 0;
   const seq = parseInteger(fields.get("seq") ?? "0") ?? 0;
   return {

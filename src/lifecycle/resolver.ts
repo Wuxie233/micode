@@ -8,7 +8,14 @@ import type { LifecycleCandidateSummary } from "./recovery/hint";
 import { classifyStale } from "./recovery/stale-classifier";
 import type { LifecycleRunner } from "./runner";
 import type { LifecycleStore } from "./store";
-import { ARTIFACT_KINDS, type ArtifactKind, LIFECYCLE_STATES, type LifecycleRecord } from "./types";
+import {
+  ARTIFACT_KINDS,
+  type ArtifactKind,
+  isLocalIssueNumber,
+  isLocalOnlyLifecycleRecord,
+  LIFECYCLE_STATES,
+  type LifecycleRecord,
+} from "./types";
 
 export type { LifecycleCandidateSummary } from "./recovery/hint";
 
@@ -28,6 +35,7 @@ export interface Resolver {
   readonly resume: (issueNumber: number) => Promise<LifecycleRecord>;
   readonly forceRefresh: (issueNumber: number) => Promise<LifecycleRecord>;
   readonly resolveExplicit: (issueNumber: number) => Promise<LifecycleRecord>;
+  readonly listRecords: () => Promise<readonly LifecycleRecord[]>;
 }
 
 export class StaleRecordError extends Error {
@@ -37,7 +45,7 @@ export class StaleRecordError extends Error {
   }
 }
 
-const BRANCH_PATTERN = /^issue\/(\d+)-/;
+const BRANCH_PATTERN = /^issue\/(-?\d+)-/;
 const OK_EXIT_CODE = 0;
 const DECIMAL_RADIX = 10;
 const NOT_LIFECYCLE_ISSUE = "not_a_lifecycle_issue";
@@ -45,6 +53,7 @@ const ISSUE_NOT_FOUND = "issue_not_found";
 const BRANCH_ARGS = ["rev-parse", "--abbrev-ref", "HEAD"] as const;
 const TOPLEVEL_ARGS = ["rev-parse", "--show-toplevel"] as const;
 const ISSUE_VIEW_FIELDS = "body";
+const LOCAL_ONLY_RECONSTRUCT_UNAVAILABLE = "local-only records cannot be reconstructed from GitHub";
 const GIT_SHOW_REF = "show-ref";
 const GIT_VERIFY = "--verify";
 const GIT_QUIET = "--quiet";
@@ -77,8 +86,13 @@ const matchBranchIssue = (branch: string): number | null => {
   const raw = match?.[1];
   if (!raw) return null;
   const parsed = Number.parseInt(raw, DECIMAL_RADIX);
-  if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  if (Number.isSafeInteger(parsed) && parsed !== 0) return parsed;
   return null;
+};
+
+const issueNumberMatchesRecord = (issueNumber: number, record: LifecycleRecord): boolean => {
+  if (record.issueNumber === issueNumber) return true;
+  return isLocalIssueNumber(issueNumber) && isLocalOnlyLifecycleRecord(record);
 };
 
 const emptyArtifacts = (): Readonly<Record<ArtifactKind, readonly string[]>> => ({
@@ -136,6 +150,7 @@ const viewIssueBody = async (deps: ResolverDeps, issueNumber: number): Promise<s
 };
 
 const refreshFromIssueBody = async (deps: ResolverDeps, issueNumber: number): Promise<LifecycleRecord> => {
+  if (isLocalIssueNumber(issueNumber)) throw new Error(LOCAL_ONLY_RECONSTRUCT_UNAVAILABLE);
   const body = await viewIssueBody(deps, issueNumber);
   const record = await reconstructFromBody(deps, issueNumber, body);
   await deps.store.save(record);
@@ -218,14 +233,37 @@ const loadOpenRecords = async (deps: ResolverDeps): Promise<readonly LifecycleRe
   return records;
 };
 
+const loadAllRecords = async (deps: ResolverDeps): Promise<readonly LifecycleRecord[]> => {
+  const issues = await deps.store.list();
+  const records: LifecycleRecord[] = [];
+  for (const issueNumber of issues) {
+    const record = await deps.store.load(issueNumber);
+    if (record !== null) records.push(record);
+  }
+  return records;
+};
+
 const resolveFromBranch = async (deps: ResolverDeps): Promise<ResolverResult | null> => {
   const branch = await readBranch(deps);
   if (branch === null) return null;
   const issueNumber = matchBranchIssue(branch);
   if (issueNumber === null) return null;
   const record = await deps.store.load(issueNumber);
-  if (record === null) return null;
-  return { kind: "resolved", record };
+  if (record !== null) return { kind: "resolved", record };
+  if (!isLocalIssueNumber(issueNumber)) return null;
+
+  const records = await loadOpenRecords(deps);
+  const worktree = await readWorktree(deps);
+  const localOnlyRecord = records.find(
+    (candidate) =>
+      issueNumberMatchesRecord(issueNumber, candidate) &&
+      candidate.branch === branch &&
+      candidate.worktree === worktree &&
+      isLocalOnlyLifecycleRecord(candidate),
+  );
+  if (localOnlyRecord === undefined) return null;
+  if (!(await branchExists(deps, localOnlyRecord.branch))) return null;
+  return { kind: "resolved", record: localOnlyRecord };
 };
 
 export function createResolver(deps: ResolverDeps): Resolver {
@@ -266,6 +304,10 @@ export function createResolver(deps: ResolverDeps): Resolver {
       const summary = await summarizeRecord(deps, record);
       if (summary.stale) throw new StaleRecordError(summary);
       return record;
+    },
+
+    async listRecords(): Promise<readonly LifecycleRecord[]> {
+      return loadAllRecords(deps);
     },
   };
 }

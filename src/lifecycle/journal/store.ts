@@ -1,15 +1,13 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-
+import { isLocalIssueNumber } from "@/lifecycle/types";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
-
 import { parseJournalEvent } from "./schemas";
 import type { JournalEvent, JournalEventInput } from "./types";
 
 const LOG_SCOPE = "lifecycle.journal";
-const MIN_ISSUE_NUMBER = 1;
 const NEWLINE = "\n";
 
 export interface JournalStoreOptions {
@@ -25,7 +23,7 @@ export interface JournalStore {
 }
 
 const validateIssueNumber = (issueNumber: number): void => {
-  if (Number.isSafeInteger(issueNumber) && issueNumber >= MIN_ISSUE_NUMBER) return;
+  if (Number.isSafeInteger(issueNumber) && (issueNumber > 0 || isLocalIssueNumber(issueNumber))) return;
   throw new Error(`Invalid issue number: ${issueNumber}`);
 };
 
