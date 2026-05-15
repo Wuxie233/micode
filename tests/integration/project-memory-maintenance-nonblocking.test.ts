@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,26 +11,20 @@ import {
   type ProjectMemoryMaintenanceScheduler,
 } from "@/lifecycle";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
-import { createProjectMemoryStore } from "@/project-memory";
-import type { ScheduleMaintenanceInput } from "@/project-memory/maintenance/scheduler";
-import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
+import type { ScheduleMaintenanceInput, ScheduleMaintenanceOutcome } from "@/project-memory/maintenance/scheduler";
 import { config } from "@/utils/config";
-import { resolveProjectId } from "@/utils/project-id";
 
-const PREFIX = "micode-memory-lifecycle-";
+const PREFIX = "micode-maintenance-nonblocking-";
 const OWNER = "Wuxie233";
 const REPO = "micode";
 const REPO_NAME = `${OWNER}/${REPO}`;
 const ORIGIN = `https://github.com/${REPO_NAME}.git`;
 const ISSUE_NUMBER = 1;
 const ISSUE_URL = `https://github.com/${REPO_NAME}/issues/${ISSUE_NUMBER}`;
+const SUMMARY = "Lifecycle maintenance nonblocking";
+const PLAN_POINTER = "thoughts/shared/plans/issue-1.md";
+const LEDGER_POINTER = "thoughts/ledgers/issue-1.md";
 const SHA = "abc123def456";
-const SUMMARY = "Lifecycle memory finish";
-const LEDGER_POINTER = join("thoughts", "ledgers", "CONTINUITY.md");
-const LEDGER_QUERY = "durable";
-const STATUS_ACTIVE = "active";
-const COMMIT_SCOPE = "memory";
-const COMMIT_SUMMARY = "record lifecycle memory";
 const EMPTY_OUTPUT = "";
 const OK_EXIT_CODE = 0;
 const GH_ISSUE = "issue";
@@ -42,9 +36,9 @@ const GH_EDIT = "edit";
 const GIT_REMOTE = "remote";
 const GIT_GET_URL = "get-url";
 const GIT_ORIGIN = "origin";
-const GIT_REV_PARSE = "rev-parse";
-const GIT_HEAD = "HEAD";
 const GH_CLOSE_ARGS = [GH_ISSUE, GH_CLOSE, String(ISSUE_NUMBER)] as const;
+const SCHEDULER_ERROR = "scheduler exploded";
+const WARNING_MARKER = "lifecycle.project-memory-maintenance";
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -87,7 +81,7 @@ const createRunner = (): FakeRunner => {
     git: async (args, options) => {
       calls.push({ bin: "git", args, cwd: options?.cwd });
       if (isArgs(args, [GIT_REMOTE, GIT_GET_URL, GIT_ORIGIN])) return createRun(`${ORIGIN}\n`);
-      if (isArgs(args, [GIT_REV_PARSE, GIT_HEAD])) return createRun(`${SHA}\n`);
+      if (isArgs(args, ["rev-parse", "HEAD"])) return createRun(`${SHA}\n`);
       return createRun();
     },
     gh: async (args, options) => {
@@ -99,6 +93,12 @@ const createRunner = (): FakeRunner => {
       return createRun();
     },
   };
+};
+
+const createRejectingScheduler = (): ProjectMemoryMaintenanceScheduler => {
+  return mock(async (_input: ScheduleMaintenanceInput): Promise<ScheduleMaintenanceOutcome> => {
+    throw new Error(SCHEDULER_ERROR);
+  });
 };
 
 let root: string;
@@ -131,49 +131,36 @@ beforeEach(async () => {
   setMaintenanceFlags(true, true);
 });
 
-afterEach(async () => {
+afterEach(() => {
   setMaintenanceFlags(originalMaintenanceEnabled, originalTerminalTriggerEnabled);
-  await resetProjectMemoryRuntimeForTest();
   rmSync(root, { recursive: true, force: true });
 });
 
-async function useMemory() {
-  const memory = createProjectMemoryStore({ dbDir: join(root, "memory") });
-  await memory.initialize();
-  setProjectMemoryStoreForTest(memory);
-  return memory;
+function scheduledInput(scheduler: ProjectMemoryMaintenanceScheduler): ScheduleMaintenanceInput {
+  return (scheduler as unknown as { mock: { calls: [ScheduleMaintenanceInput][] } }).mock.calls[0][0];
 }
 
-describe("project memory lifecycle finish E2E", () => {
-  it("keeps lifecycle finish successful without auto-promoting lifecycle memory", async () => {
-    const memory = await useMemory();
+describe("project memory maintenance nonblocking finish integration", () => {
+  it("keeps lifecycle finish merged, closed, and cleaned when terminal maintenance rejects", async () => {
     const runner = createRunner();
-    let schedulerInput: ScheduleMaintenanceInput | null = null;
-    const scheduler: ProjectMemoryMaintenanceScheduler = async (input) => {
-      schedulerInput = input;
-      return { scheduled: true, note: null };
-    };
+    const scheduler = createRejectingScheduler();
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
     const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir, maintenanceScheduler: scheduler });
-    const started = await handle.start({
-      summary: SUMMARY,
-      goals: ["Finish lifecycle without direct memory promotion"],
-      constraints: ["Use temp memory store"],
-      ownerLogin: OWNER,
-      repo: REPO,
-    });
+    const started = await handle.start({ summary: SUMMARY, goals: ["finish lifecycle"], constraints: [] });
+    await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.PLAN, PLAN_POINTER);
     await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.LEDGER, LEDGER_POINTER);
 
-    const committed = await handle.commit(ISSUE_NUMBER, {
-      scope: COMMIT_SCOPE,
-      summary: COMMIT_SUMMARY,
-      push: false,
-    });
-    const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
-    const identity = await resolveProjectId(cwd);
-    const hits = await memory.searchEntries(identity.projectId, LEDGER_QUERY, { status: STATUS_ACTIVE, limit: 5 });
+    let thrown: unknown = null;
+    const outcome = await handle
+      .finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false })
+      .catch((error) => {
+        thrown = error;
+        return null;
+      });
     const record = await handle.load(ISSUE_NUMBER);
+    const input = scheduledInput(scheduler);
 
-    expect(committed).toEqual({ committed: true, sha: SHA, pushed: false, retried: false, note: null });
+    expect(thrown).toBeNull();
     expect(outcome).toEqual({
       merged: true,
       prUrl: null,
@@ -186,25 +173,23 @@ describe("project memory lifecycle finish E2E", () => {
       note: null,
     });
     expect(record?.state).toBe(LIFECYCLE_STATES.CLEANED);
-    expect(record?.artifacts[ARTIFACT_KINDS.COMMIT]).toEqual([SHA]);
-    expect(record?.notes).toEqual([]);
     expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, GH_CLOSE_ARGS))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
-    expect(hits).toEqual([]);
-    expect(await memory.countEntries(identity.projectId)).toBe(0);
-    expect(await memory.countSources(identity.projectId)).toBe(0);
-    expect(schedulerInput).toEqual({
+    expect(scheduler).toHaveBeenCalledTimes(1);
+    expect(input).toEqual({
       reason: "terminal",
       triggeredBy: "lifecycle.finish",
       directory: cwd,
       sourcePointers: [
         "issue/1",
         expect.stringContaining("issue/1-"),
+        PLAN_POINTER,
         LEDGER_POINTER,
-        SHA,
-        expect.stringContaining("/worktrees/issue-1-lifecycle-memory-finish"),
+        expect.stringContaining("/worktrees/issue-1-lifecycle-maintenance-nonblocking"),
         "outcome/merged",
       ],
     });
+    expect(warnSpy).toHaveBeenCalledWith(`[${WARNING_MARKER}] schedule failed: ${SCHEDULER_ERROR}`);
+    warnSpy.mockRestore();
   });
 });

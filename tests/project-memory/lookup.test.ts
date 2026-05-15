@@ -113,7 +113,7 @@ function sensitivities(hits: readonly { readonly entry: Entry }[]): Entry["sensi
 
 describe("lookup", () => {
   it(
-    "applies type, status, and entity filters before ranking through the store",
+    "defaults lookup to active status while preserving type, status, and entity filters",
     async () => {
       const store = createStore();
       await store.initialize();
@@ -135,12 +135,37 @@ describe("lookup", () => {
         limit: LIMIT,
       });
 
-      expect(hitIds(decisions)).toEqual(["entry-decision-active", "entry-decision-tentative"]);
+      expect(hitIds(decisions)).toEqual(["entry-decision-active"]);
       expect(hitIds(active).sort()).toEqual(["entry-decision-active", "entry-risk-active"].sort());
-      expect(hitIds(billing)).toEqual(["entry-decision-tentative"]);
+      expect(hitIds(billing)).toEqual([]);
     },
     LOOKUP_TEST_TIMEOUT_MS,
   );
+
+  it("filters to active entries by default and allows archived or tombstoned lookup explicitly", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await seedMemory(store, { entry: { id: "entry-active", status: "active" } });
+    await seedMemory(store, { entry: { id: "entry-archived", status: "archived" } });
+    await seedMemory(store, { entry: { id: "entry-tombstoned", status: "tombstoned" } });
+    await seedMemory(store, { entry: { id: "entry-deprecated", status: "deprecated" } });
+    await seedMemory(store, { entry: { id: "entry-superseded", status: "superseded" } });
+
+    const defaultHits = await lookup({ store, identity: IDENTITY, query: "alpha", limit: LIMIT });
+    const archivedHits = await lookup({ store, identity: IDENTITY, query: "alpha", status: "archived", limit: LIMIT });
+    const tombstonedHits = await lookup({
+      store,
+      identity: IDENTITY,
+      query: "alpha",
+      status: "tombstoned",
+      limit: LIMIT,
+    });
+
+    expect(hitIds(defaultHits)).toEqual(["entry-active"]);
+    expect(hitIds(archivedHits)).toEqual(["entry-archived"]);
+    expect(hitIds(tombstonedHits)).toEqual(["entry-tombstoned"]);
+  });
 
   it("applies sensitivity ceiling while leaving uncapped lookup unrestricted", async () => {
     const store = createStore();
@@ -173,15 +198,9 @@ describe("lookup", () => {
     await seedMemory(store, { entry: { id: "entry-tentative", status: "tentative" } });
     await seedMemory(store, { entry: { id: "entry-active", status: "active" } });
 
-    const hits = await lookup({ store, identity: IDENTITY, query: "alpha", limit: LIMIT });
+    const hits = await lookup({ store, identity: IDENTITY, query: "alpha", status: "active", limit: LIMIT });
 
-    expect(hitIds(hits)).toEqual([
-      "entry-active",
-      "entry-tentative",
-      "entry-hypothesis",
-      "entry-superseded",
-      "entry-deprecated",
-    ]);
+    expect(hitIds(hits)).toEqual(["entry-active"]);
   });
 
   it("truncates snippets to the configured maximum", async () => {

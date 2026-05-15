@@ -14,6 +14,7 @@ const REVIEW_TIMEOUT_MINUTES = 10;
 const SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS = 5000;
 const SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS = 15_000;
 const NOTIFICATION_DEDUPE_TTL_MS = 21_600_000;
+const PROJECT_MEMORY_CONFIG_DIR = join(homedir(), ".config", "opencode", "project-memory");
 
 const OCTTO_PORT_ENV = "OCTTO_PORT";
 const OCTTO_PUBLIC_BASE_URL_ENV = "OCTTO_PUBLIC_BASE_URL";
@@ -276,14 +277,22 @@ export const config = {
   },
 
   projectMemory: {
-    storageDir: join(homedir(), ".config", "opencode", "project-memory"),
+    storageDir: PROJECT_MEMORY_CONFIG_DIR,
+    registryFile: join(PROJECT_MEMORY_CONFIG_DIR, "registry.json"),
+    maintenanceJournalDir: join(PROJECT_MEMORY_CONFIG_DIR, "maintenance-journal"),
     dbFileName: "memory.db",
     sensitivity: ["public", "internal", "secret"] as readonly string[],
     statuses: ["active", "superseded", "tentative", "hypothesis", "deprecated"] as readonly string[],
+    defaultLookupStatuses: ["active"] as readonly string[],
+    historicalStatuses: ["active", "superseded", "tentative", "hypothesis", "deprecated"] as readonly string[],
     defaultLookupLimit: 10,
     snippetMaxChars: 240,
     promoteOnLifecycleFinish: false,
     refuseWritesOnDegradedIdentity: true,
+    maintenanceLockTtlMs: 600_000,
+    maintenanceSnapshotLimit: 200,
+    maintenanceEnabled: true,
+    maintenanceTerminalTriggerEnabled: true,
   },
 
   skillAutopilot: {

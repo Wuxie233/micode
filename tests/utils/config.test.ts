@@ -227,6 +227,13 @@ describe("config utility", () => {
       expect(config.projectMemory.storageDir).toMatch(/\.config\/opencode\/project-memory$/);
     });
 
+    it("exposes registry and maintenance journal paths under the project-memory config root", () => {
+      expect(config.projectMemory.registryFile).toMatch(/\.config\/opencode\/project-memory\/registry\.json$/);
+      expect(config.projectMemory.maintenanceJournalDir).toMatch(
+        /\.config\/opencode\/project-memory\/maintenance-journal$/,
+      );
+    });
+
     it("declares the sensitivity vocabulary", () => {
       expect(config.projectMemory.sensitivity).toEqual(["public", "internal", "secret"]);
     });
@@ -235,8 +242,30 @@ describe("config utility", () => {
       expect(config.projectMemory.statuses).toEqual(["active", "superseded", "tentative", "hypothesis", "deprecated"]);
     });
 
+    it("declares default lookup and historical status groups", () => {
+      expect(config.projectMemory.defaultLookupStatuses).toEqual(["active"]);
+      expect(config.projectMemory.historicalStatuses).toEqual([
+        "active",
+        "superseded",
+        "tentative",
+        "hypothesis",
+        "deprecated",
+      ]);
+    });
+
     it("defaults the lookup result limit to 10", () => {
       expect(config.projectMemory.defaultLookupLimit).toBe(10);
+    });
+
+    it("keeps lifecycle promotion disabled while enabling maintenance triggers", () => {
+      expect(config.projectMemory.promoteOnLifecycleFinish).toBe(false);
+      expect(config.projectMemory.maintenanceEnabled).toBe(true);
+      expect(config.projectMemory.maintenanceTerminalTriggerEnabled).toBe(true);
+    });
+
+    it("declares maintenance tuning defaults", () => {
+      expect(config.projectMemory.maintenanceLockTtlMs).toBe(600_000);
+      expect(config.projectMemory.maintenanceSnapshotLimit).toBe(200);
     });
   });
 
