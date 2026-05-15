@@ -11,6 +11,7 @@ import { atlasTranslatorAgent } from "./atlas-translator";
 import { atlasWorkerBehaviorAgent } from "./atlas-worker-behavior";
 import { atlasWorkerBuildAgent } from "./atlas-worker-build";
 import { bootstrapperAgent } from "./bootstrapper";
+import { brainstormScoutAgent } from "./brainstorm-scout";
 import { brainstormerAgent } from "./brainstormer";
 import { codebaseAnalyzerAgent } from "./codebase-analyzer";
 import { codebaseLocatorAgent } from "./codebase-locator";
@@ -53,6 +54,7 @@ import { uxDesignerAgent } from "./ux-designer";
 
 export const agents: Record<string, AgentConfig> = {
   [PRIMARY_AGENT_NAME]: { ...primaryAgent, model: DEFAULT_MODEL },
+  "brainstorm-scout": { ...brainstormScoutAgent, model: DEFAULT_MODEL },
   brainstormer: { ...brainstormerAgent, model: DEFAULT_MODEL },
   bootstrapper: { ...bootstrapperAgent, model: DEFAULT_MODEL },
   "codebase-locator": { ...codebaseLocatorAgent, model: DEFAULT_MODEL },
@@ -105,6 +107,7 @@ export const agents: Record<string, AgentConfig> = {
 export {
   primaryAgent,
   PRIMARY_AGENT_NAME,
+  brainstormScoutAgent,
   brainstormerAgent,
   bootstrapperAgent,
   codebaseLocatorAgent,

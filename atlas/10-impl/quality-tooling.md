@@ -13,7 +13,7 @@ sources:
 
 质量工具链由 Bun scripts、Biome、ESLint、TypeScript、Lefthook、GitHub Actions 和 `tests/` 组成，是项目变更进入发布或运行时前的主要门禁。
 
-## Responsibilities
+## 职责
 
 - `bun run build` 将 `src/index.ts` 构建到 `dist/`。
 - `bun run typecheck` 运行 `tsc --noEmit`。
@@ -21,6 +21,6 @@ sources:
 - `bun run check` 组合 Biome check、ESLint、typecheck 和 Bun tests。
 - `lefthook.yml` 在 pre-commit 对 staged files 执行格式和 lint 修复。
 
-## Links
+## 链接
 
 - [[质量门禁]] 描述用户可执行的验收路径。

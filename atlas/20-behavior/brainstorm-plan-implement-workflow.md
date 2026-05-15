@@ -15,7 +15,7 @@ sources:
 
 micode 面向 OpenCode 开发者提供一条固定主路径：先由 `brainstormer` 或 `octto` 把想法收敛成设计，再由 `planner` 生成微任务计划，最后由 `executor` 批量执行并审查。
 
-## Mechanics
+## 机制
 
 - 设计阶段强调 research before opinion，并把设计写入 `thoughts/shared/designs/`；brainstormer 在 finalizing 阶段必须主动产出 design.md 末尾的轻量 BDD 防漂移层 `## Behavior` 段（quick-mode / 运维 / executor-direct / 用户显式跳过时可省略整段）。
 - Primary agent 对敏感面采用默认保守规则：改变 `agent routing`、`tool permissions`、`lifecycle rules`、`slash command contract`、`runtime boot registration`、`deploy/restart policy` 或跨模块行为的请求仍走 lifecycle + planner + executor；只有当用户明确要求 direct、目标与验证明确、side-effect boundary 清楚，且只是 typo / wording / local config / missing import 等不改变行为 contract 的机械小修时，才可作为 explicit bounded exception 派 `executor-direct`。runtime 源码小修未执行 `bun run deploy:runtime` 时，终态报告必须说明 live OpenCode runtime 尚未部署生效。
@@ -28,8 +28,8 @@ micode 面向 OpenCode 开发者提供一条固定主路径：先由 `brainstorm
 - 历史计划和 ledger 会被索引，后续可通过 `/search` 或 `artifact_search` 找回。
 - 非平凡交付可进入 [[Issue 驱动交付生命周期]]，以 issue、worktree、commit 和 merge 串起端到端状态。
 
-## Links
+## 链接
 
 - [[工作流 Agent]] 实现该行为。
 - [[Issue 驱动交付生命周期]] 承载非平凡任务的端到端状态。
-- [[BDD Behavior Layer]] 记录轻量行为驱动防漂移的取舍。
+- [[BDD Behavior Layer（行为防漂移层）]] 记录轻量行为驱动防漂移的取舍。
