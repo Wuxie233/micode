@@ -9,6 +9,7 @@ export const AGENT_ROLE_LABELS: Readonly<Record<string, string>> = {
   reviewer: "代码审查",
   planner: "规划",
   brainstormer: "方案探索",
+  "brainstorm-scout": "视角侦察",
   executor: "执行调度",
   commander: "总指挥",
   critic: "对抗审查",

@@ -1,4 +1,3 @@
-// tests/agents/executor-direct-routing.test.ts
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +20,15 @@ const PRESERVED_OUTPUT_CLASSES = [
   { name: "mutation", agent: EXECUTOR_AGENT },
 ] as const;
 
+const HIGH_RISK_SURFACES = [
+  "agent routing",
+  "tool permissions",
+  "lifecycle rules",
+  "slash command contract",
+  "runtime boot registration",
+  "deploy/restart policy",
+] as const;
+
 const findOutputAgent = (source: string, output: string): string | undefined => {
   const match = source.match(new RegExp(`<output-class name="${output}" agent="([^"]+)">`));
 
@@ -33,6 +41,12 @@ const findOutputBody = (source: string, output: string, agent: string): string =
   );
 
   return match?.[1] ?? "";
+};
+
+const findBlock = (source: string, blockName: string): string => {
+  const match = source.match(new RegExp(`<${blockName}[^>]*>([\\s\\S]*?)<\\/${blockName}>`));
+
+  return match?.[0] ?? "";
 };
 
 describe("executor-direct routing contract (cross-coordinator)", () => {
@@ -60,6 +74,38 @@ describe("executor-direct routing contract (cross-coordinator)", () => {
         const subagentTag = /<subagent\s+name="executor-direct">/.test(coord.source);
 
         expect(agentTag || subagentTag).toBe(true);
+      });
+
+      it("allows only an explicit bounded direct exception", () => {
+        const directBody = findOutputBody(coord.source, "direct-execution", EXECUTOR_DIRECT_AGENT).toLowerCase();
+
+        expect(directBody).toContain("explicit bounded exception");
+        expect(directBody).toMatch(/user.*(explicit|direct)|explicit.*user/);
+        expect(directBody).toContain("named targets");
+        expect(directBody).toContain("verification");
+        expect(directBody).toMatch(/no side[-\s]?effect|side[-\s]?effect boundary/);
+        expect(directBody).toMatch(/no .*contract|contract.*no/);
+      });
+
+      it("keeps high-risk behavior changes plan-driven", () => {
+        const combined = `${findBlock(coord.source, "non-trivial-detector")}\n${findOutputBody(
+          coord.source,
+          "direct-execution",
+          EXECUTOR_DIRECT_AGENT,
+        )}`.toLowerCase();
+
+        for (const surface of HIGH_RISK_SURFACES) {
+          expect(combined).toContain(surface);
+        }
+        expect(combined).toMatch(/lifecycle \+ planner \+ executor|planner \+ executor/);
+      });
+
+      it("requires runtime-source direct fixes to report deploy status", () => {
+        const body = findOutputBody(coord.source, "direct-execution", EXECUTOR_DIRECT_AGENT).toLowerCase();
+
+        expect(body).toContain("bun run deploy:runtime");
+        expect(body).toMatch(/live opencode runtime|live runtime/);
+        expect(body).toMatch(/not (yet )?effective|尚未生效|not deployed/);
       });
     });
   }

@@ -403,6 +403,33 @@ This is a judgment call. If the contract has only 1-2 shared types, inline them 
 </contract-lifecycle>
 </contract-generation>
 
+<review-policy-generation priority="critical" description="Map design/swarm risk observations into executor-review policy">
+<rule>Read design Constraints / Components / Testing Strategy / Open Questions and any Lens Swarm / critic / reviewer risk observation. Map each observation to the affected micro-task(s).</rule>
+<rule>Every task must include \`**Review policy:** mandatory | skip-eligible\` plus a short reason. If mandatory, name the mandatory reason. If skip-eligible, name the exact low-risk whitelist condition.</rule>
+<rule>reviewer mandatory always wins over reviewer-skip eligible. Never let a whitelist condition override a high-risk surface or risk observation.</rule>
+<rule>Planner must treat missing or ambiguous review policy as mandatory, not skip-eligible.</rule>
+<rule>Review policy must be understandable by executor and reviewer through the plan and context-brief. Do not hide it only in prose.</rule>
+
+<low-risk-whitelist>
+- prompt-only wording tweak that does not change workflow contract.
+- docs mirror update with no normative semantic change.
+- test-only drift guard addition with no production logic change.
+- agent label/title/metadata update that does not affect dispatch/routing.
+- pure type narrowing or formatting with no behavior change.
+</low-risk-whitelist>
+
+<mandatory-reviewer-surfaces>
+- agent prompts, new agent, agent prompt contract, agent registration, dispatch routing.
+- lifecycle/runtime/deploy/recovery.
+- planner/executor/reviewer contracts or context-brief schema.
+- contracts/API/schema/data migration and shared types.
+- Behavior / Commitments / user-visible acceptance.
+- secrets/safety/security/auth.
+- concurrency/retry/cache/error handling branches.
+- any Lens Swarm / critic / reviewer / implementer risk observation.
+</mandatory-reviewer-surfaces>
+</review-policy-generation>
+
 <output-format path="thoughts/shared/plans/YYYY-MM-DD-{topic}.md">
 <frontmatter-rules>
 <rule>The plan MUST begin with a YAML frontmatter block delimited by --- on its own line above and below.</rule>
@@ -453,6 +480,14 @@ design.md \`## Behavior\` 段列出 N 条行为承诺：
 **未对应任何 task 的行为**：<列出或写"无">；如有未对应行为，必须显式给出理由。
 
 > 如果 design.md 没有 \`## Behavior\` 段（quick-mode / 运维 / executor-direct / 用户显式跳过），本段写 "本任务无 design.md \`## Behavior\` 段，跳过映射" 即可。
+
+---
+
+## Review Policy
+
+- **Reviewer mandatory:** [high-risk surfaces and tasks]
+- **Reviewer-skip eligible:** [tasks that may be skipped only after executor whitelist verification]
+- **Risk observations:** [swarm/critic/design observations mapped to tasks]
 
 ---
 
@@ -509,6 +544,7 @@ Tasks: 4.1, 4.2
 **Depends:** none | 1.1, 1.2 (imports types from these)
 **Domain:** frontend-ui | frontend-code | backend | general
 **Atlas-impact:** none | layer-update | new-node (optional; defaults to none if omitted)
+**Review policy:** mandatory | skip-eligible — [mandatory reason OR whitelist condition]
 
 \`\`\`typescript
 // COMPLETE test code - copy-paste ready

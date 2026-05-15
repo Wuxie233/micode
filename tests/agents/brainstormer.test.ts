@@ -138,20 +138,25 @@ describe("brainstormer non-trivial detector guardrails", () => {
     expect(match?.[1]).toBe("HIGHEST");
   });
 
-  it("forbids executor-direct for agent prompt and slash command surfaces", () => {
+  it("keeps agent prompt and slash command behavior changes plan-driven", () => {
     const source = readBrainstormerSource().toLowerCase();
+    const detector = source.match(/<non-trivial-detector[\s\S]*?<\/non-trivial-detector>/)?.[0] ?? "";
 
-    // The detector or the direct-execution forbidden-for list must mention these surfaces.
-    expect(source).toContain("agent");
-    expect(source).toMatch(/slash[-\s]?command/);
+    expect(detector).toContain("agent routing");
+    expect(detector).toContain("agent role");
+    expect(detector).toContain("slash command contract");
+    expect(detector).toMatch(/lifecycle \+ planner \+ executor|planner \+ executor/);
   });
 
-  it("forbids executor-direct for runtime, deploy, and workflow/lifecycle surfaces", () => {
+  it("keeps runtime boot, deploy/restart policy, permissions, and lifecycle behavior changes plan-driven", () => {
     const source = readBrainstormerSource().toLowerCase();
+    const detector = source.match(/<non-trivial-detector[\s\S]*?<\/non-trivial-detector>/)?.[0] ?? "";
 
-    expect(source).toMatch(/runtime[-\s]sensitive|runtime\s+behavior|runtime\s+deploy/);
-    expect(source).toMatch(/deploy/);
-    expect(source).toMatch(/workflow|lifecycle/);
+    expect(detector).toContain("tool permissions");
+    expect(detector).toContain("runtime boot registration");
+    expect(detector).toContain("deploy/restart policy");
+    expect(detector).toContain("lifecycle rules");
+    expect(detector).toMatch(/lifecycle \+ planner \+ executor|planner \+ executor/);
   });
 
   it("forbids executor-direct for cross-module feature work", () => {
@@ -160,23 +165,26 @@ describe("brainstormer non-trivial detector guardrails", () => {
     expect(source).toMatch(/cross[-\s]?module/);
   });
 
-  it("direct-execution output-class declares a forbidden-for sub-list", () => {
+  it("direct-execution output-class declares the narrow explicit bounded exception", () => {
     const source = readBrainstormerSource();
     const match = source.match(
       /<output-class name="direct-execution" agent="executor-direct">([\s\S]*?)<\/output-class>/,
     );
 
     expect(match).not.toBeNull();
-    const body = match?.[1] ?? "";
-    expect(body).toContain("<forbidden-for");
+    const body = (match?.[1] ?? "").toLowerCase();
+    expect(body).toContain("explicit bounded exception");
+    expect(body).toContain("named targets");
+    expect(body).toContain("verification");
+    expect(body).toMatch(/no side[-\s]?effect|side[-\s]?effect boundary/);
   });
 
-  it("preserves quick-mode legitimacy for trivial single-file or local-op tasks", () => {
+  it("preserves direct eligibility for explicit bounded non-behavior sensitive small fixes", () => {
     const source = readBrainstormerSource().toLowerCase();
 
-    // The design constraint: trivial work must still have a path through direct execution.
-    // We assert the prompt still mentions trivial / single-file / local-op as legitimate inputs.
-    expect(source).toMatch(/trivial|single[-\s]file|local\s+op|typo/);
+    expect(source).toContain("explicit bounded exception");
+    expect(source).toMatch(/typo|single[-\s]file|local\s+op|small bounded/);
+    expect(source).toMatch(/do not change behavior contract|no behavior contract/);
   });
 
   it("non-trivial-detector explicitly routes forbidden cases through lifecycle plus planner plus executor", () => {
@@ -190,15 +198,16 @@ describe("brainstormer non-trivial detector guardrails", () => {
     expect(body).toContain("executor");
   });
 
-  it("non-trivial-detector forbids silent downgrade to executor-direct", () => {
+  it("non-trivial-detector rejects silent downgrade while documenting the bounded exception", () => {
     const source = readBrainstormerSource();
     const match = source.match(/<non-trivial-detector[\s\S]*?<\/non-trivial-detector>/);
 
     expect(match).not.toBeNull();
     const body = (match?.[0] ?? "").toLowerCase();
-    // Must reference executor-direct AND a denial verb (forbidden / never / must not / do not).
     expect(body).toContain("executor-direct");
-    expect(body).toMatch(/forbidden|never|must not|do not|cannot/);
+    expect(body).toMatch(/default.*conservative|conservative.*default|默认.*保守/);
+    expect(body).toContain("explicit bounded exception");
+    expect(body).toMatch(/never silently|do not silently|不能静默/);
   });
 });
 
@@ -256,13 +265,15 @@ describe("brainstormer Chinese intent classification", () => {
     expect(body).toMatch(/detector.*胜|胜.*detector|detector wins|detector 优先/i);
   });
 
-  it("includes a worked example where a forbidden-surface typo classifies as 设计", () => {
+  it("includes worked examples for bounded direct exception and high-risk plan routing", () => {
     const src = brainstormerSource();
     const block = src.match(/<intent-classification[\s\S]*?<\/intent-classification>/);
     expect(block).not.toBeNull();
     const body = block?.[0] ?? "";
+
+    expect(body).toContain("快速修复");
     expect(body).toContain("设计");
-    expect(body.toLowerCase()).toMatch(/typo|拼写|错别字/);
-    expect(body).toMatch(/src\/agents\/|agent\s+prompt|forbidden/i);
+    expect(body).toContain("explicit bounded exception");
+    expect(body).toMatch(/agent routing|tool permissions|lifecycle rules|runtime boot registration/);
   });
 });
