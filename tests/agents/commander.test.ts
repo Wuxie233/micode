@@ -73,6 +73,18 @@ describe("commander agent", () => {
 });
 
 describe("commander routing: direct-execution output class", () => {
+  function commanderBlock(blockName: string): string {
+    return COMMANDER_SOURCE.match(new RegExp(`<${blockName}[^>]*>([\\s\\S]*?)<\\/${blockName}>`))?.[0] ?? "";
+  }
+
+  function commanderOutputBody(output: string, agent: string): string {
+    return (
+      COMMANDER_SOURCE.match(
+        new RegExp(`<output-class name="${output}" agent="${agent}">([\\s\\S]*?)<\\/output-class>`),
+      )?.[1] ?? ""
+    );
+  }
+
   it("declares an output-class for direct-execution mapped to executor-direct", () => {
     const match = COMMANDER_SOURCE.match(/<output-class name="direct-execution" agent="([^"]+)">/);
     expect(match).not.toBeNull();
@@ -105,6 +117,40 @@ describe("commander routing: direct-execution output class", () => {
     const lower = COMMANDER_SOURCE.toLowerCase();
     expect(lower).toContain("executor-direct");
     expect(lower).toMatch(/executor-direct.*not.*investigat|not.*investigator.*executor-direct/);
+  });
+
+  it("documents the same narrow explicit bounded direct exception as brainstormer", () => {
+    const body = commanderOutputBody("direct-execution", "executor-direct").toLowerCase();
+
+    expect(body).toContain("explicit bounded exception");
+    expect(body).toMatch(/user.*(explicit|direct)|explicit.*user/);
+    expect(body).toContain("named targets");
+    expect(body).toContain("verification");
+    expect(body).toMatch(/no side[-\s]?effect|side[-\s]?effect boundary/);
+    expect(body).toMatch(/no .*contract|contract.*no/);
+  });
+
+  it("keeps high-risk behavior changes out of executor-direct", () => {
+    const combined = `${commanderBlock("non-trivial-detector")}\n${commanderOutputBody(
+      "direct-execution",
+      "executor-direct",
+    )}`.toLowerCase();
+
+    expect(combined).toContain("agent routing");
+    expect(combined).toContain("tool permissions");
+    expect(combined).toContain("lifecycle rules");
+    expect(combined).toContain("slash command contract");
+    expect(combined).toContain("runtime boot registration");
+    expect(combined).toContain("deploy/restart policy");
+    expect(combined).toMatch(/lifecycle \+ planner \+ executor|planner \+ executor/);
+  });
+
+  it("requires runtime direct fixes to disclose deploy status", () => {
+    const body = commanderOutputBody("direct-execution", "executor-direct").toLowerCase();
+
+    expect(body).toContain("bun run deploy:runtime");
+    expect(body).toMatch(/live opencode runtime|live runtime/);
+    expect(body).toMatch(/not (yet )?effective|尚未生效|not deployed/);
   });
 });
 
@@ -157,14 +203,16 @@ describe("commander Chinese intent classification", () => {
     expect(src).toMatch(/first[-\s]turn|第一回合|首回合|新请求.*第一/);
   });
 
-  it("includes a worked example where a forbidden-surface typo classifies as 设计", () => {
+  it("includes worked examples for bounded direct exception and high-risk plan routing", () => {
     const src = commanderSource();
     const block = src.match(/<intent-classification[\s\S]*?<\/intent-classification>/);
     expect(block).not.toBeNull();
     const body = block?.[0] ?? "";
+
+    expect(body).toContain("快速修复");
     expect(body).toContain("设计");
-    expect(body.toLowerCase()).toMatch(/typo|拼写|错别字/);
-    expect(body).toMatch(/src\/agents\/|agent\s+prompt|forbidden/i);
+    expect(body).toContain("explicit bounded exception");
+    expect(body).toMatch(/agent routing|tool permissions|lifecycle rules|runtime boot registration/);
   });
 
   it("intent-classification block is byte-identical to the brainstormer block (no drift)", () => {
