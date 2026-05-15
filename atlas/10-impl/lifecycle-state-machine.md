@@ -4,6 +4,9 @@ tags: [atlas, impl]
 sources:
   - code:src/lifecycle/*
   - code:src/tools/lifecycle/*
+  - code:src/lifecycle/conflict-context.ts
+  - code:src/lifecycle/conflict-scope.ts
+  - code:src/lifecycle/lost-update-audit.ts
 ---
 # Lifecycle 状态机
 
@@ -16,6 +19,9 @@ sources:
 - 在 commit 阶段将 checkpoint 变更提交并推送到 `origin`。
 - 在 finish 阶段选择 PR-first 或 local merge，并关闭 issue、清理 worktree。
 - 通过 recovery hint、temp worktree 和 quarantine 支持有界自主恢复。
+- `merge_conflict` recovery hint 现在会携带受限 resolver context；local-merge 可在保留的 temp worktree 中继续已解决冲突，提交 `merge <branch>: resolve lifecycle conflicts` 后再走普通 `push origin <base>`。
+- conflict resolver 只允许 conflict files 与少量直接相关 tests/types/call sites；`evaluateConflictResolverScope` 会在提交前阻断无关文件或过宽扩展。
+- lost-update audit 模型只生成 read-only evidence plan，用于区分 force-push evidence、squash-history confusion、semantic overwrite、push rejection race 与 manual remote mutation。
 
 ## 链接
 

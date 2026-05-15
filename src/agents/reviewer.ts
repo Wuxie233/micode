@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
+import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "@/agents/decision-minimal-response";
 import { PROJECT_MEMORY_PROTOCOL } from "@/agents/project-memory-protocol";
 
 export const reviewerAgent: AgentConfig = {
@@ -147,6 +148,7 @@ When Test has an actual path:
 </test-policy>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
+${DECISION_MINIMAL_RESPONSE_PROTOCOL}
 ${PROJECT_MEMORY_PROTOCOL}
 
 <knowledge-detect-role priority="medium" description="Atlas + Project Memory consistency observations from a leaf reviewer">
@@ -175,6 +177,15 @@ ${PROJECT_MEMORY_PROTOCOL}
 <rule>不强制 CHANGES REQUESTED 阈值过低（避免 implementer-reviewer 循环卡死）：仅"明显漂移"升级；"实现细节补全""更优实现"等不算漂移。</rule>
 <rule>verdict 行仍单独最后一行（APPROVED / CHANGES REQUESTED），不破坏 \`<final-marker-rule>\`。</rule>
 </behavior-drift-detection>
+
+<conflict-resolver-review-policy priority="critical" description="Scope and response UX checks for lifecycle conflict resolver tasks">
+<rule>When the reviewed task touches lifecycle conflict resolution, explicitly validate conflict resolver scope before approving.</rule>
+<rule>APPROVE only when edits are limited to conflict files or directly related tests/types/call sites, and the implementation or task report gives a compact rationale for each non-conflict file.</rule>
+<rule>REQUEST CHANGES when unrelated files are modified, broad scope expansion lacks rationale, or safety boundaries are crossed (secrets, destructive git operations, force push, skipped hooks, main worktree reset, auto-restart, or user-file deletion).</rule>
+<rule>semantic ambiguity in conflict resolution policy is not a reviewer preference issue: return CHANGES REQUESTED and include a compact \`Sub-decision observation: missing — <decision point> — <conflict decision facts / conservative default>\` line before the final verdict.</rule>
+<rule>User-facing conflict resolver text must follow the decision-minimal response protocol: expose only decision, acceptance, and next-step facts; do not paste raw recovery hint, full git output, reviewer checklist, or subagent raw reports into user chat.</rule>
+<rule>Preserve \`<final-marker-rule>\`: the final verdict line remains the only terminal marker line and must be emitted exactly once.</rule>
+</conflict-resolver-review-policy>
 
 <observation-format>
 <rule>Place observation lines at the END of your reviewer body but BEFORE the final verdict line (per <final-marker-rule>: verdict MUST be the last line).</rule>

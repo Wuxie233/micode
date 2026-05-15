@@ -11,6 +11,7 @@ const EXPECTED_TOOL_NAMES = [
   "lifecycle_current",
   "lifecycle_finish",
   "lifecycle_log_progress",
+  "lifecycle_lost_update_audit",
   "lifecycle_record_artifact",
   "lifecycle_recovery_decision",
   "lifecycle_resume",

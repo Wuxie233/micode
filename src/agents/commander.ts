@@ -1,8 +1,10 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "./decision-minimal-response";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
 import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
+import { QUESTION_FIRST_DECISION_PROTOCOL } from "./question-first-decision";
 
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
@@ -164,7 +166,7 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
   <map kind="record_missing" action="resume_issue">Call lifecycle_resume(issue_number=N). On success retry the original tool.</map>
   <map kind="invalid_issue_number" action="ask_user">Halt and ask user.</map>
   <map kind="dirty_base_worktree" action="use_temp_merge_worktree">The tool already uses temp worktrees automatically. If the hint says the temp creation itself failed, report and halt.</map>
-  <map kind="merge_conflict" action="resolve_conflicts">The hint includes \`worktree\` (temp path) and \`conflict_files\`. Tell the user the temp worktree path and the conflict files. Do NOT auto-resolve. Halt with a clear next-step description.</map>
+  <map kind="merge_conflict" action="resolve_conflicts">The hint includes \`worktree\` (temp worktree path) and \`conflict_files\`. Start a bounded conflict resolver flow in that temp worktree instead of halting: parse \`worktree\` and \`conflict_files\`, resolve only the conflict files plus directly related tests/types/call sites, run validation, require reviewer mandatory coverage, then retry the original lifecycle_finish with the SAME arguments. If the resolver hits semantic ambiguity, unrelated scope expansion, or validation exhaustion, use the built-in question tool with compact options; plain chat is only the fallback when the question tool is unavailable. Never expose the raw recovery hint in user-facing chat.</map>
   <map kind="untracked_cleanup_blocker" action="quarantine_artifacts">The tool already quarantines automatically when paths are lifecycle-owned. If the hint surfaces, it means an unknown untracked file is blocking. Halt and ask user.</map>
   <map kind="tracked_cleanup_blocker" action="ask_user">Tracked dirty changes mean user work. Halt and ask user.</map>
   <map kind="pr_checks_failed" action="ask_user">CI failed; halt and surface URL.</map>
@@ -177,6 +179,11 @@ the heavy GPT-5.5 executor path. The lane is NOT a second executor.
 <rule>NEVER restart OpenCode as part of recovery.</rule>
 <rule>NEVER delete user files. Only the tools may move lifecycle-owned untracked artifacts to quarantine; the agent never invokes rm / fs deletes.</rule>
 </bounded-recovery-loop>
+
+<lost-update-audit priority="HIGH">
+<rule>When the user asks whether an old lifecycle lost updates, was force-pushed, or overwrote work, call lifecycle_lost_update_audit when available, or present equivalent read-only audit steps.</rule>
+<rule>The lost-update audit is read-only: inspect evidence for force-push, squash-history confusion, semantic overwrite, push rejection races, or manual remote mutation; never rewrite history, force push, reset, or mutate GitHub from the audit path.</rule>
+</lost-update-audit>
 </lifecycle>
 
 <workflow description="For non-trivial work (see quick-mode for when to skip)">
@@ -291,6 +298,15 @@ commit hash / 测试命令 / issue / batch / 子任务摘要，压缩为 1-2 行
 <anti-pattern>把 reviewer 详细报告或 implementer 报告原文贴进 primary 汇报。它们是过程材料，已经在 thoughts / lifecycle issue 里留档。</anti-pattern>
 </anti-patterns>
 </effect-first-reporting>
+
+<decision-response-protocols priority="high" description="Decision-minimal and question-first response UX">
+<source name="QUESTION_FIRST_DECISION_PROTOCOL">
+${QUESTION_FIRST_DECISION_PROTOCOL}
+</source>
+<source name="DECISION_MINIMAL_RESPONSE_PROTOCOL">
+${DECISION_MINIMAL_RESPONSE_PROTOCOL}
+</source>
+</decision-response-protocols>
 
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
 
