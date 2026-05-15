@@ -10,6 +10,8 @@ const CWD = "/work/micode";
 const NESTED_CWD = "/work/micode/src/lifecycle";
 const CHILD_REPO = "/work/micode/child";
 const OTHER_CHILD_REPO = "/work/micode/other";
+const WORKSPACE_CWD = "/root/CODE";
+const OPENCODE_REPO = "/root/CODE/opencode";
 const TOPLEVEL_ARGS = ["rev-parse", "--show-toplevel"] as const;
 
 interface RunnerCall {
@@ -99,6 +101,28 @@ describe("resolveEffectiveProjectRoot", () => {
       { bin: "git", args: TOPLEVEL_ARGS, cwd: CWD },
       { bin: "git", args: TOPLEVEL_ARGS, cwd: CHILD_REPO },
       { bin: "git", args: TOPLEVEL_ARGS, cwd: "/work/micode/not-a-repo" },
+    ]);
+    expectNoGitInit(runner);
+  });
+
+  it("discovers an unambiguous opencode child repo from the workspace container", async () => {
+    const runner = createRunner([createFailure(), createRun(`${OPENCODE_REPO}\n`)]);
+
+    const result = await resolveEffectiveProjectRoot(runner, {
+      cwd: WORKSPACE_CWD,
+      readDir: () => ["opencode"],
+    });
+
+    expect(result).toEqual({
+      kind: "repo",
+      root: OPENCODE_REPO,
+      source: "unique-child",
+      candidates: [OPENCODE_REPO],
+      note: null,
+    });
+    expect(runner.calls).toEqual([
+      { bin: "git", args: TOPLEVEL_ARGS, cwd: WORKSPACE_CWD },
+      { bin: "git", args: TOPLEVEL_ARGS, cwd: OPENCODE_REPO },
     ]);
     expectNoGitInit(runner);
   });
