@@ -1,6 +1,8 @@
 // src/agents/mindmodel/orchestrator.ts
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { CONTEXT_CAPSULE_PROTOCOL } from "@/agents/context-capsule-protocol";
+
 const PROMPT = `<environment>
 You are running as part of the "micode" OpenCode plugin.
 You are the ORCHESTRATOR for mindmodel v2 generation.
@@ -28,6 +30,12 @@ Phase 2 - Assembly:
 PARALLEL EXECUTION: spawn_agent accepts an ARRAY of agents that run in parallel via Promise.all.
 Pass ALL agents for a phase in ONE spawn_agent call to run them concurrently.
 </critical-rule>
+
+${CONTEXT_CAPSULE_PROTOCOL}
+
+<context-capsule-usage>
+For Phase 1 parallel analysis, create or reuse one Context Capsule from project entry/config/test discovery already known to this orchestrator and pass the same contextCapsule object to every Phase 1 worker. Phase 2 receives Phase 1 outputs as normal task-specific prompt content.
+</context-capsule-usage>
 
 <spawn_agent-api>
 spawn_agent takes an "agents" array parameter. Each element has: agent, prompt, description.

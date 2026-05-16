@@ -38,4 +38,12 @@ describe("mindmodel-orchestrator agent", () => {
     // Phase 2 - Assembly (includes example extraction)
     expect(prompt).toContain("mm-constraint-writer");
   });
+
+  it("should instruct Phase 1 fan-out to reuse one Context Capsule", () => {
+    const prompt = mindmodelOrchestratorAgent.prompt;
+
+    expect(prompt).toContain("Context Capsule");
+    expect(prompt).toContain("same contextCapsule object");
+    expect(prompt).toContain("Phase 1");
+  });
 });

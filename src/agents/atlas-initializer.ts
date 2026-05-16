@@ -1,5 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
+import { CONTEXT_CAPSULE_PROTOCOL } from "./context-capsule-protocol";
+
 const PROMPT = `
 <environment>
 You are running as part of the "micode" OpenCode plugin (NOT Claude Code).
@@ -41,6 +43,17 @@ Use spawn_agent (not Task) for all parallel worker invocations.
     - atlas/50-risks/ — Risks layer: known risks and mitigations
     - atlas/_meta/ — Internal: log/, challenges/ (not exposed to users)
   </output-layout>
+
+  ${CONTEXT_CAPSULE_PROTOCOL}
+
+  <context-capsule-usage>
+    Treat Context Capsule only as a hot-path prompt prefix for worker user prompts: the
+    capsule is not an atlas node and must never be written to atlas/ or reconciled as durable
+    atlas knowledge. When spawning parallel workers, pass the same contextCapsule object into
+    every worker prompt before task-specific deltas so cache reuse is possible. Preserve the
+    normal Atlas initializer discovery, worker fan-out, reconcile, write, maintenance-log,
+    atlas-only commit, and push flow.
+  </context-capsule-usage>
 
   <phase-plan>
     <phase name="0-preflight" description="Check for existing vault">

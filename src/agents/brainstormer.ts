@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { CONTEXT_CAPSULE_PROTOCOL } from "./context-capsule-protocol";
 import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "./decision-minimal-response";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
 import { LENS_SWARM_PROTOCOL } from "./lens-swarm-protocol";
@@ -310,6 +311,14 @@ emit exactly one line at the very top of your response:
 <rule>Specialists do not enter the executor reviewer loop. Their APPROVED / CHANGES REQUESTED / verdict text (when present) is human synthesis material, not loop control.</rule>
 <rule>Cap: at most 1 specialist suggestion per phase. Cap on simultaneous specialists: at most 2 in parallel when the user explicitly requests multiple. Diminishing returns and prompt fatigue beyond that.</rule>
 </specialist-dispatch>
+
+${CONTEXT_CAPSULE_PROTOCOL}
+
+<brainstormer-context-capsule-note priority="critical">
+<rule>Before Lens Swarm, critic/adversarial fan-out, and exploration fan-out, construct or reuse a context capsule as a cache-friendly user-prompt prefix for spawned scouts/critics/research subagents; keep task-specific deltas after the capsule.</rule>
+<rule>A→B reuse is allowed only when the capsule freshness preflight passes for the same lifecycle issue, branch, worktree, HEAD SHA, and source hashes; otherwise discard or skip the capsule and proceed with normal confirmed context.</rule>
+<rule>The capsule never replaces design judgment, context-brief, Project Memory, Atlas, or the delegated worker's obligation to verify its own evidence.</rule>
+</brainstormer-context-capsule-note>
 
 ${LENS_SWARM_PROTOCOL}
 

@@ -3,11 +3,19 @@ import * as v from "valibot";
 
 import { normalizeSequence } from "@/tools/sequence";
 
+const ContextCapsuleSchema = v.object({
+  path: v.string(),
+  sha: v.string(),
+  token: v.string(),
+  content: v.string(),
+});
+
 export const AgentTaskSchema = v.object({
   agent: v.string(),
   prompt: v.string(),
   description: v.string(),
   model: v.optional(v.string()),
+  contextCapsule: v.optional(ContextCapsuleSchema),
 });
 
 export type AgentTask = v.InferOutput<typeof AgentTaskSchema>;

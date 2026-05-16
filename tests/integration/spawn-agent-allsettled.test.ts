@@ -32,6 +32,25 @@ const SPAWN_SUCCESS_OUTPUT = "Spawn completed successfully.";
 const TASK_ERROR_OUTPUT = "TEST FAILED: focused integration test rejected the change.";
 const HARD_FAILURE_MESSAGE = "Spawned session crashed.";
 const RESUME_SUCCESS_OUTPUT = "Resume completed successfully.";
+const CONTEXT_CAPSULE_CONTENT = `---
+lifecycle_issue: 91
+---
+
+## Confirmed Facts
+
+- Capsule state should be launch-only.
+`;
+const CONTEXT_CAPSULE_TASK = {
+  ...TASK_ERROR_TASK,
+  prompt: "run the focused test with a capsule",
+  description: "Capsuled task error",
+  contextCapsule: {
+    path: "thoughts/shared/context-capsules/issue-91-working-context.md",
+    sha: "capsule-sha-allsettled",
+    token: "capsule-token-allsettled",
+    content: CONTEXT_CAPSULE_CONTENT,
+  },
+};
 
 interface PromptCall {
   readonly id: string;
@@ -129,5 +148,41 @@ describe("spawn_agent allSettled integration", () => {
     expect(secondSpawnOutput).not.toContain("Generation fence");
     expect(secondSpawnOutput).not.toContain("SessionID");
     expect(registry.get(TASK_ERROR_SESSION)).toBeNull();
+  });
+
+  it("does not preserve task_error sessions or capsule state when contextCapsule is present", async () => {
+    const registry = createPreservedRegistry({ maxResumes: MAX_RESUMES, ttlHours: TTL_HOURS });
+    const recorder: Recorder = { promptCalls: [], deleteCalls: [] };
+    const ctx = createCtx(recorder);
+    const seenCapsules: unknown[] = [];
+    const spawnTool = createSpawnAgentTool(ctx, {
+      registry,
+      executeAgentSession: async (_ctx, task) => {
+        seenCapsules.push(task.contextCapsule);
+        return { sessionId: TASK_ERROR_SESSION, output: TASK_ERROR_OUTPUT };
+      },
+    });
+
+    const spawnOutput = await callSpawnExecute(spawnTool, { agents: [CONTEXT_CAPSULE_TASK] });
+
+    expect(spawnOutput).toContain("**Outcome**: task_error");
+    expect(spawnOutput).not.toContain("SessionID");
+    expect(seenCapsules).toEqual([CONTEXT_CAPSULE_TASK.contextCapsule]);
+    expect(registry.size()).toBe(0);
+    expect(registry.get(TASK_ERROR_SESSION)).toBeNull();
+    expect(recorder.deleteCalls).toContain(TASK_ERROR_SESSION);
+
+    const resumeTool = createResumeSubagentTool(ctx, { registry });
+    const resumeOutput = await callResumeExecute(resumeTool, { session_id: TASK_ERROR_SESSION });
+
+    expect(resumeOutput).toContain("**Outcome**: hard_failure");
+    expect(resumeOutput).toContain("**SessionID**: -");
+    expect(resumeOutput).toContain("Session not preserved or expired.");
+    expect(resumeOutput).not.toContain("contextCapsule");
+    expect(resumeOutput).not.toContain("<context-capsule");
+    expect(resumeOutput).not.toContain(CONTEXT_CAPSULE_TASK.contextCapsule.token);
+    expect(resumeOutput).not.toContain(CONTEXT_CAPSULE_TASK.contextCapsule.sha);
+    expect(resumeOutput).not.toContain("Capsule state should be launch-only.");
+    expect(registry.size()).toBe(0);
   });
 });
