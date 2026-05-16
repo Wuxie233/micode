@@ -58,8 +58,30 @@ const formatHintSuffix = (hint: LifecycleRecoveryHint | undefined): string => {
   return `${LINE_BREAK}${LINE_BREAK}${formatRecoveryHint(hint)}`;
 };
 
+const formatConflictFiles = (conflictFiles: readonly string[]): readonly string[] => {
+  if (conflictFiles.length === 0) return ["- (none reported)"];
+  return conflictFiles.map((file) => `- \`${file}\``);
+};
+
+const formatConflictResolverContext = (hint: LifecycleRecoveryHint | undefined): string => {
+  if (hint?.failureKind !== "merge_conflict") return "";
+
+  const lines = [
+    "### Conflict resolver context",
+    "",
+    `**Temp worktree path:** \`${hint.worktree ?? MISSING_VALUE}\``,
+    `**Conflict files (${hint.conflictFiles.length}):**`,
+    ...formatConflictFiles(hint.conflictFiles),
+    "",
+    "**Resolver scope:** resolver may edit conflict files plus directly related tests/types/call sites.",
+    "**Semantic ambiguity:** user decision required through built-in question tool before choosing behavior.",
+  ];
+
+  return `${LINE_BREAK}${LINE_BREAK}${lines.join(LINE_BREAK)}`;
+};
+
 const formatReport = (header: string, table: string, note: string | null, hint?: LifecycleRecoveryHint): string => {
-  return `${header}${LINE_BREAK}${LINE_BREAK}${table}${formatNote(note)}${formatHintSuffix(hint)}`;
+  return `${header}${LINE_BREAK}${LINE_BREAK}${table}${formatNote(note)}${formatConflictResolverContext(hint)}${formatHintSuffix(hint)}`;
 };
 
 const hasFailedChecks = (outcome: FinishOutcome): boolean => {

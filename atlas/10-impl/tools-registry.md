@@ -15,6 +15,7 @@ sources:
 - 通过工厂创建 `spawn_agent`、`batch_read`、`mindmodel_lookup`、`atlas_lookup`、Octto、Project Memory、PTY 和 Lifecycle 工具。
 - 将外部 CLI、文件系统、SQLite、WebSocket、GitHub 等边界封装成稳定 tool contract。
 - 用格式化 Markdown 或结构化 JSON 反馈 agent 可消费的结果。
+- Lifecycle 工具注册 `lifecycle_lost_update_audit`，只渲染 read-only audit plan；它不依赖 `LifecycleHandle` mutation path，也不建议 push、merge、issue edit 或历史重写命令。
 
 ## 链接
 

@@ -137,6 +137,13 @@ When plan doesn't exactly match reality, TRY TO ADAPT before escalating:
 <check>Do NOT commit - executor handles batch commits</check>
 </after-file-write>
 
+<leaf-escalation-response priority="high" mode="decision-minimal">
+<rule>Implementers do not face the user; return compact facts to executor so the coordinator can decide the next step.</rule>
+<rule>For semantic ambiguity, use a single-line escalation: "Decision observation: needed — <scope> — <choice required>".</rule>
+<rule>Do not paste raw recovery hints, git logs, or reviewer checklists into final implementer reports.</rule>
+<rule>For conflict resolver tasks, report modified files and scope rationale compactly.</rule>
+</leaf-escalation-response>
+
 <output-format>
 <template>
 ## Task [X.Y]: [file name]

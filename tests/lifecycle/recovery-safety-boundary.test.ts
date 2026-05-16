@@ -86,12 +86,11 @@ describe("lifecycle recovery safety boundary", () => {
     sleep.mockRestore();
   });
 
-  it("finishLifecycle recovery paths avoid unsafe git commands and never checkout main in the repo worktree", async () => {
+  it("finishLifecycle local-merge uses a detached remote-base temp worktree and avoids unsafe recovery commands", async () => {
     const responses = new Map<string, readonly RunResult[]>([
       ["pr checks issue/67-safety --required --json state,name", [OK("[]")]],
-      ["worktree add /tmp/micode-merge-issue-67 main", [OK()]],
       ["fetch origin main", [OK()]],
-      ["merge --ff-only origin/main", [OK()]],
+      ["worktree add --detach /tmp/micode-merge-issue-67 origin/main", [OK()]],
       ["merge --no-ff issue/67-safety", [FAIL("CONFLICT")]],
       ["status --porcelain", [OK("UU src/conflict.ts\n")]],
     ]);
@@ -109,8 +108,21 @@ describe("lifecycle recovery safety boundary", () => {
     expect(outcome.merged).toBe(false);
     expect(outcome.recoveryHint?.failureKind).toBe("merge_conflict");
     expectNoUnsafeRecoveryCommands(calls);
+    expect(calls).toContainEqual({
+      bin: "git",
+      args: ["fetch", "origin", "main"],
+      cwd: "/repo/micode",
+    });
+    expect(calls).toContainEqual({
+      bin: "git",
+      args: ["worktree", "add", "--detach", "/tmp/micode-merge-issue-67", "origin/main"],
+      cwd: "/repo/micode",
+    });
+    expect(calls.some((call) => call.args.join(" ") === "worktree add /tmp/micode-merge-issue-67 main")).toBe(false);
+    expect(calls.some((call) => call.args.join(" ") === "merge --ff-only origin/main")).toBe(false);
     expect(calls.some((call) => call.args.join(" ") === "checkout main" && call.cwd === "/repo/micode")).toBe(false);
     expect(calls.some((call) => call.args.join(" ").startsWith("checkout "))).toBe(false);
+    expect(calls.some((call) => call.args.join(" ") === "worktree remove /tmp/micode-merge-issue-67")).toBe(false);
     expect(calls).toContainEqual({
       bin: "git",
       args: ["merge", "--no-ff", "issue/67-safety"],

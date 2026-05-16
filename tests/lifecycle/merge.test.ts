@@ -154,7 +154,7 @@ describe("finishLifecycle", () => {
     });
   });
 
-  it("local merge uses a temp worktree and pushes the resolved master branch", async () => {
+  it("local merge uses a detached temp worktree from remote base and pushes the resolved master branch", async () => {
     const runner = createRunner({
       gh: [createRun("[]")],
       git: [createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun(), createRun()],
@@ -174,17 +174,24 @@ describe("finishLifecycle", () => {
     const gitCalls = runner.calls.filter((call) => call.bin === "git");
     expect(gitCalls[0]).toEqual({
       bin: "git",
-      args: ["worktree", "add", "/tmp/micode-merge-issue-1", "master"],
+      args: ["fetch", "origin", "master"],
       cwd: CWD,
     });
-    expect(gitCalls[1]).toEqual({ bin: "git", args: ["fetch", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
-    expect(gitCalls[2]).toEqual({
+    expect(gitCalls[1]).toEqual({
       bin: "git",
-      args: ["merge", "--ff-only", "origin/master"],
+      args: ["worktree", "add", "--detach", "/tmp/micode-merge-issue-1", "origin/master"],
+      cwd: CWD,
+    });
+    expect(gitCalls[2]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls[3]).toEqual({
+      bin: "git",
+      args: ["push", "origin", "HEAD:master"],
       cwd: "/tmp/micode-merge-issue-1",
     });
-    expect(gitCalls[3]).toEqual({ bin: "git", args: ["merge", "--no-ff", BRANCH], cwd: "/tmp/micode-merge-issue-1" });
-    expect(gitCalls[4]).toEqual({ bin: "git", args: ["push", "origin", "master"], cwd: "/tmp/micode-merge-issue-1" });
+    expect(gitCalls.some((call) => call.args.join(" ") === "worktree add /tmp/micode-merge-issue-1 master")).toBe(
+      false,
+    );
+    expect(gitCalls.some((call) => call.args.join(" ") === "merge --ff-only origin/master")).toBe(false);
   });
 
   it("returns an actionable recovery hint when temp worktree creation fails", async () => {
@@ -263,8 +270,7 @@ describe("finishLifecycle", () => {
       args: ["pr", "create", "--fill", "--base", "main", "--head", BRANCH],
       cwd: CWD,
     });
-    expect(runner.calls[4]?.args[0]).toBe("pr");
-    expect(runner.calls[4]?.args[1]).toBe("edit");
+    expect(runner.calls[4]?.args[0]).toBe("api");
   });
 
   it("blocks merge with pr_body_update_failed when summary injection fails", async () => {
@@ -285,6 +291,39 @@ describe("finishLifecycle", () => {
     expect(outcome.merged).toBe(false);
     expect(outcome.note).toContain("pr_body_update_failed");
     expect(runner.calls.some((call) => call.bin === "gh" && call.args[1] === "merge")).toBe(false);
+  });
+
+  it("preserves existing PR and blocks merge cleanly when REST body update fails", async () => {
+    const runner = createRunner({
+      gh: [
+        createPrView("Existing PR #88 body."),
+        createPrView("Existing PR #88 body."),
+        createFailure("permission denied"),
+      ],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: false,
+      baseBranch: "main",
+      reviewSummarySection: REVIEW_SUMMARY,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.prUrl).toBe(PR_URL);
+    expect(outcome.note).toContain("pr_body_update_failed");
+    expect(outcome.note).toContain("permission denied");
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[1] === "merge")).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr" && call.args[1] === "create")).toBe(
+      false,
+    );
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr" && call.args[1] === "edit")).toBe(
+      false,
+    );
+    expect(runner.calls.some((call) => call.args.join(" ").includes("projectCards"))).toBe(false);
   });
 
   it("posts one PR comment when postSummaryComment true", async () => {
@@ -545,7 +584,6 @@ describe("finishLifecycle autonomy-first cleanup", () => {
     try {
       const runner = createRunner({
         git: [
-          createRun(),
           createRun(),
           createRun(),
           createRun(),
