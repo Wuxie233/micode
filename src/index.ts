@@ -112,6 +112,7 @@ import { createInternalSession, deleteInternalSession } from "@/utils/internal-s
 import { log } from "@/utils/logger";
 import { type ModelReference, parseModelReference } from "@/utils/model-selection";
 import { resolveProjectId } from "@/utils/project-id";
+import { applyDefaultQuestionPermission } from "@/utils/question-permission";
 
 // Think mode: detect keywords and enable extended thinking
 const THINK_KEYWORDS = [
@@ -1001,14 +1002,15 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     },
 
     config: async (config) => {
-      // Allow all permissions globally - no prompts
-      config.permission = {
+      // Allow core OpenCode permissions globally. Fill missing built-in `question`
+      // permission without overriding an explicit user-provided value.
+      config.permission = applyDefaultQuestionPermission({
         ...config.permission,
         edit: "allow",
         bash: "allow",
         webfetch: "allow",
         external_directory: "allow",
-      };
+      });
 
       // Merge user config overrides into plugin agents
       const mergedAgents = mergeAgentConfigs(agents, userConfig, availableModels);

@@ -23,6 +23,7 @@ import { classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
 import { probeRuntimeIdentity } from "./recovery/identity";
 import { inspectRecovery } from "./recovery/inspect";
 import type { RecoveryDecision } from "./recovery/types";
+import { evaluateRemoteWriteGuard } from "./remote-write-guard";
 import { collectReviewSummary, renderReviewSummarySection } from "./review-summary";
 import type { LifecycleRunner, RunResult } from "./runner";
 import { createLifecycleStore as createJsonLifecycleStore, type LifecycleStore } from "./store";
@@ -404,6 +405,31 @@ const buildExecutorBlockedOutcome = (note: string): FinishOutcome => ({
   note,
 });
 
+const buildRemoteWriteBlockedCommitOutcome = (
+  note: string,
+  recoveryHint: CommitOutcome["recoveryHint"],
+): CommitOutcome => ({
+  committed: false,
+  sha: null,
+  pushed: false,
+  retried: false,
+  note,
+  recoveryHint,
+});
+
+const buildRemoteWriteBlockedFinishOutcome = (
+  note: string,
+  recoveryHint: FinishOutcome["recoveryHint"],
+): FinishOutcome => ({
+  merged: false,
+  prUrl: null,
+  closedAt: null,
+  worktreeRemoved: false,
+  cleanupOutcome: { kind: "failed", reason: "remote write blocked before mutation", retried: false },
+  note,
+  recoveryHint,
+});
+
 const safeEmit = async (
   context: LifecycleContext,
   issueNumber: number,
@@ -629,6 +655,20 @@ const recordCommitObserved = async (
 const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] => {
   return async (issueNumber, commitInput) => {
     const record = await requireRecord(context.store, issueNumber);
+    const remoteWriteGuard = await evaluateRemoteWriteGuard({
+      runner: context.runner,
+      cwd: record.worktree,
+      operation: "lifecycle_commit",
+      issueNumber,
+      branch: record.branch,
+      worktree: record.worktree,
+    });
+    if (!remoteWriteGuard.allowed) {
+      const outcome = buildRemoteWriteBlockedCommitOutcome(remoteWriteGuard.note, remoteWriteGuard.recoveryHint);
+      await safeEmit(context, issueNumber, remoteWriteGuard.note);
+      return outcome;
+    }
+
     const marker = await createCommitMarker(context, issueNumber, commitInput);
     const outcome = await commitAndPush(context.runner, {
       cwd: record.worktree,
@@ -650,45 +690,86 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
   };
 };
 
+const checkFinishRemoteWriteGuard = async (
+  context: LifecycleContext,
+  record: LifecycleRecord,
+  issueNumber: number,
+): Promise<FinishOutcome | null> => {
+  const remoteWriteGuard = await evaluateRemoteWriteGuard({
+    runner: context.runner,
+    cwd: context.cwd,
+    operation: "lifecycle_finish",
+    issueNumber,
+    branch: record.branch,
+    worktree: record.worktree,
+  });
+  if (remoteWriteGuard.allowed) return null;
+
+  const outcome = buildRemoteWriteBlockedFinishOutcome(remoteWriteGuard.note, remoteWriteGuard.recoveryHint);
+  await safeEmit(context, issueNumber, remoteWriteGuard.note);
+  return outcome;
+};
+
+const finishBlockedTasks = async (
+  context: LifecycleContext,
+  record: LifecycleRecord,
+  blocked: readonly string[],
+): Promise<FinishOutcome | null> => {
+  if (blocked.length === 0) return null;
+
+  const note = buildExecutorBlockedNote(blocked);
+  const outcome = buildExecutorBlockedOutcome(note);
+  const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
+  scheduleTerminalMaintenance(context, blockedRecord, outcome);
+  await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
+  return outcome;
+};
+
+const executeFinishMerge = async (
+  context: LifecycleContext,
+  record: LifecycleRecord,
+  events: readonly JournalEvent[],
+  finishInput: FinishInput,
+): Promise<FinishOutcome> => {
+  const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
+  const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
+  const reviewSummarySection = renderReviewSummarySection(summary);
+  const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
+  const finished = await finishLifecycle(context.runner, {
+    cwd: context.cwd,
+    branch: merging.branch,
+    worktree: merging.worktree,
+    mergeStrategy: finishInput.mergeStrategy,
+    waitForChecks: finishInput.waitForChecks,
+    baseBranch: resolvedBranch.branch,
+    reviewSummarySection,
+    postSummaryComment: config.lifecycle.postPrSummaryComment,
+    issueNumber: merging.issueNumber,
+    artifactPointers: Object.values(merging.artifacts).flat(),
+  });
+  const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
+  const outcome = await closeMergedIssue(context.runner, record.issueNumber, annotated, context.cwd);
+  const final = await saveAndSync(context, applyFinishOutcome(merging, outcome));
+  scheduleTerminalMaintenance(context, final, outcome);
+  await safeEmit(context, record.issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
+  if (outcome.merged) {
+    await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
+  }
+  return outcome;
+};
+
 const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] => {
   return async (issueNumber, finishInput) => {
     const record = await requireRecord(context.store, issueNumber);
+    const guardOutcome = await checkFinishRemoteWriteGuard(context, record, issueNumber);
+    if (guardOutcome) return guardOutcome;
+
     const events = await context.journal.list(issueNumber);
     const blocked = detectBlockedTasks(events);
-    if (blocked.length > 0) {
-      const note = buildExecutorBlockedNote(blocked);
-      const outcome = buildExecutorBlockedOutcome(note);
-      const blockedRecord = await saveAndSync(context, applyFinishOutcome(record, outcome));
-      scheduleTerminalMaintenance(context, blockedRecord, outcome);
-      await safeNotify(context, NOTIFICATION_STATUSES.BLOCKED, blockedRecord, note);
-      return outcome;
-    }
+    const blockedOutcome = await finishBlockedTasks(context, record, blocked);
+    if (blockedOutcome) return blockedOutcome;
 
-    const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
-    const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
-    const reviewSummarySection = renderReviewSummarySection(summary);
-    const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
-    const finished = await finishLifecycle(context.runner, {
-      cwd: context.cwd,
-      branch: merging.branch,
-      worktree: merging.worktree,
-      mergeStrategy: finishInput.mergeStrategy,
-      waitForChecks: finishInput.waitForChecks,
-      baseBranch: resolvedBranch.branch,
-      reviewSummarySection,
-      postSummaryComment: config.lifecycle.postPrSummaryComment,
-      issueNumber: merging.issueNumber,
-      artifactPointers: Object.values(merging.artifacts).flat(),
-    });
-    const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
-    const outcome = await closeMergedIssue(context.runner, issueNumber, annotated, context.cwd);
-    const final = await saveAndSync(context, applyFinishOutcome(merging, outcome));
-    scheduleTerminalMaintenance(context, final, outcome);
-    await safeEmit(context, issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
-    if (outcome.merged) {
-      await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
-    }
-    return outcome;
+    return executeFinishMerge(context, record, events, finishInput);
   };
 };
 

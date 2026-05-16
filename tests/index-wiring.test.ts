@@ -259,6 +259,45 @@ describe("OpenCodeConfigPlugin issue workflow wiring", () => {
     }
   });
 
+  it("allows the built-in question permission without registering a custom question tool", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const reads: string[] = [];
+    trackWiringConfig(reads);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const pluginConfig = await applyPluginConfig(plugin);
+
+      expect(pluginConfig.permission?.question).toBe("allow");
+      expect(Object.keys(plugin.tool ?? {})).not.toContain("question");
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("preserves an explicit question permission override", async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
+    const reads: string[] = [];
+    trackWiringConfig(reads);
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const plugin = await OpenCodeConfigPlugin(createCtx(tempRoot));
+      const pluginConfig: PluginConfigStub = { permission: { question: "deny" }, agent: {}, mcp: {}, command: {} };
+
+      await plugin.config?.(pluginConfig as Parameters<NonNullable<typeof plugin.config>>[0]);
+
+      expect(pluginConfig.permission?.question).toBe("deny");
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("does not inject procedure context when skill evolution is not enabled", async () => {
     tempRoot = mkdtempSync(join(tmpdir(), PREFIX));
     const reads: string[] = [];
