@@ -270,8 +270,7 @@ describe("finishLifecycle", () => {
       args: ["pr", "create", "--fill", "--base", "main", "--head", BRANCH],
       cwd: CWD,
     });
-    expect(runner.calls[4]?.args[0]).toBe("pr");
-    expect(runner.calls[4]?.args[1]).toBe("edit");
+    expect(runner.calls[4]?.args[0]).toBe("api");
   });
 
   it("blocks merge with pr_body_update_failed when summary injection fails", async () => {
@@ -292,6 +291,39 @@ describe("finishLifecycle", () => {
     expect(outcome.merged).toBe(false);
     expect(outcome.note).toContain("pr_body_update_failed");
     expect(runner.calls.some((call) => call.bin === "gh" && call.args[1] === "merge")).toBe(false);
+  });
+
+  it("preserves existing PR and blocks merge cleanly when REST body update fails", async () => {
+    const runner = createRunner({
+      gh: [
+        createPrView("Existing PR #88 body."),
+        createPrView("Existing PR #88 body."),
+        createFailure("permission denied"),
+      ],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: false,
+      baseBranch: "main",
+      reviewSummarySection: REVIEW_SUMMARY,
+    });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.prUrl).toBe(PR_URL);
+    expect(outcome.note).toContain("pr_body_update_failed");
+    expect(outcome.note).toContain("permission denied");
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[1] === "merge")).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr" && call.args[1] === "create")).toBe(
+      false,
+    );
+    expect(runner.calls.some((call) => call.bin === "gh" && call.args[0] === "pr" && call.args[1] === "edit")).toBe(
+      false,
+    );
+    expect(runner.calls.some((call) => call.args.join(" ").includes("projectCards"))).toBe(false);
   });
 
   it("posts one PR comment when postSummaryComment true", async () => {
