@@ -13,6 +13,7 @@ const ANSWER_TIMEOUT_MINUTES = 5;
 const REVIEW_TIMEOUT_MINUTES = 10;
 const SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS = 5000;
 const SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS = 15_000;
+const SUBAGENT_TRANSIENT_RETRY_BUDGET_MS = 45_000;
 const NOTIFICATION_DEDUPE_TTL_MS = 21_600_000;
 const PROJECT_MEMORY_CONFIG_DIR = join(homedir(), ".config", "opencode", "project-memory");
 
@@ -207,6 +208,7 @@ export const config = {
       SUBAGENT_TRANSIENT_BACKOFF_FIRST_MS,
       SUBAGENT_TRANSIENT_BACKOFF_SECOND_MS,
     ] as readonly number[],
+    transientRetryBudgetMs: SUBAGENT_TRANSIENT_RETRY_BUDGET_MS,
     maxResumesPerSession: 3,
     failedSessionTtlHours: 24,
     resumeSweepIntervalMs: 600_000,

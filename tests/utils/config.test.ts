@@ -198,6 +198,7 @@ describe("config utility", () => {
       expect(config.subagent).toEqual({
         transientRetries: 2,
         transientBackoffMs: [5000, 15000],
+        transientRetryBudgetMs: 45_000,
         maxResumesPerSession: 3,
         failedSessionTtlHours: 24,
         resumeSweepIntervalMs: 600_000,
@@ -332,5 +333,8 @@ describe("subagent spawn-registry, verifier, fence config", () => {
     expect(config.subagent.maxResumesPerSession).toBe(3);
     expect(config.subagent.failedSessionTtlHours).toBe(24);
     expect(config.subagent.transientRetries).toBe(2);
+    expect(config.subagent.transientBackoffMs).toEqual([5000, 15000]);
+    expect(config.lifecycle.pushRetryBackoffMs).toBe(5000);
+    expect(config.lifecycle.prCheckTimeoutMs).toBe(600_000);
   });
 });

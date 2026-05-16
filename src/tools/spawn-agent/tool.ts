@@ -64,6 +64,8 @@ export interface SpawnAgentToolOptions {
   readonly verifier?: (input: VerifyMarkerInput) => Promise<VerifierResult | null>;
   readonly executeAgentSession?: ExecuteAgentSession;
   readonly availableModels?: ReadonlySet<string>;
+  readonly retrySleep?: (ms: number) => Promise<void>;
+  readonly retryNow?: () => number;
 }
 
 interface ResolvedSpawnAgentToolOptions extends SpawnAgentToolOptions {
@@ -117,6 +119,7 @@ interface AttemptResult {
 
 interface SettledAttempt extends AttemptResult {
   readonly retries: number;
+  readonly budgetExhausted: boolean;
 }
 
 const VERIFIER_VERDICTS = {
@@ -136,6 +139,7 @@ const UNKNOWN_CALLER = "unknown";
 const UNKNOWN_SESSION_ID = "unknown-session";
 const DEFAULT_PARENT_SESSION_ID = "";
 const EMPTY_OUTPUT_REASON_PREFIX = "empty assistant output after";
+const TRANSIENT_RETRY_BUDGET_EXHAUSTED = "transient retry budget exhausted";
 
 const TOOL_DESCRIPTION = `Spawn subagents to execute tasks in PARALLEL.
 All agents in the array run concurrently via Promise.allSettled.
@@ -243,6 +247,39 @@ function buildEmptyReadReason(totalAttempts: number): string {
   return `${EMPTY_OUTPUT_REASON_PREFIX} ${totalAttempts} read attempt(s)`;
 }
 
+function formatSeconds(ms: number): string {
+  return `${(ms / MS_PER_SECOND).toFixed(1)}s`;
+}
+
+function buildBudgetExhaustedMessage(settled: SettledAttempt): string {
+  const lastError = settled.value.error ?? settled.value.classification.reason;
+  return `Transient retry budget exhausted after ${formatSeconds(
+    config.subagent.transientRetryBudgetMs,
+  )}; last transient error: ${lastError}. The subagent did not complete, but this is recoverable: resume or retry later.`;
+}
+
+function createTransientBudgetExhaustedAttempt(settled: SettledAttempt): SettledAttempt {
+  return {
+    ...settled,
+    class: INTERNAL_CLASSES.TASK_ERROR,
+    value: {
+      ...settled.value,
+      classification: {
+        class: INTERNAL_CLASSES.TASK_ERROR,
+        reason: TRANSIENT_RETRY_BUDGET_EXHAUSTED,
+        ambiguousKind: INTERNAL_CLASSES.TASK_ERROR,
+      },
+      error: buildBudgetExhaustedMessage(settled),
+    },
+  };
+}
+
+function normalizeBudgetExhaustion(settled: SettledAttempt): SettledAttempt {
+  if (!settled.budgetExhausted) return settled;
+  if (settled.class !== INTERNAL_CLASSES.TRANSIENT) return settled;
+  return createTransientBudgetExhaustedAttempt(settled);
+}
+
 function getStatus(error: unknown): number | null {
   if (!isRecord(error)) return null;
   if (typeof error.status === "number") return error.status;
@@ -341,7 +378,12 @@ async function classifyThrown(
   }
   return {
     class: classification.class,
-    value: { sessionId, output: "", error: classification.reason, classification },
+    value: {
+      sessionId,
+      output: "",
+      error: nonEmpty(extractErrorMessage(error)) ?? classification.reason,
+      classification,
+    },
   };
 }
 
@@ -420,7 +462,10 @@ function buildIdentity(task: AgentTask, ownerSessionId: string): TaskIdentity {
 
 function buildClassifierField(settled: SettledAttempt): string {
   const retries = settled.retries > 0 ? ` retries=${settled.retries}` : "";
-  return `${settled.class}: ${settled.value.classification.reason}${retries}`;
+  const budget = settled.budgetExhausted
+    ? ` budget_exhausted=true transient_budget_ms=${config.subagent.transientRetryBudgetMs}`
+    : "";
+  return `${settled.class}: ${settled.value.classification.reason}${retries}${budget}`;
 }
 
 function buildFenceField(fence: FenceResult): string {
@@ -504,8 +549,9 @@ async function finalizeIssueSession(
   elapsedMs: number,
   value: AttemptValue,
   outcome: AmbiguousKind,
+  allowMissingSession = false,
 ): Promise<SpawnResult> {
-  if (value.sessionId === null) return createHardFailureResult(task, elapsedMs, value);
+  if (value.sessionId === null && !allowMissingSession) return createHardFailureResult(task, elapsedMs, value);
   await cleanupSession(ctx, task, options, value.sessionId);
   return createTaskIssueResult(task, elapsedMs, outcome, value);
 }
@@ -570,10 +616,13 @@ async function runSpawnAttempt(
   const settled = await retryOnTransient(() => runAttempt(ctx, task, runSession, onTransientSession), {
     retries: config.subagent.transientRetries,
     backoffMs: config.subagent.transientBackoffMs,
+    retryBudgetMs: config.subagent.transientRetryBudgetMs,
+    sleep: options.retrySleep,
+    now: options.retryNow,
   });
   if (settled.value.sessionId !== null && registeredSessionId !== settled.value.sessionId)
     onCreated(settled.value.sessionId);
-  return settled;
+  return normalizeBudgetExhaustion(settled);
 }
 
 async function cleanupSession(
@@ -607,7 +656,15 @@ async function finalizeSettled(
     return attachDiagnostics(task, createSuccessResult(task, elapsedMs, settled.value.output), fields);
   }
   if (settled.class === INTERNAL_CLASSES.TASK_ERROR || settled.class === INTERNAL_CLASSES.BLOCKED) {
-    const result = await finalizeIssueSession(ctx, task, options, elapsedMs, settled.value, settled.class);
+    const result = await finalizeIssueSession(
+      ctx,
+      task,
+      options,
+      elapsedMs,
+      settled.value,
+      settled.class,
+      settled.budgetExhausted,
+    );
     return attachDiagnostics(task, result, fields);
   }
   await cleanupSession(ctx, task, options, settled.value.sessionId);
@@ -631,6 +688,10 @@ async function runAgent(
     return attachDiagnostics(task, result, { fence: buildFenceField(fence) });
   }
   const settled = await runSpawnAttempt(ctx, task, options, parentSessionId, identity);
+  if (settled.budgetExhausted) {
+    if (progress) updateProgress(toolCtx, progress, `${task.agent} retry budget exhausted`);
+    else toolCtx.metadata?.({ title: `${task.agent} retry budget exhausted` });
+  }
   const elapsedMs = Date.now() - started;
   const fields: DiagnosticFields = { classifier: buildClassifierField(settled), fence: buildFenceField(fence) };
   return finalizeSettled(ctx, task, options, settled, elapsedMs, fields);

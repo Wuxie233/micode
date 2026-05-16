@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { ISSUE_BODY_MARKERS } from "@/lifecycle/issue-body-markers";
 import { finishLifecycle, PR_CHECK_POLL_MS } from "@/lifecycle/merge";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
+import { config } from "@/utils/config";
 
 const OK_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
@@ -408,6 +409,41 @@ describe("finishLifecycle", () => {
 describe("PR_CHECK_POLL_MS", () => {
   it("is exported as a positive number for waitForPrChecks scheduling", () => {
     expect(PR_CHECK_POLL_MS).toBeGreaterThan(0);
+  });
+
+  it("keeps lifecycle PR check timeout independent from subagent transient retry budget", () => {
+    expect(config.lifecycle.prCheckTimeoutMs).toBe(600_000);
+    expect(config.lifecycle.prCheckTimeoutMs).toBeGreaterThan(config.subagent.transientRetryBudgetMs);
+  });
+
+  it("finishLifecycle PR check polling sleeps PR_CHECK_POLL_MS, not subagent transient retry budget", async () => {
+    const sleeps: number[] = [];
+    const runner = createRunner({
+      gh: [
+        createFailure("no pull requests found"),
+        createRun(`${PR_URL}\n`),
+        createPrView(),
+        createRun(JSON.stringify([{ state: "PENDING", name: "ci" }])),
+        createRun(JSON.stringify([{ state: "SUCCESS", name: "ci" }])),
+        createRun(),
+      ],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: BRANCH,
+      worktree: WORKTREE,
+      mergeStrategy: "pr",
+      waitForChecks: true,
+      baseBranch: "main",
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(outcome.merged).toBe(true);
+    expect(sleeps).toEqual([PR_CHECK_POLL_MS]);
+    expect(sleeps).not.toContain(config.subagent.transientRetryBudgetMs);
   });
 });
 

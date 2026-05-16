@@ -3,8 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-
 import type { ContextCapsuleRef } from "@/agents/context-capsule/types";
+import type { SpawnAgentToolOptions } from "../../src/tools/spawn-agent";
 import { buildArgsShape, createSpawnAgentTool } from "../../src/tools/spawn-agent";
 import { INVALID_ARGS_MESSAGE } from "../../src/tools/spawn-agent-args";
 
@@ -95,10 +95,20 @@ const createFakeCtx = (): FakeCtx => {
 };
 
 type ExecuteSignature = (raw: unknown, ctx: unknown) => Promise<string>;
+type ToolExecuteContext = Parameters<ReturnType<typeof createSpawnAgentTool>["execute"]>[1];
 
 const callExecute = async (toolDef: ReturnType<typeof createSpawnAgentTool>, args: unknown): Promise<string> => {
   const exec = toolDef.execute.bind(toolDef) as unknown as ExecuteSignature;
   return exec(args, {});
+};
+
+const callExecuteWithContext = async (
+  toolDef: ReturnType<typeof createSpawnAgentTool>,
+  args: unknown,
+  ctx: ToolExecuteContext,
+): Promise<string> => {
+  const exec = toolDef.execute.bind(toolDef) as unknown as ExecuteSignature;
+  return exec(args, ctx);
 };
 
 describe("createSpawnAgentTool execute", () => {
@@ -244,6 +254,81 @@ describe("createSpawnAgentTool execute", () => {
       expect(firstCapsule).not.toContain("lifecycle_issue");
       expect(secondCapsule).not.toContain("---");
       expect(secondCapsule).not.toContain("lifecycle_issue");
+    });
+  });
+
+  describe("transient retry budget", () => {
+    it("maps transient retry budget exhaustion to recoverable task_error output", async () => {
+      const sleepCalls: number[] = [];
+      const metadataTitles: string[] = [];
+      const options: SpawnAgentToolOptions = {
+        executeAgentSession: async () => {
+          throw Object.assign(new Error("Upstream service temporarily unavailable"), { status: 503 });
+        },
+        retrySleep: async (ms) => {
+          sleepCalls.push(ms);
+        },
+        retryNow: (() => {
+          const values = [0, 0, 46_000];
+          let index = 0;
+          return () => {
+            const value = values[Math.min(index, values.length - 1)];
+            index += 1;
+            return value;
+          };
+        })(),
+      };
+      toolDef = createSpawnAgentTool(fake.ctx, options);
+
+      const output = await callExecuteWithContext(toolDef, { agents: [taskA] }, {
+        metadata: ({ title }) => {
+          if (title) metadataTitles.push(title);
+        },
+      } as ToolExecuteContext);
+
+      expect(output).toContain("**Outcome**: task_error");
+      expect(output).toContain("Transient retry budget exhausted after 45.0s");
+      expect(output).toContain("Upstream service temporarily unavailable");
+      expect(output).toContain("resume or retry later");
+      expect(output).toContain("budget_exhausted=true");
+      expect(output).toContain("transient_budget_ms=45000");
+      expect(sleepCalls).toEqual([5000]);
+      expect(metadataTitles.some((title) => title.includes("retry budget exhausted"))).toBe(true);
+    });
+
+    it("preserves successful recovery inside the transient retry budget", async () => {
+      const sleepCalls: number[] = [];
+      let attempts = 0;
+      const options: SpawnAgentToolOptions = {
+        executeAgentSession: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw Object.assign(new Error("Upstream service temporarily unavailable"), { status: 503 });
+          }
+          return { sessionId: "sess-success", output: "subagent recovered" };
+        },
+        retrySleep: async (ms) => {
+          sleepCalls.push(ms);
+        },
+        retryNow: (() => {
+          const values = [0, 0, 5_000, 5_000];
+          let index = 0;
+          return () => {
+            const value = values[Math.min(index, values.length - 1)];
+            index += 1;
+            return value;
+          };
+        })(),
+      };
+      toolDef = createSpawnAgentTool(fake.ctx, options);
+
+      const output = await callExecute(toolDef, { agents: [taskA] });
+
+      expect(output).toContain("### Result");
+      expect(output).toContain("subagent recovered");
+      expect(output).not.toContain("budget exhausted");
+      expect(attempts).toBe(2);
+      expect(sleepCalls).toEqual([5000]);
     });
   });
 
