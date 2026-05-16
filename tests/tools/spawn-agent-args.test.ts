@@ -86,6 +86,25 @@ describe("normalizeSpawnAgentArgs", () => {
         expect(outcome.tasks).toEqual([sampleTask, secondTask]);
       }
     });
+
+    it("preserves optional contextCapsule on tasks", () => {
+      const taskWithCapsule = {
+        ...sampleTask,
+        contextCapsule: {
+          path: "thoughts/shared/context-capsules/capsule.md",
+          sha: "abc123",
+          token: "capsule-token",
+          content: "# Working context\n\nDetails for the subagent.",
+        },
+      };
+
+      const outcome = normalizeSpawnAgentArgs({ agents: [taskWithCapsule] });
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) {
+        expect(outcome.tasks).toEqual([taskWithCapsule]);
+      }
+    });
   });
 
   describe("stringified accepted shapes", () => {
@@ -201,6 +220,24 @@ describe("normalizeSpawnAgentArgs", () => {
     it("rejects stringified task with wrong field type", () => {
       const outcome = normalizeSpawnAgentArgs({
         agents: JSON.stringify([{ agent: 1, prompt: "p", description: "d" }]),
+      });
+
+      expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });
+    });
+
+    it("rejects malformed contextCapsule", () => {
+      const outcome = normalizeSpawnAgentArgs({
+        agents: [
+          {
+            ...sampleTask,
+            contextCapsule: {
+              path: "thoughts/shared/context-capsules/capsule.md",
+              sha: "abc123",
+              token: "capsule-token",
+              content: 42,
+            },
+          },
+        ],
       });
 
       expect(outcome).toEqual({ ok: false, message: INVALID_ARGS_MESSAGE });

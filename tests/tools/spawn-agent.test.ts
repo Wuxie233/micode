@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 
+import type { ContextCapsuleRef } from "@/agents/context-capsule/types";
 import { buildArgsShape, createSpawnAgentTool } from "../../src/tools/spawn-agent";
 import { INVALID_ARGS_MESSAGE } from "../../src/tools/spawn-agent-args";
 
@@ -17,6 +18,21 @@ const taskB = {
   agent: "agent-b",
   prompt: "prompt b",
   description: "Task B description",
+};
+
+const contextCapsule: ContextCapsuleRef = {
+  path: "thoughts/shared/context-capsules/issue-91-working-context.md",
+  sha: "capsule-sha-001",
+  token: "fresh-token-001",
+  content: `---
+lifecycle_issue: 91
+branch: issue-91-working-context-capsule
+---
+
+## Confirmed Facts
+
+- Shared capsule body.
+`,
 };
 
 interface PromptCall {
@@ -199,6 +215,35 @@ describe("createSpawnAgentTool execute", () => {
 
       expect(output).toContain("Model override is not available: missing/model");
       expect(fake.recorder.createCalls).toBe(0);
+    });
+
+    it("prefixes each spawned user prompt with identical context capsule body only", async () => {
+      const promptA = `<spawn-meta task-id="3.2-a" />\nImplement prompt delta A.`;
+      const promptB = `<spawn-meta task-id="3.2-b" />\nImplement prompt delta B.`;
+
+      await callExecute(toolDef, {
+        agents: [
+          { ...taskA, prompt: promptA, contextCapsule },
+          { ...taskB, prompt: promptB, contextCapsule },
+        ],
+      });
+
+      const first = fake.recorder.promptCalls[0]?.text ?? "";
+      const second = fake.recorder.promptCalls[1]?.text ?? "";
+      const firstCapsule = first.slice(0, first.indexOf("</context-capsule>") + "</context-capsule>".length);
+      const secondCapsule = second.slice(0, second.indexOf("</context-capsule>") + "</context-capsule>".length);
+
+      expect(first).toStartWith("<context-capsule");
+      expect(second).toStartWith("<context-capsule");
+      expect(firstCapsule).toBe(secondCapsule);
+      expect(first).toContain(promptA);
+      expect(second).toContain(promptB);
+      expect(firstCapsule).toContain("## Confirmed Facts");
+      expect(firstCapsule).toContain("- Shared capsule body.");
+      expect(firstCapsule).not.toContain("---");
+      expect(firstCapsule).not.toContain("lifecycle_issue");
+      expect(secondCapsule).not.toContain("---");
+      expect(secondCapsule).not.toContain("lifecycle_issue");
     });
   });
 

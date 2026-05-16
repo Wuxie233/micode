@@ -10,6 +10,7 @@ const AGENTS_MD = readFileSync(join(__dirname, "..", "..", "AGENTS.md"), "utf-8"
 
 const SECTION_LABELS = ["预期表现", "你可以怎么验收", "已知限制", "本次知识上下文", "实现记录"] as const;
 const EXCEPTION_KEYS = ["blocked", "failed-stop"] as const;
+const CAPSULE_STATUS_ENUM = "none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>";
 
 const PRIMARIES_WITH_BLOCK = [
   {
@@ -134,6 +135,14 @@ describe("effect-first-reporting prompt block", () => {
         expect(body).toContain("Atlas status:");
         expect(body).toContain("Project Memory status:");
       });
+
+      it(`${agent.name} knowledge-context subsection mentions Capsule status and allowed values`, () => {
+        const block = expandedEffectFirstBlock(agent.source);
+        expect(block).not.toBeNull();
+        const body = block ?? "";
+        expect(body).toContain("Capsule status:");
+        expect(body).toContain(CAPSULE_STATUS_ENUM);
+      });
     }
   });
 
@@ -195,6 +204,11 @@ describe("effect-first-reporting prompt block", () => {
     it("documents the 本次知识上下文 subsection", () => {
       expect(AGENTS_MD).toContain("本次知识上下文");
       expect(AGENTS_MD).toMatch(/Atlas status|Project Memory status/);
+    });
+
+    it("documents Capsule status and its enum in the 本次知识上下文 subsection", () => {
+      expect(AGENTS_MD).toContain("Capsule status:");
+      expect(AGENTS_MD).toContain(CAPSULE_STATUS_ENUM);
     });
 
     it("declares blocked and failed-stop exceptions", () => {
