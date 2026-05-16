@@ -252,7 +252,7 @@ describe("lifecycle handle", () => {
 
     await handle.finish(started.issueNumber, { mergeStrategy: "pr", waitForChecks: false });
 
-    const edit = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["pr", "edit"]));
+    const edit = runner.calls.find((call) => call.bin === "gh" && isArgs(call.args, ["api", "--method", "PATCH"]));
     const body = edit?.args.at(-1) ?? EMPTY_OUTPUT;
     expect(body).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_BEGIN);
     expect(body).toContain("AI Review Summary");

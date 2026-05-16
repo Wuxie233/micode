@@ -40,9 +40,8 @@ describe("conflict resolver recovery end-to-end guard", () => {
   it("blocks first on unresolved conflict, then succeeds after direct-scope resolver edits", async () => {
     const first = createRunner(
       new Map([
-        ["worktree add /tmp/micode-merge-issue-85 main", [OK()]],
         ["fetch origin main", [OK()]],
-        ["merge --ff-only origin/main", [OK()]],
+        ["worktree add --detach /tmp/micode-merge-issue-85 origin/main", [OK()]],
         ["merge --no-ff issue/85-x", [FAIL("CONFLICT")]],
         ["status --porcelain", [OK("UU src/lifecycle/merge.ts\n")]],
       ]),
@@ -68,11 +67,12 @@ describe("conflict resolver recovery end-to-end guard", () => {
 
     const second = createRunner(
       new Map([
-        ["worktree add /tmp/micode-merge-issue-85 main", [FAIL("already exists")]],
+        ["fetch origin main", [OK()]],
+        ["worktree add --detach /tmp/micode-merge-issue-85 origin/main", [FAIL("already exists")]],
         ["diff --name-only --diff-filter=U", [OK("")]],
         ["status --porcelain", [OK("M  src/lifecycle/merge.ts\nM  tests/lifecycle/merge.test.ts\n")]],
         ["commit -m merge issue/85-x: resolve lifecycle conflicts", [OK()]],
-        ["push origin main", [OK()]],
+        ["push origin HEAD:main", [OK()]],
         ["worktree remove --force /tmp/micode-merge-issue-85", [OK()]],
         ["worktree list --porcelain", [OK("worktree /repo/issue-85\n")]],
         ["worktree remove /repo/issue-85", [OK()]],
@@ -92,7 +92,7 @@ describe("conflict resolver recovery end-to-end guard", () => {
 
     expect(finished.merged).toBe(true);
     const commands = second.calls.map((call) => call.args.join(" "));
-    expect(commands).toContain("push origin main");
+    expect(commands).toContain("push origin HEAD:main");
     expect(commands.some((command) => command.includes("--force-with-lease"))).toBe(false);
     expect(commands.some((command) => command.includes("--no-verify"))).toBe(false);
     expect(commands.some((command) => command.startsWith("reset --hard"))).toBe(false);

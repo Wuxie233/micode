@@ -38,7 +38,8 @@ const runnerWith = (
 describe("local merge resolver scope enforcement", () => {
   it("blocks resolved temp merges that changed unrelated files", async () => {
     const responses = new Map<string, readonly RunResult[]>([
-      ["worktree add /tmp/micode-merge-issue-85 main", [FAIL("already exists")]],
+      ["fetch origin main", [OK()]],
+      ["worktree add --detach /tmp/micode-merge-issue-85 origin/main", [FAIL("already exists")]],
       ["diff --name-only --diff-filter=U", [OK("")]],
       ["status --porcelain", [OK("M  src/lifecycle/merge.ts\nM  src/agents/commander.ts\n")]],
     ]);
