@@ -33,8 +33,8 @@ const ok = (stdout = EMPTY_OUTPUT): RunResult => ({
   exitCode: OK_EXIT_CODE,
 });
 
-const fail = (stderr = "boom"): RunResult => ({
-  stdout: EMPTY_OUTPUT,
+const fail = (stderr = "boom", stdout = EMPTY_OUTPUT): RunResult => ({
+  stdout,
   stderr,
   exitCode: FAILURE_EXIT_CODE,
 });
@@ -108,7 +108,7 @@ describe("upsertPullRequest", () => {
 });
 
 describe("writeReviewSummaryToPrBody", () => {
-  it("inserts the AI review block when missing and edits the PR body", async () => {
+  it("inserts the AI review block and updates PR body through gh api REST PATCH", async () => {
     const view = ok(JSON.stringify({ number: PR_NUMBER, url: "u", body: "Original." }));
     const { runner, calls } = fakeRunner([view, ok()]);
 
@@ -119,13 +119,21 @@ describe("writeReviewSummaryToPrBody", () => {
     });
 
     expect(outcome.kind).toBe("updated");
-    expect(calls[1]?.args[0]).toBe("pr");
-    expect(calls[1]?.args[1]).toBe("edit");
-    const bodyArg = calls[1]?.args[calls[1].args.length - 1] ?? EMPTY_OUTPUT;
-    expect(bodyArg).toContain("Original.");
-    expect(bodyArg).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_BEGIN);
-    expect(bodyArg).toContain("Verdict: approved");
-    expect(bodyArg).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_END);
+    expect(calls[1]?.args.slice(0, 5)).toEqual([
+      "api",
+      "--method",
+      "PATCH",
+      "repos/{owner}/{repo}/pulls/7",
+      "--raw-field",
+    ]);
+    expect(calls[1]?.args.at(-1)).toContain("body=");
+    const bodyField = calls[1]?.args.at(-1) ?? EMPTY_OUTPUT;
+    expect(bodyField).toContain("Original.");
+    expect(bodyField).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_BEGIN);
+    expect(bodyField).toContain("Verdict: approved");
+    expect(bodyField).toContain(ISSUE_BODY_MARKERS.AI_REVIEW_END);
+    expect(calls.some((call) => call.args.join(" ").includes("projectCards"))).toBe(false);
+    expect(calls.some((call) => call.args[0] === "pr" && call.args[1] === "edit")).toBe(false);
   });
 
   it("updates the existing AI review block in place", async () => {
@@ -146,15 +154,15 @@ describe("writeReviewSummaryToPrBody", () => {
       section: `${SUMMARY_SECTION}\nnew`,
     });
 
-    const bodyArg = calls[1]?.args[calls[1].args.length - 1] ?? EMPTY_OUTPUT;
-    expect(bodyArg.match(/AI Review Summary/g)?.length ?? 0).toBe(1);
-    expect(bodyArg).toContain("new");
-    expect(bodyArg).not.toContain("old");
+    const bodyField = calls[1]?.args.at(-1) ?? EMPTY_OUTPUT;
+    expect(bodyField.match(/AI Review Summary/g)?.length ?? 0).toBe(1);
+    expect(bodyField).toContain("new");
+    expect(bodyField).not.toContain("old");
   });
 
-  it("returns failed when gh pr edit fails", async () => {
+  it("returns failed when REST PR body update fails without attempting merge-like recovery", async () => {
     const view = ok(JSON.stringify({ number: PR_NUMBER, url: "u", body: "" }));
-    const { runner } = fakeRunner([view, fail("permission")]);
+    const { runner, calls } = fakeRunner([view, fail("permission", "stdout details")]);
 
     const outcome = await writeReviewSummaryToPrBody(runner, {
       cwd: CWD,
@@ -164,6 +172,12 @@ describe("writeReviewSummaryToPrBody", () => {
 
     expect(outcome.kind).toBe("failed");
     expect(outcome.note).toContain("pr_body_update_failed");
+    expect(outcome.note).toContain("permission");
+    expect(outcome.note).toContain("stdout details");
+    expect(calls.some((call) => call.args[0] === "pr" && call.args[1] === "edit")).toBe(false);
+    expect(calls.some((call) => call.args[0] === "pr" && call.args[1] === "merge")).toBe(false);
+    expect(calls.some((call) => call.args[0] === "pr" && call.args[1] === "create")).toBe(false);
+    expect(calls.some((call) => call.args.join(" ").includes("projectCards"))).toBe(false);
   });
 
   it("returns no_pr when gh pr view fails", async () => {

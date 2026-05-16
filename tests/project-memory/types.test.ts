@@ -8,6 +8,7 @@ import {
   RelationKindValues,
   SourceKindValues,
   SourceSchema,
+  StatusValues,
 } from "@/project-memory/types";
 
 describe("project-memory types", () => {
@@ -61,6 +62,26 @@ describe("project-memory types", () => {
       title: "x",
       summary: "y",
       status: "active",
+      sensitivity: "internal",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("declares cleanup statuses", () => {
+    expect(StatusValues).toEqual(expect.arrayContaining(["archived", "tombstoned", "stale"]));
+  });
+
+  it.each(["archived", "tombstoned", "stale"] as const)("accepts %s entries", (status) => {
+    const result = v.safeParse(EntrySchema, {
+      id: `e_${status}`,
+      projectId: "abc",
+      entityId: "ent_1",
+      type: "decision",
+      title: "x",
+      summary: "y",
+      status,
       sensitivity: "internal",
       createdAt: 1,
       updatedAt: 1,

@@ -80,7 +80,11 @@ const EMPTY_STATUS_COUNTS: Record<Status, number> = {
   tentative: 0,
   hypothesis: 0,
   deprecated: 0,
+  archived: 0,
+  tombstoned: 0,
+  stale: 0,
 };
+const MAINTENANCE_SNAPSHOT_LIMIT = config.projectMemory.maintenanceSnapshotLimit;
 const SENSITIVITY_RANK: Record<Sensitivity, number> = {
   public: 0,
   internal: 1,
@@ -115,6 +119,14 @@ export interface ProjectMemoryStore {
   loadEntry(projectId: string, id: string): Promise<Entry | null>;
   loadSourcesForEntry(projectId: string, entryId: string): Promise<readonly Source[]>;
   searchEntries(projectId: string, query: string, options?: SearchEntriesOptions): Promise<readonly SearchHit[]>;
+  listEntries(
+    projectId: string,
+    options?: { readonly status?: Status; readonly limit?: number },
+  ): Promise<readonly Entry[]>;
+  listEntities(projectId: string, options?: { readonly limit?: number }): Promise<readonly Entity[]>;
+  listSources(projectId: string, options?: { readonly limit?: number }): Promise<readonly Source[]>;
+  updateEntryStatus(projectId: string, entryId: string, status: Status, updatedAt?: number): Promise<void>;
+  updateEntrySummary(projectId: string, entryId: string, summary: string, updatedAt?: number): Promise<void>;
   countEntities(projectId: string): Promise<number>;
   countEntries(projectId: string): Promise<number>;
   countEntriesByStatus(projectId: string): Promise<Record<Status, number>>;
@@ -430,6 +442,91 @@ function searchEntriesInDb(db: Database, projectId: string, query: string, optio
   return rows.map((row) => ({ entry: rowToEntry(row), score: -row.rank }));
 }
 
+function listEntriesInDb(
+  db: Database,
+  projectId: string,
+  options: { readonly status?: Status; readonly limit?: number },
+): Entry[] {
+  return db
+    .query<EntryRow, [string, Status | null, Status | null, number]>(
+      `SELECT * FROM entries
+       WHERE project_id = ?
+         AND (? IS NULL OR status = ?)
+       ORDER BY updated_at DESC, id ASC
+       LIMIT ?`,
+    )
+    .all(projectId, options.status ?? null, options.status ?? null, options.limit ?? MAINTENANCE_SNAPSHOT_LIMIT)
+    .map(rowToEntry);
+}
+
+function listEntitiesInDb(db: Database, projectId: string, options: { readonly limit?: number }): Entity[] {
+  return db
+    .query<EntityRow, [string, number]>(
+      `SELECT * FROM entities
+       WHERE project_id = ?
+       ORDER BY updated_at DESC, id ASC
+       LIMIT ?`,
+    )
+    .all(projectId, options.limit ?? MAINTENANCE_SNAPSHOT_LIMIT)
+    .map(rowToEntity);
+}
+
+function listSourcesInDb(db: Database, projectId: string, options: { readonly limit?: number }): Source[] {
+  return db
+    .query<SourceRow, [string, number]>(
+      `SELECT * FROM sources
+       WHERE project_id = ?
+       ORDER BY created_at DESC, id ASC
+       LIMIT ?`,
+    )
+    .all(projectId, options.limit ?? MAINTENANCE_SNAPSHOT_LIMIT)
+    .map(rowToSource);
+}
+
+function updateEntryInDb(
+  db: Database,
+  projectId: string,
+  entryId: string,
+  update: (entry: Entry, updatedAt: number) => Entry,
+  updatedAt = Date.now(),
+): void {
+  const current = loadEntryFromDb(db, projectId, entryId);
+  if (!current) return;
+  upsertEntryInDb(db, update(current, updatedAt));
+}
+
+function updateEntryStatusInDb(
+  db: Database,
+  projectId: string,
+  entryId: string,
+  status: Status,
+  updatedAt?: number,
+): void {
+  updateEntryInDb(
+    db,
+    projectId,
+    entryId,
+    (entry, nextUpdatedAt) => ({ ...entry, status, updatedAt: nextUpdatedAt }),
+    updatedAt,
+  );
+}
+
+function updateEntrySummaryInDb(
+  db: Database,
+  projectId: string,
+  entryId: string,
+  summary: string,
+  updatedAt?: number,
+): void {
+  updateEntryInDb(
+    db,
+    projectId,
+    entryId,
+    (entry, nextUpdatedAt) => ({ ...entry, summary, updatedAt: nextUpdatedAt }),
+    updatedAt,
+  );
+}
+
 const SEARCH_SQL = `SELECT
   e.project_id,
   e.id,
@@ -568,6 +665,13 @@ function createStore(state: StoreState): ProjectMemoryStore {
     loadSourcesForEntry: async (projectId, entryId) => loadSourcesFromDb(active(state), projectId, entryId),
     searchEntries: async (projectId, query, options = {}) =>
       searchEntriesInDb(active(state), projectId, query, options),
+    listEntries: async (projectId, options = {}) => listEntriesInDb(active(state), projectId, options),
+    listEntities: async (projectId, options = {}) => listEntitiesInDb(active(state), projectId, options),
+    listSources: async (projectId, options = {}) => listSourcesInDb(active(state), projectId, options),
+    updateEntryStatus: async (projectId, entryId, status, updatedAt) =>
+      updateEntryStatusInDb(active(state), projectId, entryId, status, updatedAt),
+    updateEntrySummary: async (projectId, entryId, summary, updatedAt) =>
+      updateEntrySummaryInDb(active(state), projectId, entryId, summary, updatedAt),
     countEntities: async (projectId) => countEntitiesInDb(active(state), projectId),
     countEntries: async (projectId) => countEntriesInDb(active(state), projectId),
     countEntriesByStatus: async (projectId) => countEntriesByStatusInDb(active(state), projectId),

@@ -32,15 +32,16 @@ const recorder = (queue: Map<string, RunResult[]>): { runner: LifecycleRunner; c
   return { runner, calls };
 };
 
+const commandStrings = (calls: readonly Call[]): readonly string[] => calls.map((call) => call.args.join(" "));
+
 describe("finishViaLocalMerge with temp worktree", () => {
-  it("creates /tmp/<repo>-merge-issue-<N>, runs merge inside it, pushes, then removes it", async () => {
+  it("creates /tmp/<repo>-merge-issue-<N> from detached origin/base, merges inside it, pushes base, then removes it", async () => {
     const queue = new Map<string, RunResult[]>();
     queue.set("pr checks issue/67-x --required --json state,name", [OK("[]"), OK("[]")]);
-    queue.set("worktree add /tmp/micode-merge-issue-67 main", [OK()]);
     queue.set("fetch origin main", [OK()]);
-    queue.set("merge --ff-only origin/main", [OK()]);
+    queue.set("worktree add --detach /tmp/micode-merge-issue-67 origin/main", [OK()]);
     queue.set("merge --no-ff issue/67-x", [OK()]);
-    queue.set("push origin main", [OK()]);
+    queue.set("push origin HEAD:main", [OK()]);
     queue.set("worktree remove --force /tmp/micode-merge-issue-67", [OK()]);
     queue.set("worktree list --porcelain", [OK("worktree /r/micode-issue-67\n")]);
     queue.set("worktree remove /r/micode-issue-67", [OK()]);
@@ -63,19 +64,20 @@ describe("finishViaLocalMerge with temp worktree", () => {
     const cwds = calls.map((c) => `${c.args.join(" ")}@${c.cwd}`);
     expect(cwds).toEqual(
       expect.arrayContaining([
-        "fetch origin main@/tmp/micode-merge-issue-67",
-        "merge --ff-only origin/main@/tmp/micode-merge-issue-67",
+        "fetch origin main@/r/micode",
+        "worktree add --detach /tmp/micode-merge-issue-67 origin/main@/r/micode",
         "merge --no-ff issue/67-x@/tmp/micode-merge-issue-67",
+        "push origin HEAD:main@/tmp/micode-merge-issue-67",
       ]),
     );
-    expect(cwds.indexOf("fetch origin main@/tmp/micode-merge-issue-67")).toBeLessThan(
-      cwds.indexOf("merge --ff-only origin/main@/tmp/micode-merge-issue-67"),
+    expect(cwds.indexOf("fetch origin main@/r/micode")).toBeLessThan(
+      cwds.indexOf("worktree add --detach /tmp/micode-merge-issue-67 origin/main@/r/micode"),
     );
-    expect(cwds.indexOf("merge --ff-only origin/main@/tmp/micode-merge-issue-67")).toBeLessThan(
+    expect(cwds.indexOf("worktree add --detach /tmp/micode-merge-issue-67 origin/main@/r/micode")).toBeLessThan(
       cwds.indexOf("merge --no-ff issue/67-x@/tmp/micode-merge-issue-67"),
     );
-    expect(cwds).toContain("merge --no-ff issue/67-x@/tmp/micode-merge-issue-67");
-    expect(cwds).toContain("push origin main@/tmp/micode-merge-issue-67");
+    expect(commandStrings(calls)).not.toContain("worktree add /tmp/micode-merge-issue-67 main");
+    expect(commandStrings(calls)).not.toContain("merge --ff-only origin/main");
     // main worktree was NEVER `git checkout`'d
     expect(cwds.some((s) => s.startsWith("checkout main@/r/micode"))).toBe(false);
   });
@@ -83,9 +85,8 @@ describe("finishViaLocalMerge with temp worktree", () => {
   it("on merge conflict, keeps tmp worktree, returns merge_conflict hint with conflict_files", async () => {
     const queue = new Map<string, RunResult[]>();
     queue.set("pr checks issue/67-x --required --json state,name", [OK("[]")]);
-    queue.set("worktree add /tmp/micode-merge-issue-67 main", [OK()]);
     queue.set("fetch origin main", [OK()]);
-    queue.set("merge --ff-only origin/main", [OK()]);
+    queue.set("worktree add --detach /tmp/micode-merge-issue-67 origin/main", [OK()]);
     queue.set("merge --no-ff issue/67-x", [FAIL("CONFLICT")]);
     queue.set("status --porcelain", [OK("UU src/a.ts\nAA src/b.ts\n")]);
 
@@ -109,11 +110,10 @@ describe("finishViaLocalMerge with temp worktree", () => {
   it("on push failure, removes tmp worktree before returning retryable push_failed hint", async () => {
     const queue = new Map<string, RunResult[]>();
     queue.set("pr checks issue/67-x --required --json state,name", [OK("[]")]);
-    queue.set("worktree add /tmp/micode-merge-issue-67 main", [OK()]);
     queue.set("fetch origin main", [OK()]);
-    queue.set("merge --ff-only origin/main", [OK()]);
+    queue.set("worktree add --detach /tmp/micode-merge-issue-67 origin/main", [OK()]);
     queue.set("merge --no-ff issue/67-x", [OK()]);
-    queue.set("push origin main", [FAIL("rejected")]);
+    queue.set("push origin HEAD:main", [FAIL("rejected")]);
     queue.set("worktree remove --force /tmp/micode-merge-issue-67", [OK()]);
 
     const { runner, calls } = recorder(queue);
@@ -130,17 +130,18 @@ describe("finishViaLocalMerge with temp worktree", () => {
     expect(outcome.recoveryHint?.failureKind).toBe("push_failed");
     expect(outcome.recoveryHint?.safeToRetry).toBe(true);
     expect(outcome.recoveryHint?.worktree).toBe("/tmp/micode-merge-issue-67");
-    const pushIndex = calls.findIndex((c) => c.args.join(" ") === "push origin main");
+    const pushIndex = calls.findIndex((c) => c.args.join(" ") === "push origin HEAD:main");
     const removeIndex = calls.findIndex(
       (c) => c.args.join(" ") === "worktree remove --force /tmp/micode-merge-issue-67",
     );
     expect(removeIndex).toBeGreaterThan(pushIndex);
   });
 
-  it("safety: never executes `git reset --hard` against the main worktree", async () => {
+  it("safety: never executes unsafe recovery commands against the main worktree", async () => {
     const queue = new Map<string, RunResult[]>();
     queue.set("pr checks issue/67-x --required --json state,name", [OK("[]")]);
-    queue.set("worktree add /tmp/micode-merge-issue-67 main", [FAIL("path exists")]);
+    queue.set("fetch origin main", [OK()]);
+    queue.set("worktree add --detach /tmp/micode-merge-issue-67 origin/main", [FAIL("path exists")]);
 
     const { runner, calls } = recorder(queue);
     await finishLifecycle(runner, {
@@ -151,8 +152,11 @@ describe("finishViaLocalMerge with temp worktree", () => {
       waitForChecks: false,
       baseBranch: "main",
     });
-    expect(calls.some((c) => c.args.join(" ").startsWith("reset --hard"))).toBe(false);
-    expect(calls.some((c) => c.args.join(" ").includes("--force-with-lease"))).toBe(false);
-    expect(calls.some((c) => c.args.join(" ").startsWith("push --force"))).toBe(false);
+    const commands = commandStrings(calls);
+    expect(commands.some((command) => command.startsWith("reset --hard"))).toBe(false);
+    expect(commands.some((command) => command.includes("--force-with-lease"))).toBe(false);
+    expect(commands.some((command) => command.startsWith("push --force"))).toBe(false);
+    expect(commands.some((command) => command.includes("--no-verify"))).toBe(false);
+    expect(commands.some((command) => command.startsWith("checkout "))).toBe(false);
   });
 });

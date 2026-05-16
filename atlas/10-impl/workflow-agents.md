@@ -12,6 +12,8 @@ sources:
   - code:src/agents/implementer-backend.ts
   - code:src/agents/implementer-general.ts
   - code:src/agents/reviewer.ts
+  - code:src/agents/decision-minimal-response.ts
+  - code:src/agents/question-first-decision.ts
 ---
 # 工作流 Agent
 
@@ -24,6 +26,8 @@ sources:
 - `planner` 产出带 `Domain` 的微任务计划，并在跨前后端时生成冻结契约。
 - `executor` 按 `Domain` 派发 implementers，并组织 implementer → reviewer 循环。
 - `reviewer` 只读校验任务结果、测试状态与契约一致性。
+- primary/coordinator prompts 注入 `DECISION_MINIMAL_RESPONSE_PROTOCOL` 与 `QUESTION_FIRST_DECISION_PROTOCOL`：用户可见回复只保留 decision、acceptance、next-step；真实用户决策默认走 built-in `question` tool。
+- conflict resolver 相关 prompt 要求 reviewer mandatory，leaf agents 只向上层返回 compact facts，不能把 raw recovery hint、git logs、reviewer checklist 或 subagent raw reports 直接 dump 给用户。
 
 ## 链接
 

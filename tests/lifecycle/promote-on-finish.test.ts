@@ -21,20 +21,7 @@ const EMPTY_OUTPUT = "";
 const OK_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
 const LEDGER_POINTER = join("thoughts", "ledgers", "CONTINUITY.md");
-const ISSUE_POINTER = "issue/1";
 const PROMOTION_FAILURE = "promotion write failed";
-const ISSUE_REQUEST_SUMMARY = "Improve project memory promotion quality so issue bodies become useful entries.";
-const ISSUE_GOAL_SUMMARIES = [
-  "Parse lifecycle sections deterministically",
-  "Avoid collapsing the body into a single ## Request note",
-] as const;
-const ISSUE_CONSTRAINT_SUMMARIES = ["Keep promotion best-effort and non-blocking"] as const;
-const EXPECTED_ISSUE_NOTE_SUMMARIES = [
-  ISSUE_REQUEST_SUMMARY,
-  ...ISSUE_GOAL_SUMMARIES,
-  ...ISSUE_CONSTRAINT_SUMMARIES,
-] as const;
-const ISSUE_BODY_SEARCH_LIMIT = 20;
 const LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS = 20_000;
 const LEDGER_MARKDOWN = [
   "## Decisions",
@@ -182,7 +169,7 @@ async function startWithLedger(handle: LifecycleHandle, markdown = LEDGER_MARKDO
 
 describe("lifecycle finish project-memory promotion", () => {
   it(
-    "promotes merged lifecycle ledger entries as active lifecycle sources",
+    "does not promote merged lifecycle ledger entries even when legacy flag is true",
     async () => {
       setPromoteOnLifecycleFinish(true);
       const memory = await useMemory();
@@ -197,31 +184,31 @@ describe("lifecycle finish project-memory promotion", () => {
       const record = await handle.load(ISSUE_NUMBER);
 
       expect(outcome.merged).toBe(true);
-      expect(await memory.countEntries(identity.projectId)).toBe(2);
-      expect(hits[0]?.entry.status).toBe("active");
-      expect(sources[0]?.kind).toBe("lifecycle");
-      expect(sources[0]?.pointer).toBe(ISSUE_POINTER);
-      expect(record?.notes).toContain("memory_promoted: 2 entries");
+      expect(await memory.countEntries(identity.projectId)).toBe(0);
+      expect(hits).toHaveLength(0);
+      expect(sources).toHaveLength(0);
+      expect(record?.notes.some((note) => note.startsWith("memory_"))).toBe(false);
     },
     LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS,
   );
 
   it(
-    "promotes lifecycle issue body sections as meaningful notes when no ledger exists",
+    "does not promote lifecycle issue body sections when no ledger exists",
     async () => {
       setPromoteOnLifecycleFinish(true);
       const issueBody = [
         "## Request",
         "",
-        ISSUE_REQUEST_SUMMARY,
+        "Improve project memory promotion quality so issue bodies become useful entries.",
         "",
         "## Goals",
         "",
-        ...ISSUE_GOAL_SUMMARIES.map((summary) => `- ${summary}`),
+        "- Parse lifecycle sections deterministically",
+        "- Avoid collapsing the body into a single ## Request note",
         "",
         "## Constraints",
         "",
-        ...ISSUE_CONSTRAINT_SUMMARIES.map((summary) => `- ${summary}`),
+        "- Keep promotion best-effort and non-blocking",
       ].join("\n");
       const memory = await useMemory();
       const runner = createRunner({ issueBody });
@@ -236,28 +223,11 @@ describe("lifecycle finish project-memory promotion", () => {
 
       const outcome = await handle.finish(ISSUE_NUMBER, { mergeStrategy: "local-merge", waitForChecks: false });
       const identity = await resolveProjectId(cwd);
-      const found = await Promise.all(
-        EXPECTED_ISSUE_NOTE_SUMMARIES.map(async (summary) => {
-          const hits = await memory.searchEntries(identity.projectId, summary, {
-            status: "active",
-            type: "note",
-            limit: ISSUE_BODY_SEARCH_LIMIT,
-          });
-          return hits.find((hit) => hit.entry.summary === summary)?.entry;
-        }),
-      );
-      const entries = found.flatMap((entry) => (entry ? [entry] : []));
-      const titles = entries.map((entry) => entry.title);
-      const summaries = entries.map((entry) => entry.summary);
+      const record = await handle.load(ISSUE_NUMBER);
 
       expect(outcome.merged).toBe(true);
-      expect(await memory.countEntries(identity.projectId)).toBe(EXPECTED_ISSUE_NOTE_SUMMARIES.length);
-      expect(entries).toHaveLength(EXPECTED_ISSUE_NOTE_SUMMARIES.length);
-      expect(entries.every((entry) => entry.type === "note")).toBe(true);
-      expect(titles.every((title) => !title.startsWith("#"))).toBe(true);
-      expect(titles[0]).toBe(ISSUE_REQUEST_SUMMARY);
-      expect(titles).toEqual(EXPECTED_ISSUE_NOTE_SUMMARIES);
-      expect(summaries).toEqual(EXPECTED_ISSUE_NOTE_SUMMARIES);
+      expect(await memory.countEntries(identity.projectId)).toBe(0);
+      expect(record?.notes.some((note) => note.startsWith("memory_"))).toBe(false);
     },
     LIFECYCLE_PROMOTE_TEST_TIMEOUT_MS,
   );
@@ -278,7 +248,7 @@ describe("lifecycle finish project-memory promotion", () => {
     expect(record?.notes.some((note) => note.startsWith("memory_"))).toBe(false);
   });
 
-  it("keeps merged finish outcomes when promotion fails", async () => {
+  it("keeps merged finish outcomes without touching the promotion store", async () => {
     setPromoteOnLifecycleFinish(true);
     setProjectMemoryStoreForTest(createFailingStore());
     const runner = createRunner();
@@ -289,7 +259,8 @@ describe("lifecycle finish project-memory promotion", () => {
     const record = await handle.load(ISSUE_NUMBER);
 
     expect(outcome.merged).toBe(true);
-    expect(record?.notes).toContain(`memory_promotion_failed: ${PROMOTION_FAILURE}`);
+    expect(record?.notes).not.toContain(`memory_promotion_failed: ${PROMOTION_FAILURE}`);
+    expect(record?.notes.some((note) => note.startsWith("memory_"))).toBe(false);
   });
 
   it("does not promote project memory by default on merged finish", async () => {

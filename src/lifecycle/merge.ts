@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { config } from "@/utils/config";
 import type { CleanupFsOps } from "./cleanup-policy";
 import { runCleanup } from "./cleanup-policy";
+import { type ConflictResolverScopeResult, evaluateConflictResolverScope } from "./conflict-scope";
 import { postOnceSummaryComment, upsertPullRequest, writeReviewSummaryToPrBody } from "./pr";
 import { buildHint, type LifecycleRecoveryHint } from "./recovery/hint";
 import {
@@ -75,14 +76,22 @@ const GH_SQUASH_FLAG = "--squash";
 
 const GIT_MERGE = "merge";
 const GIT_NO_FF_FLAG = "--no-ff";
-const GIT_FF_ONLY_FLAG = "--ff-only";
-const GIT_FETCH = "fetch";
 const GIT_PUSH = "push";
+const GIT_DIFF = "diff";
+const GIT_NAME_ONLY = "--name-only";
+const GIT_UNMERGED_FILTER = "--diff-filter=U";
+const GIT_COMMIT = "commit";
+const GIT_MESSAGE_FLAG = "-m";
+const RESOLVED_CONFLICT_COMMIT_PREFIX = "merge";
 const GIT_ORIGIN = "origin";
 const GIT_BRANCH = "branch";
 const GIT_DELETE_FLAG = "-d";
+const GIT_STATUS = "status";
+const GIT_PORCELAIN_FLAG = "--porcelain";
 const TMP_DIR = tmpdir();
 const ISSUE_BRANCH_RE = /^issue\/(\d+)-/;
+const GIT_STATUS_PATH_OFFSET = 3;
+const STATUS_RENAME_SEPARATOR = " -> ";
 
 const CLEANUP_BLOCK_PREFIX = "cleanup_blocked";
 const CLEANUP_FAIL_PREFIX = "cleanup_failed";
@@ -105,6 +114,18 @@ interface InjectOutcome {
   readonly prUrl: string;
   readonly note: string | null;
 }
+
+interface ExistingTempMergeWorktree {
+  readonly kind: "existing";
+  readonly path: string;
+  readonly modifiedFiles: readonly string[];
+  readonly unmergedFiles: readonly string[];
+}
+
+type PreparedTempMergeWorktree =
+  | { readonly kind: "created"; readonly path: string }
+  | ExistingTempMergeWorktree
+  | { readonly kind: "failed"; readonly outcome: FinishOutcome };
 
 const completed = (run: RunResult): boolean => run.exitCode === OK_EXIT_CODE;
 
@@ -351,6 +372,57 @@ const runGitStep = async (
   return formatCommandFailure(label, run);
 };
 
+const parsePathLines = (stdout: string): readonly string[] =>
+  stdout
+    .split("\n")
+    .map((line) => line.replace(/\r$/, "").trim())
+    .filter((line) => line.length > 0);
+
+const parseStatusPaths = (stdout: string): readonly string[] =>
+  stdout
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""))
+    .filter((line) => line.length >= GIT_STATUS_PATH_OFFSET)
+    .map((line) => line.slice(GIT_STATUS_PATH_OFFSET).trim())
+    .map((path) => path.split(STATUS_RENAME_SEPARATOR).at(-1)?.trim() ?? path)
+    .filter((path) => path.length > 0);
+
+const readStatusPaths = async (runner: LifecycleRunner, worktree: string): Promise<readonly string[] | null> => {
+  const status = await runner.git([GIT_STATUS, GIT_PORCELAIN_FLAG], { cwd: worktree });
+  if (!completed(status)) return null;
+  return parseStatusPaths(status.stdout);
+};
+
+const readUnmergedFiles = async (runner: LifecycleRunner, worktree: string): Promise<readonly string[]> => {
+  const diff = await runner.git([GIT_DIFF, GIT_NAME_ONLY, GIT_UNMERGED_FILTER], { cwd: worktree });
+  if (completed(diff)) return parsePathLines(diff.stdout);
+  return readMergeConflicts(runner, worktree);
+};
+
+const isLikelyResolverExpansion = (path: string): boolean =>
+  /(^|\/)tests?\/|\.test\.|(^|\/)(types|schemas|contracts)\.|(^|\/)types\/|(^|\/)(index|runner|tool)\./.test(path);
+
+const inferConflictScopeFiles = (modifiedFiles: readonly string[]): readonly string[] => {
+  if (modifiedFiles.length <= 1) return modifiedFiles;
+  const primary =
+    modifiedFiles.find((file) => file.startsWith("src/lifecycle/")) ??
+    modifiedFiles.find((file) => !isLikelyResolverExpansion(file)) ??
+    modifiedFiles[0];
+  return primary === undefined ? [] : [primary];
+};
+
+const commitResolvedConflictMerge = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  worktree: string,
+): Promise<string | null> =>
+  runGitStep(
+    runner,
+    [GIT_COMMIT, GIT_MESSAGE_FLAG, `${RESOLVED_CONFLICT_COMMIT_PREFIX} ${input.branch}: resolve lifecycle conflicts`],
+    worktree,
+    "git_commit_resolved_conflicts",
+  );
+
 const createUnknownTempOutcome = (
   issueNumber: number,
   input: FinishLifecycleInput,
@@ -389,14 +461,50 @@ const createTempWorktreeFailureOutcome = (
     }),
   );
 
+const createScopeBlockedOutcome = (
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  worktree: string,
+  modifiedFiles: readonly string[],
+  scope: Extract<ConflictResolverScopeResult, { readonly status: "blocked" }>,
+): FinishOutcome =>
+  withHint(
+    createPreCleanupOutcome(
+      false,
+      null,
+      `merge_conflict: resolver scope blocked (${scope.reason}): ${scope.blockedFiles.join(CHECK_SEPARATOR)}`,
+    ),
+    buildHint({
+      failureKind: "merge_conflict",
+      recommendedNextAction: "ask_user",
+      summary: `resolved temp merge has blocked resolver scope (${scope.reason}); review modified files before committing`,
+      issueNumber,
+      branch: input.branch,
+      worktree,
+      conflictFiles: modifiedFiles,
+      safeToRetry: false,
+    }),
+  );
+
+const inspectExistingTempMergeWorktree = async (
+  runner: LifecycleRunner,
+  tmpPath: string,
+): Promise<ExistingTempMergeWorktree | null> => {
+  const modifiedFiles = await readStatusPaths(runner, tmpPath);
+  if (modifiedFiles === null) return null;
+
+  const unmergedFiles = await readUnmergedFiles(runner, tmpPath);
+  if (modifiedFiles.length === 0 && unmergedFiles.length === 0) return null;
+
+  return { kind: "existing", path: tmpPath, modifiedFiles, unmergedFiles };
+};
+
 const prepareTempMergeWorktree = async (
   runner: LifecycleRunner,
   input: FinishLifecycleInput,
   issueNumber: number,
   baseBranch: string,
-): Promise<
-  { readonly kind: "created"; readonly path: string } | { readonly kind: "failed"; readonly outcome: FinishOutcome }
-> => {
+): Promise<PreparedTempMergeWorktree> => {
   const tmpPath = computeTempWorktreePath({ repoRoot: input.cwd, issueNumber, tmpDir: TMP_DIR });
   const create = await createTempMergeWorktree(runner, {
     repoRoot: input.cwd,
@@ -405,23 +513,43 @@ const prepareTempMergeWorktree = async (
     tmpDir: TMP_DIR,
   });
   if (create.kind === "failed") {
+    const existing = await inspectExistingTempMergeWorktree(runner, tmpPath);
+    if (existing !== null) return existing;
     return { kind: "failed", outcome: createTempWorktreeFailureOutcome(input, issueNumber, create.reason, tmpPath) };
   }
 
-  const fetchNote = await runGitStep(runner, [GIT_FETCH, GIT_ORIGIN, baseBranch], create.path, "git_fetch");
-  if (fetchNote)
-    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, fetchNote, create.path) };
-
-  const ffOnlyNote = await runGitStep(
-    runner,
-    [GIT_MERGE, GIT_FF_ONLY_FLAG, `${GIT_ORIGIN}/${baseBranch}`],
-    create.path,
-    "git_ff_only",
-  );
-  if (ffOnlyNote)
-    return { kind: "failed", outcome: createUnknownTempOutcome(issueNumber, input, ffOnlyNote, create.path) };
-
   return { kind: "created", path: create.path };
+};
+
+const continueExistingTempMergeWorktree = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  prepared: ExistingTempMergeWorktree,
+): Promise<FinishOutcome | null> => {
+  if (prepared.unmergedFiles.length > 0) {
+    return createMergeConflictOutcome(input, issueNumber, prepared.path, prepared.unmergedFiles);
+  }
+
+  const conflictFiles = inferConflictScopeFiles(prepared.modifiedFiles);
+  const scope = evaluateConflictResolverScope({ conflictFiles, modifiedFiles: prepared.modifiedFiles });
+  if (scope.status === "blocked") {
+    return createScopeBlockedOutcome(input, issueNumber, prepared.path, prepared.modifiedFiles, scope);
+  }
+
+  const commitNote = await commitResolvedConflictMerge(runner, input, prepared.path);
+  if (commitNote) return createUnknownTempOutcome(issueNumber, input, commitNote, prepared.path);
+  return null;
+};
+
+const resolvePreparedTempMerge = async (
+  runner: LifecycleRunner,
+  input: FinishLifecycleInput,
+  issueNumber: number,
+  prepared: Exclude<PreparedTempMergeWorktree, { readonly kind: "failed" }>,
+): Promise<FinishOutcome | null> => {
+  if (prepared.kind === "existing") return continueExistingTempMergeWorktree(runner, input, issueNumber, prepared);
+  return mergeIssueBranchIntoBase(runner, input, issueNumber, prepared.path);
 };
 
 const createMergeConflictOutcome = (
@@ -467,7 +595,7 @@ const pushMergedBaseBranch = async (
   baseBranch: string,
   worktree: string,
 ): Promise<FinishOutcome | null> => {
-  const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, baseBranch], { cwd: worktree });
+  const pushed = await runner.git([GIT_PUSH, GIT_ORIGIN, `HEAD:${baseBranch}`], { cwd: worktree });
   if (completed(pushed)) return null;
 
   const pushNote = formatCommandFailure("git_push", pushed);
@@ -506,7 +634,7 @@ const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecyc
   const prepared = await prepareTempMergeWorktree(runner, input, issueNumber, baseBranch);
   if (prepared.kind === "failed") return prepared.outcome;
 
-  const mergeFailure = await mergeIssueBranchIntoBase(runner, input, issueNumber, prepared.path);
+  const mergeFailure = await resolvePreparedTempMerge(runner, input, issueNumber, prepared);
   if (mergeFailure) return mergeFailure;
 
   const pushFailure = await pushMergedBaseBranch(runner, input, issueNumber, baseBranch, prepared.path);

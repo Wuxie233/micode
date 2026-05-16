@@ -17,7 +17,16 @@ export const EntryTypeValues = [
 ] as const;
 
 export const SensitivityValues = ["public", "internal", "secret"] as const;
-export const StatusValues = ["active", "superseded", "tentative", "hypothesis", "deprecated"] as const;
+export const StatusValues = [
+  "active",
+  "superseded",
+  "tentative",
+  "hypothesis",
+  "deprecated",
+  "archived",
+  "tombstoned",
+  "stale",
+] as const;
 export const RelationKindValues = ["parent", "related", "supersedes"] as const;
 export const SourceKindValues = ["design", "plan", "ledger", "lifecycle", "mindmodel", "manual", "skill"] as const;
 

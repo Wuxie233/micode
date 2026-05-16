@@ -83,6 +83,7 @@ import {
   createProjectMemoryForgetTool,
   createProjectMemoryHealthTool,
   createProjectMemoryLookupTool,
+  createProjectMemoryMaintainTool,
   createProjectMemoryPromoteTool,
   createPTYManager,
   createPtyTools,
@@ -806,6 +807,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
     ...createProjectMemoryPromoteTool(ctx),
     ...createProjectMemoryHealthTool(ctx),
     ...createProjectMemoryForgetTool(ctx),
+    ...createProjectMemoryMaintainTool(ctx),
   };
   const skillAutopilotEnabled = userConfig?.features?.skillAutopilot === true;
 

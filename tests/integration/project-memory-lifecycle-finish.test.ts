@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 
-import { ARTIFACT_KINDS, createLifecycleStore, LIFECYCLE_STATES, type LifecycleHandle } from "@/lifecycle";
+import {
+  ARTIFACT_KINDS,
+  createLifecycleStore,
+  LIFECYCLE_STATES,
+  type ProjectMemoryMaintenanceScheduler,
+} from "@/lifecycle";
 import type { LifecycleRunner, RunResult } from "@/lifecycle/runner";
-import { createProjectMemoryStore, type ProjectMemoryStore, type SearchHit } from "@/project-memory";
+import { createProjectMemoryStore } from "@/project-memory";
+import type { ScheduleMaintenanceInput } from "@/project-memory/maintenance/scheduler";
 import { resetProjectMemoryRuntimeForTest, setProjectMemoryStoreForTest } from "@/tools/project-memory/runtime";
 import { config } from "@/utils/config";
 import { resolveProjectId } from "@/utils/project-id";
@@ -22,11 +28,9 @@ const SHA = "abc123def456";
 const SUMMARY = "Lifecycle memory finish";
 const LEDGER_POINTER = join("thoughts", "ledgers", "CONTINUITY.md");
 const LEDGER_QUERY = "durable";
-const SOURCE_LIFECYCLE = "lifecycle";
 const STATUS_ACTIVE = "active";
 const COMMIT_SCOPE = "memory";
 const COMMIT_SUMMARY = "record lifecycle memory";
-const PROMOTED_NOTE = "memory_promoted";
 const EMPTY_OUTPUT = "";
 const OK_EXIT_CODE = 0;
 const GH_ISSUE = "issue";
@@ -41,12 +45,6 @@ const GIT_ORIGIN = "origin";
 const GIT_REV_PARSE = "rev-parse";
 const GIT_HEAD = "HEAD";
 const GH_CLOSE_ARGS = [GH_ISSUE, GH_CLOSE, String(ISSUE_NUMBER)] as const;
-const LEDGER_MARKDOWN = [
-  "## Decisions",
-  "- Finish promotion creates durable lifecycle memory",
-  "## Lessons",
-  "- Lifecycle finish keeps normal cleanup successful",
-].join("\n");
 
 interface RunnerCall {
   readonly bin: "git" | "gh";
@@ -107,10 +105,16 @@ let root: string;
 let cwd: string;
 let baseDir: string;
 let worktreesRoot: string;
-let originalPromoteFlag = false;
+let originalMaintenanceEnabled: boolean;
+let originalTerminalTriggerEnabled: boolean;
 
-function setPromoteOnLifecycleFinish(enabled: boolean): void {
-  (config.projectMemory as { promoteOnLifecycleFinish: boolean }).promoteOnLifecycleFinish = enabled;
+function setMaintenanceFlags(enabled: boolean, terminalEnabled = enabled): void {
+  (
+    config.projectMemory as { maintenanceEnabled: boolean; maintenanceTerminalTriggerEnabled: boolean }
+  ).maintenanceEnabled = enabled;
+  (
+    config.projectMemory as { maintenanceEnabled: boolean; maintenanceTerminalTriggerEnabled: boolean }
+  ).maintenanceTerminalTriggerEnabled = terminalEnabled;
 }
 
 beforeEach(async () => {
@@ -122,60 +126,42 @@ beforeEach(async () => {
   mkdirSync(worktreesRoot, { recursive: true });
   await $`git init -q`.cwd(cwd);
   await $`git remote add origin ${ORIGIN}`.cwd(cwd);
-  originalPromoteFlag = config.projectMemory.promoteOnLifecycleFinish;
-  setPromoteOnLifecycleFinish(true);
+  originalMaintenanceEnabled = config.projectMemory.maintenanceEnabled;
+  originalTerminalTriggerEnabled = config.projectMemory.maintenanceTerminalTriggerEnabled;
+  setMaintenanceFlags(true, true);
 });
 
 afterEach(async () => {
-  setPromoteOnLifecycleFinish(originalPromoteFlag);
+  setMaintenanceFlags(originalMaintenanceEnabled, originalTerminalTriggerEnabled);
   await resetProjectMemoryRuntimeForTest();
   rmSync(root, { recursive: true, force: true });
 });
 
-async function useMemory(): Promise<ProjectMemoryStore> {
+async function useMemory() {
   const memory = createProjectMemoryStore({ dbDir: join(root, "memory") });
   await memory.initialize();
   setProjectMemoryStoreForTest(memory);
   return memory;
 }
 
-function writeLedger(): string {
-  const directory = join(cwd, "thoughts", "ledgers");
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(join(cwd, LEDGER_POINTER), LEDGER_MARKDOWN);
-  return LEDGER_POINTER;
-}
-
-async function startWithLedger(handle: LifecycleHandle): Promise<void> {
-  const started = await handle.start({
-    summary: SUMMARY,
-    goals: ["Persist lifecycle memory"],
-    constraints: ["Use temp memory store"],
-    ownerLogin: OWNER,
-    repo: REPO,
-  });
-  await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.LEDGER, writeLedger());
-}
-
-async function hasActiveLifecycleSource(
-  memory: ProjectMemoryStore,
-  projectId: string,
-  hits: readonly SearchHit[],
-): Promise<boolean> {
-  for (const hit of hits) {
-    if (hit.entry.status !== STATUS_ACTIVE) continue;
-    const sources = await memory.loadSourcesForEntry(projectId, hit.entry.id);
-    if (sources.some((source) => source.kind === SOURCE_LIFECYCLE)) return true;
-  }
-  return false;
-}
-
 describe("project memory lifecycle finish E2E", () => {
-  it("keeps lifecycle finish successful while promoting active lifecycle memory", async () => {
+  it("keeps lifecycle finish successful without auto-promoting lifecycle memory", async () => {
     const memory = await useMemory();
     const runner = createRunner();
-    const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir });
-    await startWithLedger(handle);
+    let schedulerInput: ScheduleMaintenanceInput | null = null;
+    const scheduler: ProjectMemoryMaintenanceScheduler = async (input) => {
+      schedulerInput = input;
+      return { scheduled: true, note: null };
+    };
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd, baseDir, maintenanceScheduler: scheduler });
+    const started = await handle.start({
+      summary: SUMMARY,
+      goals: ["Finish lifecycle without direct memory promotion"],
+      constraints: ["Use temp memory store"],
+      ownerLogin: OWNER,
+      repo: REPO,
+    });
+    await handle.recordArtifact(started.issueNumber, ARTIFACT_KINDS.LEDGER, LEDGER_POINTER);
 
     const committed = await handle.commit(ISSUE_NUMBER, {
       scope: COMMIT_SCOPE,
@@ -201,10 +187,24 @@ describe("project memory lifecycle finish E2E", () => {
     });
     expect(record?.state).toBe(LIFECYCLE_STATES.CLEANED);
     expect(record?.artifacts[ARTIFACT_KINDS.COMMIT]).toEqual([SHA]);
-    expect(record?.notes.some((note) => note.startsWith(PROMOTED_NOTE))).toBe(true);
+    expect(record?.notes).toEqual([]);
     expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, GH_CLOSE_ARGS))).toBe(true);
     expect(runner.edits.at(-1)).toContain("state: cleaned");
-    expect(hits.length).toBeGreaterThan(0);
-    expect(await hasActiveLifecycleSource(memory, identity.projectId, hits)).toBe(true);
+    expect(hits).toEqual([]);
+    expect(await memory.countEntries(identity.projectId)).toBe(0);
+    expect(await memory.countSources(identity.projectId)).toBe(0);
+    expect(schedulerInput).toEqual({
+      reason: "terminal",
+      triggeredBy: "lifecycle.finish",
+      directory: cwd,
+      sourcePointers: [
+        "issue/1",
+        expect.stringContaining("issue/1-"),
+        LEDGER_POINTER,
+        SHA,
+        expect.stringContaining("/worktrees/issue-1-lifecycle-memory-finish"),
+        "outcome/merged",
+      ],
+    });
   });
 });

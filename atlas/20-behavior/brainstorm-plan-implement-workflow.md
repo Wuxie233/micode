@@ -18,6 +18,7 @@ micode 面向 OpenCode 开发者提供一条固定主路径：先由 `brainstorm
 ## 机制
 
 - 设计阶段强调 research before opinion，并把设计写入 `thoughts/shared/designs/`；brainstormer 在 finalizing 阶段必须主动产出 design.md 末尾的轻量 BDD 防漂移层 `## Behavior` 段（quick-mode / 运维 / executor-direct / 用户显式跳过时可省略整段）。
+- Primary agent 对敏感面采用默认保守规则：改变 `agent routing`、`tool permissions`、`lifecycle rules`、`slash command contract`、`runtime boot registration`、`deploy/restart policy` 或跨模块行为的请求仍走 lifecycle + planner + executor；只有当用户明确要求 direct、目标与验证明确、side-effect boundary 清楚，且只是 typo / wording / local config / missing import 等不改变行为 contract 的机械小修时，才可作为 explicit bounded exception 派 `executor-direct`。runtime 源码小修未执行 `bun run deploy:runtime` 时，终态报告必须说明 live OpenCode runtime 尚未部署生效。
 - Brainstormer 在 gathered codebase context 后、进入 exploring 前执行 `sub-decision-identification` checkpoint：对照启发式扩展清单（数字参数、max / default / 阈值、策略、命名 contract、数据模型、外部依赖、breaking 与否和 `Decision Autonomy` ASK 类）枚举 architectural sub-decision，并按 `Interactive Question Tools` 三档 channel selection 表（question-tool-first：极轻量 plain chat / 默认走内置 `question` 工具 / 重型走 octto）批量询问用户；默认情况下结构化的 6-8 题 sub-decision 走内置 `question` 工具，**不**跳浏览器。
 - Brainstormer 写 design.md 时，可在 frontmatter 之后、`## Problem Statement` 之前产出 `## 承诺清单 / Commitments`，记录用户原话、已确认 sub-decision 与可核对承诺；终态汇报的「你可以怎么验收」在存在该段时必须包含「需求核对表」，用 `✓ / ⚠️ / ✗` 对照承诺逐条 surface。
 - 计划阶段把设计拆成 2-5 分钟粒度任务，包含路径、依赖、测试策略和 `Domain`；planner 在 plan.md 开头生成 `## 行为承诺映射`，用自然语言把每条 Behavior 映射到 task 或说明不需要 task 的理由，不新增 task 字段。

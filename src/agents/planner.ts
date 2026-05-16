@@ -172,6 +172,7 @@ ${PROJECT_MEMORY_PROTOCOL}
 <phase name="understand-design">
   <action>Read the design document using Read tool (NOT a subagent)</action>
   <action>读完 design 后，如果 design 含 \`## Behavior\` 段，立即 \`atlas_lookup\` 查相关 atlas/20-behavior 节点（用 Behavior 段提到的概念做 query），作为拆 task 时避免遗漏现有项目约束的参考。无 \`## Behavior\` 段时按常规进入 minimal-research 阶段。</action>
+  <action>同时读取 design.md 的 \`## 承诺清单 / Commitments\`（如存在），并把其中的用户可见 response-UX / 验收承诺纳入 task 拆分；不要只规划 lifecycle code 或内部工具代码。</action>
   <action>Call mindmodel_lookup for project patterns (architecture, components, error handling, testing)</action>
   <action>Identify all components, files, and interfaces mentioned</action>
   <action>Note any constraints or decisions made by brainstormer</action>
@@ -441,12 +442,20 @@ This is a judgment call. If the contract has only 1-2 shared types, inline them 
 </frontmatter-rules>
 
 <behavior-mapping-rules priority="critical" description="BDD 防漂移层：plan.md 必须在文件开头含 ## 行为承诺映射 段">
-<rule>当 design.md 含 \`## Behavior\` 段时，plan.md 必须在文件开头（在 Dependency Graph 之前）产出 \`## 行为承诺映射\` 段。</rule>
-<rule>映射用自然语言列表：每条 Behavior → 对应 task；漏覆盖的 Behavior 必须显式说明理由（不阻塞 plan 生成）。</rule>
+<rule>当 design.md 含 \`## Behavior\` 段或 \`## 承诺清单 / Commitments\` 段时，plan.md 必须在文件开头（在 Dependency Graph 之前）产出 \`## 行为承诺映射\` 段。</rule>
+<rule>映射用自然语言列表：每条 Behavior / Commitment → 对应 task；漏覆盖的 Behavior / Commitment 必须显式说明理由（不阻塞 plan 生成）。</rule>
+<rule>response-UX commitments MUST map to concrete tasks that change the relevant agent prompts, report shaping, question flow, or tests. Do not satisfy them only with lifecycle code tasks.</rule>
 <rule>映射不强制结构化字段：不引入 \`Covers:\` task 字段，不引入覆盖矩阵自检；自然语言映射即可，由用户读 plan 时发现遗漏并要求 agent 补 task。</rule>
-<rule>当 design.md 没有 \`## Behavior\` 段时，本段写一句话说明跳过即可（"本任务无 design.md \`## Behavior\` 段，跳过映射"）。</rule>
+<rule>当 design.md 没有 \`## Behavior\` 段且没有 \`## 承诺清单 / Commitments\` 段时，本段写一句话说明跳过即可（"本任务无 design.md \`## Behavior\` / Commitments 段，跳过映射"）。</rule>
 <rule>本段是 plan 文件级新增内容，不动 task 节点字段（File / Test / Depends / Domain / Atlas-impact 保持不变）。</rule>
 </behavior-mapping-rules>
+
+<response-ux-planning-rules priority="high">
+<rule>For response-UX or decision-minimal changes, plan explicit agent prompt / report-format tasks and tests for the user-visible behavior; do not treat lifecycle conflict resolution or recovery implementation alone as sufficient coverage.</rule>
+<rule>Mark tasks as reviewer mandatory when they touch workflow/lifecycle, agent prompts, recovery, safety, security, secrets, question routing, or decision-minimal response behavior. Low-risk prompt-only tasks may still use Test: none, but reviewer coverage remains mandatory.</rule>
+<rule>Plan handoff text intended for users must be decision-minimal: summarize decisions, acceptance criteria, and next steps; do not expose raw recovery hint text, full git logs, reviewer checklists, or subagent raw reports unless the user explicitly asks for those internals.</rule>
+<rule>For real user decision tasks, keep the built-in question tool as the default structured path. Octto is only for heavy review / async / complex UI flows, and plain chat is only for ultra-light endpoints.</rule>
+</response-ux-planning-rules>
 
 <skeleton-template description="Phase 1 Write payload. Per-batch Task content is filled in by Phase 2 Edits.">
 ---
@@ -471,15 +480,24 @@ contract: <path|none>
 
 ## 行为承诺映射
 
-design.md \`## Behavior\` 段列出 N 条行为承诺：
+design.md \`## Behavior\` / \`## 承诺清单 / Commitments\` 段列出 N 条行为承诺：
 
 - 行为 1（<一句话引用 Behavior 段第 1 条>）→ 由 Batch X Task X.Y 实现；由 Batch Z Task Z.W 验证
 - 行为 2（<...>）→ 由 Batch X Task X.Y 实现
 - 行为 K（<...>）→ 不需要 task，因为 <理由：如"是验证手段"/"已被现有机制覆盖"/"quick-mode 不受影响">
+- response-UX / decision-minimal 承诺（<一句话引用 Commitments 或 Behavior>）→ 由 Batch X Task X.Y 修改对应 agent prompts / report shaping；由 Batch Z Task Z.W 验证，不只映射到 lifecycle code
 
 **未对应任何 task 的行为**：<列出或写"无">；如有未对应行为，必须显式给出理由。
 
-> 如果 design.md 没有 \`## Behavior\` 段（quick-mode / 运维 / executor-direct / 用户显式跳过），本段写 "本任务无 design.md \`## Behavior\` 段，跳过映射" 即可。
+> 如果 design.md 没有 \`## Behavior\` / \`## 承诺清单 / Commitments\` 段（quick-mode / 运维 / executor-direct / 用户显式跳过），本段写 "本任务无 design.md \`## Behavior\` / Commitments 段，跳过映射" 即可。
+
+---
+
+## Review Policy
+
+- **Reviewer mandatory:** [high-risk surfaces and tasks]
+- **Reviewer-skip eligible:** [tasks that may be skipped only after executor whitelist verification]
+- **Risk observations:** [swarm/critic/design observations mapped to tasks]
 
 ---
 

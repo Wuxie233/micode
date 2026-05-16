@@ -8,6 +8,7 @@ import { createLifecycleContextTool } from "./context";
 import { createLifecycleCurrentTool } from "./current";
 import { createLifecycleFinishTool } from "./finish";
 import { createLifecycleLogProgressTool } from "./log-progress";
+import { createLifecycleLostUpdateAuditTool } from "./lost-update-audit";
 import { createLifecycleRecordArtifactTool } from "./record-artifact";
 import { createLifecycleRecoveryDecisionTool } from "./recovery-decision";
 import { createLifecycleResumeTool } from "./resume";
@@ -23,6 +24,7 @@ export interface LifecycleTools {
   readonly lifecycle_log_progress: ToolDefinition;
   readonly lifecycle_context: ToolDefinition;
   readonly lifecycle_recovery_decision: ToolDefinition;
+  readonly lifecycle_lost_update_audit: ToolDefinition;
 }
 
 export function createLifecycleTools(
@@ -40,5 +42,6 @@ export function createLifecycleTools(
     lifecycle_log_progress: createLifecycleLogProgressTool(progress),
     lifecycle_context: createLifecycleContextTool(progress),
     lifecycle_recovery_decision: createLifecycleRecoveryDecisionTool(handle),
+    lifecycle_lost_update_audit: createLifecycleLostUpdateAuditTool(),
   };
 }

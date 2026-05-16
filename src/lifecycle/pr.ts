@@ -15,8 +15,11 @@ const COMMENT_FIELDS = "comments";
 
 const PR_VIEW = ["pr", "view"] as const;
 const PR_CREATE = ["pr", "create"] as const;
-const PR_EDIT = ["pr", "edit"] as const;
 const PR_COMMENT = ["pr", "comment"] as const;
+const GH_API = "api";
+const METHOD_FLAG = "--method";
+const PATCH_METHOD = "PATCH";
+const RAW_FIELD_FLAG = "--raw-field";
 const FILL_FLAG = "--fill";
 const BASE_FLAG = "--base";
 const HEAD_FLAG = "--head";
@@ -126,6 +129,14 @@ const commentAlreadyPosted = (stdout: string): boolean => {
   }
 };
 
+const updatePrBody = async (runner: LifecycleRunner, cwd: string, prNumber: number, body: string): Promise<RunResult> =>
+  runner.gh(
+    [GH_API, METHOD_FLAG, PATCH_METHOD, `repos/{owner}/{repo}/pulls/${prNumber}`, RAW_FIELD_FLAG, `body=${body}`],
+    {
+      cwd,
+    },
+  );
+
 export async function upsertPullRequest(runner: LifecycleRunner, input: UpsertInput): Promise<UpsertOutcome> {
   const existing = await ghPrView(runner, input.cwd, input.branch);
   if (existing) return { kind: "reused", ...existing };
@@ -153,7 +164,7 @@ export async function writeReviewSummaryToPrBody(
     ISSUE_BODY_MARKERS.AI_REVIEW_END,
     input.section,
   );
-  const edited = await runner.gh([...PR_EDIT, String(pr.prNumber), BODY_FLAG, nextBody], { cwd: input.cwd });
+  const edited = await updatePrBody(runner, input.cwd, pr.prNumber, nextBody);
   if (!succeeded(edited)) return { kind: "failed", note: formatFailure(PR_BODY_UPDATE_FAILED, edited) };
   return { kind: "updated", prNumber: pr.prNumber };
 }

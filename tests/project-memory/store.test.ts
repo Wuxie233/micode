@@ -250,6 +250,84 @@ describe("ProjectMemoryStore", () => {
     expect(onlyPublic.map((hit) => hit.entry.id)).toEqual(["entry-four"]);
   });
 
+  it("returns zero counts for every known status before entries exist", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    expect(await store.countEntriesByStatus(PROJECT_ONE)).toEqual(statusCounts());
+  });
+
+  it("keeps archived entries searchable after a soft status update", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await store.upsertEntity(entity());
+    await store.upsertEntry(entry({ title: "Alpha title", summary: "bravo archived context" }));
+
+    await store.updateEntryStatus(PROJECT_ONE, ENTRY_ID, "archived", 123);
+
+    expect(await store.loadEntry(PROJECT_ONE, ENTRY_ID)).toEqual(
+      entry({ title: "Alpha title", summary: "bravo archived context", status: "archived", updatedAt: 123 }),
+    );
+    expect(
+      (await store.searchEntries(PROJECT_ONE, "alpha", { status: "archived", limit: 5 })).map((hit) => hit.entry.id),
+    ).toEqual([ENTRY_ID]);
+    expect(await store.searchEntries(PROJECT_ONE, "alpha", { status: "active", limit: 5 })).toEqual([]);
+  });
+
+  it("lists entries by project with status filtering and explicit limits", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await store.upsertEntity(entity());
+    await store.upsertEntry(entry({ id: ENTRY_ID, status: "active", updatedAt: 20 }));
+    await store.upsertEntry(entry({ id: OTHER_ENTRY_ID, status: "archived", updatedAt: 30 }));
+    await store.upsertEntry(entry({ id: THIRD_ENTRY_ID, status: "archived", updatedAt: 30 }));
+    await store.upsertEntry(
+      entry({ projectId: PROJECT_TWO, id: "project-two-entry", status: "archived", updatedAt: 40 }),
+    );
+
+    expect((await store.listEntries(PROJECT_ONE)).map((row) => row.id)).toEqual([
+      THIRD_ENTRY_ID,
+      OTHER_ENTRY_ID,
+      ENTRY_ID,
+    ]);
+    expect((await store.listEntries(PROJECT_ONE, { status: "archived", limit: 1 })).map((row) => row.id)).toEqual([
+      THIRD_ENTRY_ID,
+    ]);
+  });
+
+  it("lists entities and sources for a project with explicit limits", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await store.upsertEntity(entity({ id: ENTITY_ID, updatedAt: 20 }));
+    await store.upsertEntity(entity({ id: OTHER_ENTITY_ID, name: "billing", updatedAt: 30 }));
+    await store.upsertEntity(entity({ projectId: PROJECT_TWO, id: "project-two-entity", updatedAt: 40 }));
+    await store.upsertEntry(entry());
+    await store.upsertSource(source({ id: SOURCE_ID, createdAt: 20 }));
+    await store.upsertSource(source({ id: OTHER_SOURCE_ID, createdAt: 30 }));
+    await store.upsertSource(source({ projectId: PROJECT_TWO, id: "project-two-source", createdAt: 40 }));
+
+    expect((await store.listEntities(PROJECT_ONE, { limit: 1 })).map((row) => row.id)).toEqual([OTHER_ENTITY_ID]);
+    expect((await store.listSources(PROJECT_ONE, { limit: 1 })).map((row) => row.id)).toEqual([OTHER_SOURCE_ID]);
+  });
+
+  it("updates entry summaries through the searchable FTS snapshot", async () => {
+    const store = createStore();
+    await store.initialize();
+
+    await store.upsertEntity(entity());
+    await store.upsertEntry(entry({ summary: "alpha original" }));
+
+    await store.updateEntrySummary(PROJECT_ONE, ENTRY_ID, "gamma updated", 456);
+
+    expect(await store.searchEntries(PROJECT_ONE, "alpha", { limit: 5 })).toEqual([]);
+    expect((await store.searchEntries(PROJECT_ONE, "gamma", { limit: 5 })).map((hit) => hit.entry)).toEqual([
+      entry({ summary: "gamma updated", updatedAt: 456 }),
+    ]);
+  });
+
   it("counts missing sources and forgets matching source rows", async () => {
     const store = createStore();
     await store.initialize();

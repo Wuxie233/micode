@@ -38,9 +38,18 @@ export async function createTempMergeWorktree(
     issueNumber: input.issueNumber,
     tmpDir: input.tmpDir,
   });
-  const result = await runner.git(["worktree", "add", path, input.baseBranch], { cwd: input.repoRoot });
+  const fetchResult = await runner.git(["fetch", "origin", input.baseBranch], { cwd: input.repoRoot });
+  if (fetchResult.exitCode !== OK) return { kind: "failed", path, reason: resultReason(fetchResult) };
+
+  const result = await runner.git(["worktree", "add", "--detach", path, `origin/${input.baseBranch}`], {
+    cwd: input.repoRoot,
+  });
   if (result.exitCode === OK) return { kind: "created", path };
-  return { kind: "failed", path, reason: `${result.stderr}\n${result.stdout}`.trim() };
+  return { kind: "failed", path, reason: resultReason(result) };
+}
+
+function resultReason(result: RunResult): string {
+  return `${result.stderr}\n${result.stdout}`.trim();
 }
 
 export async function readMergeConflicts(runner: LifecycleRunner, worktreePath: string): Promise<readonly string[]> {

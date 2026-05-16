@@ -16,6 +16,8 @@ sources:
 - `lifecycle_commit` 在 checkpoint 提交并推送到 `origin`。
 - `lifecycle_finish` 根据环境选择 PR-first 或 local merge，并清理状态。
 - recovery hint 指导 primary agent 在有界轮次内处理 stale record、merge conflict、cleanup blocker 和 push failure。
+- 当 local merge 遇到 `merge_conflict` 时，primary/coordinator 不再默认立刻人工阻塞；它们先在 temp worktree 启动受限 conflict resolver flow，成功后用相同 finish 参数继续合并与清理。
+- 若 resolver 遇到 semantic ambiguity、scope expansion 或 validation exhaustion，用户会收到 built-in `question` tool 的 compact options；plain chat 仅作为 ultra-light/fallback。
 - 生命周期是 source provider，不自动写 Atlas 或 Project Memory。
 
 ## 链接

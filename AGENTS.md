@@ -66,6 +66,12 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 - **不替代 intent-classification**：新请求第一回合"意图: ..."声明仍然写在响应顶端，是 UX 路由信号，不是终态汇报。
 - **不改变 executor / reviewer / planner 等 subagent 的内部报告格式**：subagent 仍然返回完整结构化输出，primary agent 在综合给用户时按本节压缩。
 
+### Decision-minimal recovery response contract
+
+- 面向用户的恢复 / 阻塞回复必须保持 decision-minimal：只包含需要用户判断的 decision、可验收的 acceptance、以及下一步 next-step；不要把内部排障过程当成终态汇报。
+- `raw recovery hint`、`subagent raw reports`、reviewer checklist、git logs 默认留在内部协调链路；只有用户明确要求展开时才贴出相关原文。
+- 遇到 semantic ambiguity 时，默认用 built-in question tool（内置 `question` tool）给出 compact options；plain chat 只用于 ultra-light 单句确认或工具不可用时的 fallback。
+
 ### Drift guard
 
 `commander.ts` 与 `brainstormer.ts` 的 `<effect-first-reporting>` block 互为单源，必须 byte-identical（由 `tests/agents/effect-first-reporting.test.ts` 强制）。`octto.ts` 因 workflow 不同使用语义对齐但措辞贴合 octto 角色的版本，drift-guard 不强制 byte-identity，但仍然检查五个 section 标题和 blocked / failed-stop 例外存在。本节是 markdown 镜像，命名和段落顺序需保持一致。"本次知识上下文" subsection 由 `src/agents/knowledge-context-section.ts` 提供，必须在 commander / brainstormer / octto 中保持 byte-identical。
@@ -269,6 +275,17 @@ Lifecycle 工具（`lifecycle_finish` / `lifecycle_commit` / `lifecycle_current`
 | `push_failed` | `retry_finish` | 网络/竞争，允许有界重试 |
 | `unknown` | `ask_user` | 工具未能归类 |
 
+### Conflict resolver bounded flow
+
+- `merge_conflict` + `resolve_conflicts` 表示 primary / coordinator 在 temp worktree 启动 bounded conflict resolver flow，而不是看到冲突后立即 halt。
+- conflict resolver scope 限定为 conflict files，加上少量直接相关 tests / types / call sites；任何 broad expansion 或 unrelated expansion 都必须 block 并返回给 coordinator 判断。
+- 若冲突语义存在 semantic ambiguity，决策拥有者用 built-in question tool（内置 `question` tool）给出 compact options；plain chat 只用于 ultra-light 确认或 question tool fallback。
+
+### Lost-update audit
+
+- `lost-update audit` 永远是 read-only 诊断：只读取 git / GitHub 证据，不 rewrite history，不 push，不 merge，不编辑 issue / PR。
+- 它必须区分 force-push evidence、squash history confusion、semantic overwrite、push rejection race、manual remote mutation；发现 manual remote mutation 时也只能报告证据与下一步选择，不能改写历史。
+
 ### Hard safety rules (no exceptions during recovery)
 
 - 不 force push，禁止 `git push --force` / `--force-with-lease`（no force push）。
@@ -276,6 +293,7 @@ Lifecycle 工具（`lifecycle_finish` / `lifecycle_commit` / `lifecycle_current`
 - 不对主 worktree 执行 `git reset --hard`。
 - 不自动删除用户文件；只能 quarantine 明确归属 lifecycle 的 untracked artifacts 到 `thoughts/lifecycle/backups/issue-<N>/...`。
 - 不自动重启 OpenCode（no auto-restart）。
+- 不删除用户文件（no deleting user files），不使用 `--force-with-lease`，不使用 reset hard，不使用 no-verify。
 - bounded recovery 最多 3 轮（primary）/ 2 轮（planner、executor）；超过即 halt。
 
 ### Drift guard
