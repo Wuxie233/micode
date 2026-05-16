@@ -1,6 +1,7 @@
 import type { PluginInput, ToolDefinition } from "@opencode-ai/plugin";
 import { type ToolContext, tool } from "@opencode-ai/plugin/tool";
 
+import { applyContextCapsulePrefix } from "@/agents/context-capsule/injector";
 import { dumpRawArgs, isDebugDumpEnabled } from "@/tools/diagnostics";
 import { sequenceSchema } from "@/tools/sequence";
 import { type AgentTask, normalizeSpawnAgentArgs } from "@/tools/spawn-agent-args";
@@ -166,11 +167,20 @@ If that condition is not met, abort this tool call and use Task instead.
 This is a transitional escape hatch and will be removed once Task supports a model parameter.`;
 
 const TASK_MODEL_DESCRIPTION = "Optional provider/model override for this spawned agent";
+const contextCapsuleSchema = tool.schema.object({
+  path: tool.schema.string(),
+  sha: tool.schema.string(),
+  token: tool.schema.string(),
+  content: tool.schema.string(),
+});
 const taskObjectSchema = tool.schema.object({
   agent: tool.schema.string().describe("Agent name to spawn"),
   prompt: tool.schema.string().describe("Full prompt/instructions for the agent"),
   description: tool.schema.string().describe("Short human-readable description"),
   model: tool.schema.string().optional().describe(TASK_MODEL_DESCRIPTION),
+  contextCapsule: contextCapsuleSchema
+    .optional()
+    .describe("Optional immutable context capsule prefix for the spawned user prompt"),
 });
 
 type AgentsSchema = ReturnType<typeof sequenceSchema>;
@@ -258,7 +268,10 @@ function buildPromptBody(
   task: AgentTask,
   model: ModelReference | null,
 ): { parts: { type: "text"; text: string }[]; agent: string; model?: ModelReference } {
-  const base = { parts: [{ type: "text" as const, text: task.prompt }], agent: task.agent };
+  const base = {
+    parts: [{ type: "text" as const, text: applyContextCapsulePrefix(task.prompt, task.contextCapsule) }],
+    agent: task.agent,
+  };
   return model ? { ...base, model } : base;
 }
 

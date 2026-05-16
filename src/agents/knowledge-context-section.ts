@@ -20,10 +20,11 @@ export const KNOWLEDGE_CONTEXT_SECTION = `<section name="本次知识上下文">
 - **关系：** 一句话描述与本任务相关的 module / contract / decision 关系（可选；只在跨模块或跨决策时出现）。
 - **维护：** 列出本任务在 Atlas / Project Memory / Mindmodel 上的写入动作（最多 3-5 项；包括 atlas 节点更新、project_memory_promote 类型 + entity、delta 文件路径）。如果没有写入，写 "无"。
 - **传给子 agent：** 如果本任务通过 executor 派给子 agent，列出 context-brief 摘要长度 / 包含的 atlas 节点数 / Project Memory 条目数（用于审计父子协同）。
-本段结尾固定附两行状态：
+本段结尾固定附三行状态：
 \`Atlas status: <value>\`
 \`Project Memory status: <value>\`
-取值参见各自协议块的 status enum。
+\`Capsule status: <none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>>\`
+Atlas / Project Memory 取值参见各自协议块的 status enum；Capsule status 表示本任务是否读取、使用或丢弃 working-context capsule。
 </knowledge-context-section>
 </section>
 

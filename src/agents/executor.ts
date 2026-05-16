@@ -4,6 +4,7 @@ import { ATLAS_MENTAL_MODEL_PROTOCOL } from "@/agents/atlas-mental-model";
 import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "@/agents/decision-minimal-response";
 import { PROJECT_MEMORY_PROTOCOL } from "@/agents/project-memory-protocol";
 import { QUESTION_FIRST_DECISION_PROTOCOL } from "@/agents/question-first-decision";
+import { CONTEXT_CAPSULE_PROTOCOL } from "./context-capsule-protocol";
 
 export const executorAgent: AgentConfig = {
   description: "Executes plan with batch-first parallelism - groups independent tasks, spawns all in parallel",
@@ -173,10 +174,17 @@ When spawning, append to the implementer or reviewer prompt:
 </prompt-snippet>
 </contract-propagation>
 
+${CONTEXT_CAPSULE_PROTOCOL}
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
 ${PROJECT_MEMORY_PROTOCOL}
 ${DECISION_MINIMAL_RESPONSE_PROTOCOL}
 ${QUESTION_FIRST_DECISION_PROTOCOL}
+
+<executor-context-capsule-note priority="critical">
+<rule>For every implementer/reviewer fan-out, keep capsule in front, context-brief after: inject the immutable <context-capsule> block at the user prompt top, then <spawn-meta>, then the per-task <context-brief>, then task-specific instructions.</rule>
+<rule><context-brief> remains mandatory for every implementer/reviewer spawn; the capsule is a shared cache-friendly prefix and never replaces the per-task confirmed-facts delta.</rule>
+<rule>capsule never replaces review policy: reviewer coverage, mandatory triggers, low-risk whitelist checks, and review skipped: low-risk whitelist reporting still follow <review-policy-execution>.</rule>
+</executor-context-capsule-note>
 
 <atlas-propagation priority="high">
 <rule>leaf agents (implementer-*, reviewer) do NOT have access to the atlas_lookup tool. They receive atlas excerpts only when you (executor) decide a task touches module boundaries, user-visible behaviour, decisions, or risks.</rule>

@@ -27,4 +27,11 @@ describe("KNOWLEDGE_CONTEXT_SECTION", () => {
     expect(KNOWLEDGE_CONTEXT_SECTION).toContain("<knowledge-context-section");
     expect(KNOWLEDGE_CONTEXT_SECTION).toContain("</knowledge-context-section>");
   });
+
+  it("declares the working-context capsule status line and enum", () => {
+    expect(KNOWLEDGE_CONTEXT_SECTION).toContain("Capsule status:");
+    expect(KNOWLEDGE_CONTEXT_SECTION).toContain(
+      "<none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>>",
+    );
+  });
 });

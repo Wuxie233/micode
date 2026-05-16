@@ -1,6 +1,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { CONTEXT_CAPSULE_PROTOCOL } from "./context-capsule-protocol";
 import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "./decision-minimal-response";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
 import { LENS_SWARM_PROTOCOL } from "./lens-swarm-protocol";
@@ -312,6 +313,14 @@ ${DECISION_MINIMAL_RESPONSE_PROTOCOL}
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
 
 ${PROJECT_MEMORY_PROTOCOL}
+
+${CONTEXT_CAPSULE_PROTOCOL}
+
+<commander-context-capsule-note priority="critical">
+<rule>For exploration fan-out and same-lifecycle sequential work, preserve capsule semantics: treat the capsule as a cache-friendly user-prompt prefix only, not durable memory and not a replacement for the delegated agent's context-brief.</rule>
+<rule>A→B capsule reuse is only allowed when the lifecycle issue, branch, worktree, HEAD SHA, and source hashes pass freshness checks; otherwise discard or skip the capsule and continue with normal confirmed context.</rule>
+<rule>User-facing terminal reports must stay decision-minimal while still surfacing the freshness result as Capsule status: <none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>> in 本次知识上下文.</rule>
+</commander-context-capsule-note>
 
 <atlas-commander-rule priority="low">
 <rule>For quick-op routes (lookup / status / single-line patch / version bump), the default Atlas status is no-change. Do not consult atlas_lookup unless the request actually touches modules, behaviour, decisions, or risks.</rule>

@@ -46,7 +46,7 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 1. **预期表现**：用户现在会看到什么行为。1 句话或 2-3 个 bullet，说"是什么"不说"改了哪个文件"。
 2. **你可以怎么验收**：用户用 2-4 个步骤自己验证（打开某页 / 跑某命令 / 检查某输出），不是 agent 内部 verify 脚本。
 3. **已知限制 / 下一步**：没完成的部分、需要用户手动处理的事、已知边界。没有就写"无"。
-4. **本次知识上下文**：本任务读取/确认/维护了哪些 Atlas 节点、Project Memory 条目、Mindmodel 主题，传给子 agent 的 context-brief 摘要长度。段尾两行固定状态：`Atlas status: <value>` 和 `Project Memory status: <value>`。
+4. **本次知识上下文**：本任务读取/确认/维护了哪些 Atlas 节点、Project Memory 条目、Mindmodel 主题，传给子 agent 的 context-brief 摘要长度。段尾三行固定状态：`Atlas status: <value>`、`Project Memory status: <value>` 和 `Capsule status: <value>`；Capsule status 取值为 `none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>`。
 5. **实现记录**：commit / 测试 / issue / batch / 子任务等过程产物压缩为 1-2 行。
 
 ### Blocked / failed-stop 例外

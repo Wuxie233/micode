@@ -80,6 +80,12 @@ describe("executor injects context-brief protocol", () => {
     expect(executorPrompt).toMatch(/MUST (?:contain|include).*context-brief|context-brief.*MUST/i);
   });
 
+  it("describes Context Capsule as complementary to review policy and context-brief", () => {
+    expect(executorPrompt).toContain("Context Capsule");
+    expect(executorPrompt).toContain("capsule never replaces review policy");
+    expect(executorPrompt).toContain("<context-brief");
+  });
+
   it("shows available-subagents spawn examples with context brief immediately after spawn-meta", () => {
     const availableSubagents = executorPrompt.match(/<available-subagents>[\s\S]*?<\/available-subagents>/)?.[0] ?? "";
     expect(availableSubagents).not.toBe("");
