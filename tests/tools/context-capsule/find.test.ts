@@ -106,6 +106,27 @@ describe("find_reusable_context_capsule", () => {
     expect(after).toEqual(before);
   });
 
+  it("returns a freshness verdict for a matching conversation capsule", async () => {
+    const currentHead = (await Bun.$`git rev-parse HEAD`.cwd(directory).quiet()).stdout.toString().trim();
+    await writeCapsule(
+      directory,
+      "conversation.md",
+      capsuleFrontmatter(directory, {
+        head_sha: currentHead,
+        source_files: ["README.md"],
+        source_hashes: { "README.md": hashText("old readme") },
+      }),
+    );
+    const tools = createFindReusableContextCapsuleTool({ directory } as PluginInput);
+    const output = await executeTool(tools.find_reusable_context_capsule, { topic_hint: "freshness" });
+
+    expect(output).toContain("## Reusable context capsule");
+    expect(output).toContain("freshness: partially-stale");
+    expect(output).toContain("freshness_reasons: source_hashes_changed");
+    expect(output).toContain("stale_source_files: README.md");
+    expect(output).toContain("topic_hint: freshness");
+  });
+
   it("keeps a lifecycle match reusable when the current conversation anchor differs", async () => {
     const currentHead = (await Bun.$`git rev-parse HEAD`.cwd(directory).quiet()).stdout.toString().trim();
     await writeCapsule(

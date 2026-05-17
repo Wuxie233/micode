@@ -101,7 +101,8 @@ describe("octto context capsule drift guard", () => {
 
   it("keeps v2 hook, trigger coverage, and auto-resume reuse explicit", () => {
     expect(prompt).toContain('<context-capsule-v2-hook scope="octto">');
-    expect(prompt).toContain("findReusableContextCapsule");
+    expect(prompt).toContain("find_reusable_context_capsule");
+    expect(prompt).toContain("build_context_capsule");
     expect(prompt).toContain("executor-direct");
     expect(prompt).toContain("auto-resume");
     expect(prompt).toContain("reuse the most recent capsule");
