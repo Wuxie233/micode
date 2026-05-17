@@ -24,9 +24,7 @@ describe("README cross-reference for bounded upstream continuation retry", () =>
 
     expect(text).toContain("AGENTS.md");
     expect(text).toContain("atlas/20-behavior/bounded-upstream-continuation-retry.md");
-    expect(text).toContain(
-      "thoughts/shared/designs/2026-05-16-bounded-upstream-error-continuation-retry-design.md",
-    );
+    expect(text).toContain("thoughts/shared/designs/2026-05-16-bounded-upstream-error-continuation-retry-design.md");
     expect(text).toMatch(/spawn_agent.*45/i);
     expect(text).toMatch(/lifecycle/);
     expect(text).toMatch(/resume_subagent/);

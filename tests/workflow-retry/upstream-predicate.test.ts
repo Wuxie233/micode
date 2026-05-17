@@ -7,11 +7,7 @@ describe("isRecoverableUpstreamError", () => {
   });
 
   test("returns true for stream INTERNAL_ERROR reset", () => {
-    expect(
-      isRecoverableUpstreamError(
-        "stream error: stream ID 1261; INTERNAL_ERROR; received from peer",
-      ),
-    ).toBe(true);
+    expect(isRecoverableUpstreamError("stream error: stream ID 1261; INTERNAL_ERROR; received from peer")).toBe(true);
   });
 
   test("returns true for upstream_error with provider blew up", () => {

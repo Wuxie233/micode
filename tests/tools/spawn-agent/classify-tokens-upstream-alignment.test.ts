@@ -29,7 +29,9 @@ describe("spawn-agent classify token upstream retry alignment", () => {
 
     expect(WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts).toBe(20);
     expect(WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs).toBe(30_000);
-    expect(WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts * WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs).toBe(600_000);
+    expect(WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts * WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs).toBe(
+      600_000,
+    );
 
     expect(config.subagent.transientRetries).not.toBe(WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts);
     expect(config.subagent.transientRetryBudgetMs).not.toBe(

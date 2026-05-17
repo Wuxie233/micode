@@ -48,9 +48,7 @@ function createTimedScheduler(): TimedScheduler {
       now += ms;
 
       while (true) {
-        const next = pending
-          .filter((entry) => entry.active && entry.runAt <= now)
-          .sort((a, b) => a.runAt - b.runAt)[0];
+        const next = pending.filter((entry) => entry.active && entry.runAt <= now).sort((a, b) => a.runAt - b.runAt)[0];
         if (!next) return;
 
         next.active = false;

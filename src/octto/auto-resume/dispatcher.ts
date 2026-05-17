@@ -1,7 +1,7 @@
 import { extractErrorMessage } from "@/utils/errors";
 import { log } from "@/utils/logger";
 import type { ModelReference } from "@/utils/model-selection";
-import { createAttemptRegistry, type AttemptRegistry } from "@/workflow-retry/attempt-registry";
+import { type AttemptRegistry, createAttemptRegistry } from "@/workflow-retry/attempt-registry";
 import { WORKFLOW_CONTINUATION_RETRY_POLICY } from "@/workflow-retry/policy";
 import { isRecoverableUpstreamError } from "@/workflow-retry/upstream-predicate";
 import type { OwnerModelLookup } from "./model-lookup";
@@ -215,7 +215,15 @@ export function createAutoResumeDispatcher(input: AutoResumeDispatcherInput): Au
 
       batch.handle?.cancel();
       appendQuestionId(batch, event.questionId);
-      batch.handle = scheduleFlush(input, pending, scheduler, upstreamAttempts, quietWindowMs, ownerSessionId, pendingKey);
+      batch.handle = scheduleFlush(
+        input,
+        pending,
+        scheduler,
+        upstreamAttempts,
+        quietWindowMs,
+        ownerSessionId,
+        pendingKey,
+      );
       pending.set(pendingKey, batch);
     },
   };
