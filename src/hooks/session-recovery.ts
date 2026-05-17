@@ -1,8 +1,8 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { createAttemptRegistry, type AttemptRegistry } from "../workflow-retry/attempt-registry";
-import { WORKFLOW_CONTINUATION_RETRY_POLICY } from "../workflow-retry/policy";
-import { isRecoverableUpstreamError } from "../workflow-retry/upstream-predicate";
+import { type AttemptRegistry, createAttemptRegistry } from "@/workflow-retry/attempt-registry";
+import { WORKFLOW_CONTINUATION_RETRY_POLICY } from "@/workflow-retry/policy";
+import { isRecoverableUpstreamError } from "@/workflow-retry/upstream-predicate";
 
 // Error patterns we can recover from
 const RECOVERABLE_ERRORS = {
@@ -29,6 +29,7 @@ const RECOVERY_TOAST_DURATION_MS = 3000;
 const TOAST_FAILURE_DURATION_MS = 5000;
 const ERROR_KEY_EXPIRY_MS = 10000;
 const UPSTREAM_ATTEMPT_EXPIRY_MS = 60000;
+const MS_PER_SECOND = 1000;
 const UPSTREAM_ERROR_CLASS = "upstream_error";
 const UPSTREAM_RECOVERY_PROMPT =
   "Upstream/provider transient failure detected; resuming this session. " +
@@ -191,11 +192,17 @@ function buildUpstreamAttemptKey(sessionID: string): string {
   return WORKFLOW_CONTINUATION_RETRY_POLICY.attemptKey(sessionID, UPSTREAM_ERROR_CLASS);
 }
 
-function addPendingUpstreamTimer(
-  state: RecoveryState,
-  sessionID: string,
-  timer: ReturnType<typeof setTimeout>,
-): void {
+function showUpstreamRetryExhaustedToast(rc: RecoveryContext): void {
+  showToast(
+    rc,
+    "Upstream retry exhausted",
+    `Reached ${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts} attempts; manual intervention needed.`,
+    "error",
+    TOAST_FAILURE_DURATION_MS,
+  );
+}
+
+function addPendingUpstreamTimer(state: RecoveryState, sessionID: string, timer: ReturnType<typeof setTimeout>): void {
   const timers = state.upstreamTimers.get(sessionID) ?? new Set<ReturnType<typeof setTimeout>>();
   timers.add(timer);
   state.upstreamTimers.set(sessionID, timers);
@@ -228,13 +235,7 @@ async function handleUpstreamRecoverable(deps: UpstreamRecoveryDeps): Promise<vo
   const scheduledAttempts = deps.rc.state.upstreamScheduledAttempts.get(key) ?? 0;
   if (scheduledAttempts >= WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts) {
     deps.rc.state.upstreamRegistry.endProcessing(key);
-    showToast(
-      deps.rc,
-      "Upstream retry exhausted",
-      `Reached ${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts} attempts; manual intervention needed.`,
-      "error",
-      TOAST_FAILURE_DURATION_MS,
-    );
+    showUpstreamRetryExhaustedToast(deps.rc);
     return;
   }
   const attempt = scheduledAttempts + 1;
@@ -243,7 +244,7 @@ async function handleUpstreamRecoverable(deps: UpstreamRecoveryDeps): Promise<vo
   showToast(
     deps.rc,
     "Upstream auto-retry",
-    `Will resume session in ${Math.round(WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs / 1000)}s (attempt ${attempt}/${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts}).`,
+    `Will resume session in ${Math.round(WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs / MS_PER_SECOND)}s (attempt ${attempt}/${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts}).`,
     "warning",
     RECOVERY_TOAST_DURATION_MS,
   );

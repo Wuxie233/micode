@@ -36,7 +36,7 @@ export function createLifecycleTools(
     lifecycle_start_request: createLifecycleStartRequestTool(handle),
     lifecycle_record_artifact: createLifecycleRecordArtifactTool(handle),
     lifecycle_commit: createLifecycleCommitTool(handle),
-    lifecycle_finish: createLifecycleFinishTool(handle),
+    lifecycle_finish: createLifecycleFinishTool(handle, resolver),
     lifecycle_current: createLifecycleCurrentTool(resolver),
     lifecycle_resume: createLifecycleResumeTool(resolver),
     lifecycle_log_progress: createLifecycleLogProgressTool(progress),

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,11 +41,19 @@ interface FakeRunner extends LifecycleRunner {
   readonly edits: readonly string[];
 }
 
+interface ProgressLog {
+  readonly issueNumber: number;
+  readonly kind: "status";
+  readonly summary: string;
+  readonly marker?: string;
+}
+
 interface RunnerOptions {
   readonly originHead?: string;
   readonly prCreate?: RunResult;
   readonly prView?: RunResult;
   readonly prComments?: RunResult;
+  readonly registeredWorktrees?: readonly string[];
 }
 
 const createRun = (stdout = EMPTY_OUTPUT, exitCode = OK_EXIT_CODE, stderr = EMPTY_OUTPUT): RunResult => ({
@@ -77,18 +85,33 @@ const createRunner = (repoView = createRepoView(), options: RunnerOptions = {}):
   return {
     calls,
     edits,
-    git: async (args, options) => {
-      calls.push({ bin: "git", args, cwd: options?.cwd });
+    git: async (args, runOptions) => {
+      calls.push({ bin: "git", args, cwd: runOptions?.cwd });
       if (isArgs(args, ["remote", "get-url", "origin"])) return createRun(`${ORIGIN}\n`);
       if (isArgs(args, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])) return createRun(originHead);
       if (isArgs(args, ["rev-parse", "HEAD"])) return createRun(`${SHA}\n`);
+      if (isArgs(args, ["rev-parse", "--abbrev-ref", "HEAD"])) {
+        const issueMatch = /issue-(\d+)-(.+)$/.exec(runOptions?.cwd ?? EMPTY_OUTPUT);
+        if (issueMatch) return createRun(`issue/${issueMatch[1]}-${issueMatch[2]}\n`);
+        return createRun("main\n");
+      }
+      if (isArgs(args, ["rev-parse", "--show-toplevel"])) return createRun(`${runOptions?.cwd ?? worktreesRoot}\n`);
+      if (isArgs(args, ["worktree", "list", "--porcelain"])) {
+        return createRun((options.registeredWorktrees ?? []).map((worktree) => `worktree ${worktree}`).join("\n"));
+      }
       return createRun();
     },
     gh: async (args, runOptions) => {
       calls.push({ bin: "gh", args, cwd: runOptions?.cwd });
       if (isArgs(args, ["repo", "view"])) return createRun(repoView);
       if (isArgs(args, ["issue", "create"])) return createRun(`${ISSUE_URL}\n`);
-      if (isArgs(args, ["issue", "view"])) return createRun(JSON.stringify({ body: "## Context\n\nExisting body" }));
+      if (isArgs(args, ["issue", "view"])) {
+        const issueNumber = args[2];
+        const matchingEdit = calls.findLast(
+          (call) => call.bin === "gh" && isArgs(call.args, ["issue", "edit", issueNumber ?? EMPTY_OUTPUT]),
+        );
+        return createRun(JSON.stringify({ body: matchingEdit?.args.at(-1) ?? "## Context\n\nExisting body" }));
+      }
       if (isArgs(args, ["issue", "edit"])) edits.push(args.at(-1) ?? EMPTY_OUTPUT);
       if (isArgs(args, ["pr", "view"]) && args.includes("number,url,body") && options.prView) return options.prView;
       if (isArgs(args, ["pr", "view"]) && args.includes("comments") && options.prComments) return options.prComments;
@@ -211,6 +234,191 @@ describe("lifecycle handle", () => {
     expect(outcome.merged).toBe(false);
     expect(outcome.note).toContain("resolved-base=develop(origin-head)");
     expect(outcome.note).toContain("gh_pr_create: cannot create pr");
+  });
+
+  it("auto-repairs lifecycle finish from main using one validated issue-body worktree artifact", async () => {
+    const issueWorktree = join(worktreesRoot, "issue-1-lifecycle-workflow");
+    mkdirSync(issueWorktree, { recursive: true });
+    const runner = createRunner(createRepoView(), { registeredWorktrees: [worktreesRoot, issueWorktree] });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    const corrupted = {
+      ...started,
+      branch: "main",
+      worktree: worktreesRoot,
+      artifacts: {
+        ...started.artifacts,
+        [ARTIFACT_KINDS.WORKTREE]: [issueWorktree],
+      },
+    };
+    await Bun.write(join(baseDir, `${started.issueNumber}.json`), JSON.stringify(corrupted, null, 2));
+
+    const editAfterCorruption = runner.calls.findLast(
+      (call) => call.bin === "gh" && isArgs(call.args, ["issue", "edit"]),
+    );
+    expect(editAfterCorruption?.args.at(-1)).toContain(issueWorktree);
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+
+    expect(outcome.merged).toBe(true);
+    expect(
+      runner.calls.some(
+        (call) => call.bin === "git" && isArgs(call.args, ["merge", "--no-ff", "issue/1-lifecycle-workflow"]),
+      ),
+    ).toBe(true);
+    expect(runner.calls.some((call) => call.bin === "git" && isArgs(call.args, ["merge", "--no-ff", "main"]))).toBe(
+      false,
+    );
+    expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, ["issue", "close", "1"]))).toBe(true);
+  });
+
+  it("threads explicit finish issue numbers through corrupted stored record identity", async () => {
+    const explicitIssueNumber = 98;
+    const ambiguousIssueNumber = 99;
+    const issueWorktree = join(worktreesRoot, "issue-98-lifecycle-workflow");
+    mkdirSync(issueWorktree, { recursive: true });
+    const progress: ProgressLog[] = [];
+    const runner = createRunner(createRepoView(), { registeredWorktrees: [worktreesRoot, issueWorktree] });
+    const handle = createLifecycleStore({
+      runner,
+      worktreesRoot,
+      cwd: worktreesRoot,
+      baseDir,
+      progress: { log: async (input) => progress.push(input) },
+    });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+
+    await Bun.write(
+      join(baseDir, `${explicitIssueNumber}.json`),
+      JSON.stringify(
+        {
+          ...started,
+          branch: "main",
+          worktree: worktreesRoot,
+          artifacts: {
+            ...started.artifacts,
+            [ARTIFACT_KINDS.WORKTREE]: [issueWorktree],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await Bun.write(
+      join(baseDir, `${ambiguousIssueNumber}.json`),
+      JSON.stringify(
+        {
+          ...started,
+          branch: "main",
+          worktree: worktreesRoot,
+          artifacts: {
+            ...started.artifacts,
+            [ARTIFACT_KINDS.WORKTREE]: [join(worktreesRoot, "missing-issue-99-lifecycle-workflow")],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const issueEditCallCountBeforeFinish = runner.calls.filter(
+      (call) => call.bin === "gh" && isArgs(call.args, ["issue", "edit"]),
+    ).length;
+
+    const repaired = await handle.finish(explicitIssueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+    const persistedExplicit = await handle.load(explicitIssueNumber);
+    const finishIssueEditCalls = runner.calls
+      .filter((call) => call.bin === "gh" && isArgs(call.args, ["issue", "edit"]))
+      .slice(issueEditCallCountBeforeFinish);
+    const ambiguous = await handle.finish(ambiguousIssueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+
+    expect(repaired.merged).toBe(true);
+    expect(persistedExplicit?.issueNumber).toBe(explicitIssueNumber);
+    expect(persistedExplicit?.issueUrl).toBe("https://github.com/Wuxie233/micode/issues/98");
+    expect(finishIssueEditCalls.some((call) => isArgs(call.args, ["issue", "edit", "1"]))).toBe(false);
+    expect(finishIssueEditCalls.some((call) => isArgs(call.args, ["issue", "edit", "98"]))).toBe(true);
+    expect(
+      runner.calls.some(
+        (call) => call.bin === "git" && isArgs(call.args, ["merge", "--no-ff", "issue/98-lifecycle-workflow"]),
+      ),
+    ).toBe(true);
+    expect(
+      runner.calls.some(
+        (call) =>
+          call.bin === "git" &&
+          isArgs(call.args, ["worktree", "add", "--detach"]) &&
+          call.args[3]?.includes("merge-issue-98"),
+      ),
+    ).toBe(true);
+    expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, ["issue", "close", "98"]))).toBe(true);
+    expect(
+      progress.some((entry) => entry.issueNumber === explicitIssueNumber && entry.summary.startsWith("Finished:")),
+    ).toBe(true);
+
+    expect(ambiguous.merged).toBe(false);
+    expect(ambiguous.note).toContain("ambiguous_lifecycle");
+    expect(ambiguous.recoveryHint?.failureKind).toBe("ambiguous_lifecycle");
+    expect(ambiguous.recoveryHint?.issueNumber).toBe(ambiguousIssueNumber);
+  });
+
+  it("blocks lifecycle finish from main when no validated issue-body artifact exists", async () => {
+    const runner = createRunner();
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    const corrupted = {
+      ...started,
+      branch: "main",
+      worktree: worktreesRoot,
+      artifacts: {
+        ...started.artifacts,
+        [ARTIFACT_KINDS.WORKTREE]: [join(worktreesRoot, "missing-issue-1-lifecycle-workflow")],
+      },
+    };
+    await Bun.write(join(baseDir, `${started.issueNumber}.json`), JSON.stringify(corrupted, null, 2));
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("ambiguous_lifecycle");
+    expect(outcome.recoveryHint?.failureKind).toBe("ambiguous_lifecycle");
+    expect(outcome.recoveryHint?.recommendedNextAction).toBe("ask_user");
+    expect(outcome.recoveryHint?.issueNumber).toBe(started.issueNumber);
+    expect(outcome.recoveryHint?.safeToRetry).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "git" && isArgs(call.args, ["merge", "--no-ff"]))).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, ["pr", "create"]))).toBe(false);
+  });
+
+  it("blocks lifecycle finish from main when multiple validated worktree artifacts exist", async () => {
+    const firstWorktree = join(worktreesRoot, "issue-1-lifecycle-workflow");
+    const secondWorktree = join(worktreesRoot, "issue-1-lifecycle-workflow-two");
+    mkdirSync(firstWorktree, { recursive: true });
+    mkdirSync(secondWorktree, { recursive: true });
+    const runner = createRunner(createRepoView(), {
+      registeredWorktrees: [worktreesRoot, firstWorktree, secondWorktree],
+    });
+    const handle = createLifecycleStore({ runner, worktreesRoot, cwd: worktreesRoot, baseDir });
+    const started = await handle.start({ summary: SUMMARY, goals: [], constraints: [] });
+    const corrupted = {
+      ...started,
+      branch: "main",
+      worktree: worktreesRoot,
+      artifacts: {
+        ...started.artifacts,
+        [ARTIFACT_KINDS.WORKTREE]: [firstWorktree, secondWorktree],
+      },
+    };
+    await Bun.write(join(baseDir, `${started.issueNumber}.json`), JSON.stringify(corrupted, null, 2));
+
+    const outcome = await handle.finish(started.issueNumber, { mergeStrategy: "local-merge", waitForChecks: false });
+
+    expect(outcome.merged).toBe(false);
+    expect(outcome.note).toContain("ambiguous_lifecycle");
+    expect(outcome.recoveryHint?.failureKind).toBe("ambiguous_lifecycle");
+    expect(outcome.recoveryHint?.recommendedNextAction).toBe("ask_user");
+    expect(outcome.recoveryHint?.issueNumber).toBe(started.issueNumber);
+    expect(outcome.recoveryHint?.safeToRetry).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "git" && isArgs(call.args, ["merge", "--no-ff"]))).toBe(false);
+    expect(runner.calls.some((call) => call.bin === "gh" && isArgs(call.args, ["pr", "create"]))).toBe(false);
   });
 
   it("short-circuits lifecycle finish when executor review tasks are blocked", async () => {

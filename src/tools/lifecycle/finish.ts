@@ -4,10 +4,14 @@ import { tool } from "@opencode-ai/plugin/tool";
 import type { FinishInput, FinishOutcome, LifecycleHandle } from "@/lifecycle";
 import { buildHint, type LifecycleRecoveryHint } from "@/lifecycle/recovery/hint";
 import { formatRecoveryHint } from "@/lifecycle/recovery/hint-format";
+import type { ResolverResult } from "@/lifecycle/resolver";
 import { config } from "@/utils/config";
 import { extractErrorMessage } from "@/utils/errors";
 
 export type LifecycleFinishHandle = Pick<LifecycleHandle, "finish">;
+export interface FinishInferenceHandle {
+  readonly current: () => Promise<ResolverResult>;
+}
 
 const MERGE_STRATEGIES = ["auto", "pr", "local-merge"] as const;
 export type LifecycleToolMergeStrategy = (typeof MERGE_STRATEGIES)[number];
@@ -29,6 +33,8 @@ const TABLE_SEPARATOR = "| --- | --- | --- |";
 const MISSING_VALUE = "-";
 const LINE_BREAK = "\n";
 const DEFAULT_WAIT_FOR_CHECKS = true;
+const INFERENCE_UNAVAILABLE_SUMMARY =
+  "issue_number was omitted and no active lifecycle could be inferred. Pass issue_number explicitly or run lifecycle_current first.";
 
 const formatPrUrl = (prUrl: string | null): string => {
   if (prUrl === null) return MISSING_VALUE;
@@ -100,15 +106,47 @@ const formatOutcome = (issueNumber: number, outcome: FinishOutcome): string => {
   return formatReport(SUCCESS_HEADER, table, outcome.note);
 };
 
+const formatInvalidIssueNumberHint = (hint: LifecycleRecoveryHint): string => {
+  return `${BLOCKED_HEADER}${LINE_BREAK}${LINE_BREAK}${formatRecoveryHint(hint)}`;
+};
+
 const createFinishInput = (mergeStrategy: LifecycleToolMergeStrategy, waitForChecks: boolean): FinishInput => {
   return { mergeStrategy, waitForChecks } as FinishInput;
 };
 
-export function createLifecycleFinishTool(handle: LifecycleFinishHandle): ToolDefinition {
+export async function inferFinishIssueNumber(
+  inference: FinishInferenceHandle | undefined,
+): Promise<number | LifecycleRecoveryHint> {
+  if (!inference) {
+    return buildHint({
+      failureKind: "invalid_issue_number",
+      recommendedNextAction: "ask_user",
+      summary: INFERENCE_UNAVAILABLE_SUMMARY,
+    });
+  }
+
+  const result = await inference.current();
+  if (result.kind === "resolved") return result.record.issueNumber;
+
+  return buildHint({
+    failureKind: "invalid_issue_number",
+    recommendedNextAction: "ask_user",
+    summary:
+      result.kind === "ambiguous"
+        ? "issue_number was omitted and lifecycle inference is ambiguous. Pass issue_number explicitly."
+        : INFERENCE_UNAVAILABLE_SUMMARY,
+    candidates: result.kind === "ambiguous" ? result.candidates : [],
+  });
+}
+
+export function createLifecycleFinishTool(
+  handle: LifecycleFinishHandle,
+  inference?: FinishInferenceHandle,
+): ToolDefinition {
   return tool({
     description: DESCRIPTION,
     args: {
-      issue_number: tool.schema.number().describe("GitHub issue number for the lifecycle record"),
+      issue_number: tool.schema.number().optional().describe("GitHub issue number for the lifecycle record"),
       merge_strategy: tool.schema.enum(MERGE_STRATEGIES).optional().describe("Merge mode"),
       wait_for_checks: tool.schema.boolean().optional().describe("Wait for required PR checks before merging"),
     },
@@ -116,15 +154,18 @@ export function createLifecycleFinishTool(handle: LifecycleFinishHandle): ToolDe
       try {
         const mergeStrategy = args.merge_strategy ?? config.lifecycle.mergeStrategy;
         const waitForChecks = args.wait_for_checks ?? DEFAULT_WAIT_FOR_CHECKS;
-        const outcome = await handle.finish(args.issue_number, createFinishInput(mergeStrategy, waitForChecks));
-        return formatOutcome(args.issue_number, outcome);
+        const issueNumber = args.issue_number ?? (await inferFinishIssueNumber(inference));
+        if (typeof issueNumber !== "number") return formatInvalidIssueNumberHint(issueNumber);
+
+        const outcome = await handle.finish(issueNumber, createFinishInput(mergeStrategy, waitForChecks));
+        return formatOutcome(issueNumber, outcome);
       } catch (error) {
         const summary = extractErrorMessage(error);
         const hint = buildHint({
           failureKind: "unknown",
           recommendedNextAction: "ask_user",
           summary,
-          issueNumber: args.issue_number,
+          issueNumber: args.issue_number ?? null,
         });
         return `${FAILURE_HEADER}${LINE_BREAK}${LINE_BREAK}${summary}${LINE_BREAK}${LINE_BREAK}${formatRecoveryHint(hint)}`;
       }

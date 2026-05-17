@@ -15,9 +15,7 @@
  * a separate design.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-magic-numbers -- bounded retry policy literals
 export const DEFAULT_MAX_ATTEMPTS = 20;
-// eslint-disable-next-line @typescript-eslint/no-magic-numbers -- bounded retry policy literals
 export const DEFAULT_INTERVAL_MS = 30_000;
 
 export interface WorkflowContinuationRetryPolicy {
