@@ -36,6 +36,14 @@ function renderStringRecord(values: Readonly<Record<string, string>>): string {
   return `\n${entries.map(([key, value]) => `  ${quoteYaml(key)}: ${quoteYaml(value)}`).join("\n")}`;
 }
 
+function renderYamlField(key: string, renderedValue: string): string {
+  return `${key}:${renderedValue.startsWith("\n") ? renderedValue : ` ${renderedValue}`}`;
+}
+
+function renderNullableString(value: string | null | undefined): string {
+  return value == null ? "null" : quoteYaml(value);
+}
+
 export function renderCapsuleDocument(frontmatter: ContextCapsuleFrontmatter, body: string): string {
   const normalized: ContextCapsuleFrontmatter = {
     ...frontmatter,
@@ -43,6 +51,10 @@ export function renderCapsuleDocument(frontmatter: ContextCapsuleFrontmatter, bo
     source_hashes: Object.fromEntries(
       Object.entries(frontmatter.source_hashes).sort(([left], [right]) => left.localeCompare(right)),
     ),
+    conversation_anchor: frontmatter.conversation_anchor ?? null,
+    generated_by: frontmatter.generated_by ?? null,
+    dispatch_kind: frontmatter.dispatch_kind ?? null,
+    parent_capsule: frontmatter.parent_capsule ?? null,
   };
 
   return [
@@ -52,8 +64,12 @@ export function renderCapsuleDocument(frontmatter: ContextCapsuleFrontmatter, bo
     `head_sha: ${quoteYaml(normalized.head_sha)}`,
     `worktree: ${quoteYaml(normalized.worktree)}`,
     `created_at: ${quoteYaml(normalized.created_at)}`,
-    `source_files:${renderStringArray(normalized.source_files)}`,
-    `source_hashes:${renderStringRecord(normalized.source_hashes)}`,
+    renderYamlField("source_files", renderStringArray(normalized.source_files)),
+    renderYamlField("source_hashes", renderStringRecord(normalized.source_hashes)),
+    `conversation_anchor: ${renderNullableString(normalized.conversation_anchor)}`,
+    `generated_by: ${renderNullableString(normalized.generated_by)}`,
+    `dispatch_kind: ${renderNullableString(normalized.dispatch_kind)}`,
+    `parent_capsule: ${renderNullableString(normalized.parent_capsule)}`,
     "---",
     "",
     body.trimEnd(),
@@ -71,6 +87,8 @@ export function createCapsuleToken(frontmatter: ContextCapsuleFrontmatter): stri
       source_hashes: Object.fromEntries(
         Object.entries(frontmatter.source_hashes).sort(([a], [b]) => a.localeCompare(b)),
       ),
+      conversation_anchor: frontmatter.conversation_anchor ?? null,
+      dispatch_kind: frontmatter.dispatch_kind ?? null,
     }),
   ).slice(0, CAPSULE_TOKEN_LENGTH);
 }

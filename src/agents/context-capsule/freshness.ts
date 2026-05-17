@@ -2,6 +2,22 @@ import type { ContextCapsuleFreshnessInput, ContextCapsuleFreshnessResult } from
 
 const HARD_DISCARD_REASONS = ["lifecycle_issue_mismatch", "branch_mismatch", "worktree_mismatch"] as const;
 
+function findDiscardReasons(input: ContextCapsuleFreshnessInput): readonly string[] {
+  const discardReasons: string[] = [];
+
+  if (input.frontmatter.lifecycle_issue !== input.expectedLifecycleIssue) discardReasons.push(HARD_DISCARD_REASONS[0]);
+  if (input.frontmatter.branch !== input.branch) discardReasons.push(HARD_DISCARD_REASONS[1]);
+  if (input.frontmatter.worktree !== input.worktree) discardReasons.push(HARD_DISCARD_REASONS[2]);
+  if (
+    input.expectedConversationAnchor !== undefined &&
+    (input.frontmatter.conversation_anchor ?? null) !== input.expectedConversationAnchor
+  ) {
+    discardReasons.push("conversation_anchor_mismatch");
+  }
+
+  return discardReasons;
+}
+
 function sortedUnique(values: readonly string[]): readonly string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
@@ -21,17 +37,7 @@ function findStaleSourceFiles(input: ContextCapsuleFreshnessInput): readonly str
 }
 
 export function evaluateContextCapsuleFreshness(input: ContextCapsuleFreshnessInput): ContextCapsuleFreshnessResult {
-  const discardReasons: string[] = [];
-
-  if (input.frontmatter.lifecycle_issue !== input.expectedLifecycleIssue) {
-    discardReasons.push(HARD_DISCARD_REASONS[0]);
-  }
-  if (input.frontmatter.branch !== input.branch) {
-    discardReasons.push(HARD_DISCARD_REASONS[1]);
-  }
-  if (input.frontmatter.worktree !== input.worktree) {
-    discardReasons.push(HARD_DISCARD_REASONS[2]);
-  }
+  const discardReasons = findDiscardReasons(input);
 
   if (discardReasons.length > 0) {
     return {

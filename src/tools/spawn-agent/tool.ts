@@ -306,6 +306,11 @@ function buildPromptBody(
   model: ModelReference | null,
 ): { parts: { type: "text"; text: string }[]; agent: string; model?: ModelReference } {
   const base = {
+    // v2 unchanged: spawn-agent runtime is opaque to capsule shape.
+    // Primary agents (commander / brainstormer / octto) own the find / build cycle and pass the
+    // ContextCapsuleRef via task.contextCapsule.
+    // conversation_anchor / dispatch_kind / generated_by / parent_capsule live inside ref
+    // content/frontmatter; tool never inspects them.
     parts: [{ type: "text" as const, text: applyContextCapsulePrefix(task.prompt, task.contextCapsule) }],
     agent: task.agent,
   };

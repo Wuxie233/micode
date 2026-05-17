@@ -18,9 +18,20 @@ The Context Capsule is an immutable, short-lived hot-path artifact that carries 
 - Task-specific deltas stay after the capsule. Existing <context-brief> remains the per-task executor/reviewer contract and must not be replaced by the capsule.
 </injection-contract>
 
+<dispatch-trigger>
+- Capsule lookup and generation are required on v2 dispatch paths: 派遣前查找+复用、派遣后生成.
+- Covered dispatch triggers are parallel-fanout, single-subagent, and executor-direct.
+- Before dispatch, call findReusableContextCapsule to locate a fresh capsule that can be reused for the current trigger.
+- After dispatch, call buildContextCapsule to create an immutable new capsule file for future workers instead of mutating an existing capsule.
+</dispatch-trigger>
+
 <reuse-boundary>
+- Tier-1 reuse key is conversation_anchor.
+- Tier-2 fallback matching key is (conversation_anchor, branch, worktree).
+- The reusable identity anchor is conversation_anchor; fallback matching key is (conversation_anchor, branch, worktree).
 - A→B reuse is allowed only for the same lifecycle issue, same branch, and same worktree.
 - Freshness preflight checks lifecycle issue, branch, HEAD SHA, worktree, and source file hashes before reuse.
+- After an OpenCode restart, degrade safely: if no-conversation-anchor is available, skip reuse and create a fresh capsule after dispatch.
 - Freshness result must be surfaced as Capsule status: <none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>>.
 </reuse-boundary>
 
@@ -46,5 +57,22 @@ The Context Capsule is an immutable, short-lived hot-path artifact that carries 
     expect(CONTEXT_CAPSULE_PROTOCOL).toContain("Project Memory");
     expect(CONTEXT_CAPSULE_PROTOCOL).toContain("Atlas");
     expect(CONTEXT_CAPSULE_PROTOCOL).toContain("context-brief");
+  });
+
+  it("contains v2 dispatch trigger and anchor fallback clauses", () => {
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("<dispatch-trigger>");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("派遣前查找+复用、派遣后生成");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("parallel-fanout");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("single-subagent");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("executor-direct");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("findReusableContextCapsule");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("buildContextCapsule");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("immutable new capsule file");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("Tier-1 reuse key");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("Tier-2 fallback matching key");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("conversation_anchor");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("(conversation_anchor, branch, worktree)");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("OpenCode restart");
+    expect(CONTEXT_CAPSULE_PROTOCOL).toContain("no-conversation-anchor");
   });
 });

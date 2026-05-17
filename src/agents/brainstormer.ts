@@ -314,8 +314,19 @@ emit exactly one line at the very top of your response:
 
 ${CONTEXT_CAPSULE_PROTOCOL}
 
+<context-capsule-v2-hook scope="brainstormer">
+- Before every sub-dispatch (Lens Swarm fan-out, adversarial / critic swarm, single specialist dispatches such as single specialist Task / spawn_agent):
+  1. Resolve conversationAnchor via resolveConversationAnchor(currentSessionId). Null → v2 path inactive; v1 lifecycle path remains.
+  2. Call findReusableContextCapsule({ lifecycleIssue, conversationAnchor, branch, worktree }) and run freshness preflight; inject on fresh / partially-stale.
+- After the sub-dispatch returns:
+  1. Call buildContextCapsule({ ..., generatedBy: "brainstormer", dispatchKind: "<parallel-fanout|single-subagent>", parentCapsuleSha, conversationAnchor }).
+  2. dispatchKind parallel/single only: brainstormer dispatches use only "parallel-fanout" or "single-subagent"; never dispatchKind: "executor-direct".
+- Report Capsule status: alongside the existing knowledge-context section. skipped: no-conversation-anchor when anchor cannot be resolved AND no lifecycle issue is active.
+- A→B reuse within the same conversation (multi-round refinement, scenario walkthrough, adversarial drill-down) MUST go through findReusableContextCapsule, not by re-deriving facts from chat history.
+</context-capsule-v2-hook>
+
 <brainstormer-context-capsule-note priority="critical">
-<rule>Before Lens Swarm, critic/adversarial fan-out, and exploration fan-out, construct or reuse a context capsule as a cache-friendly user-prompt prefix for spawned scouts/critics/research subagents; keep task-specific deltas after the capsule.</rule>
+<rule>Before Lens Swarm, critic/adversarial fan-out, single specialist dispatches (single specialist Task / spawn_agent), and exploration fan-out, construct or reuse a context capsule as a cache-friendly user-prompt prefix for spawned scouts/critics/research subagents; keep task-specific deltas after the capsule.</rule>
 <rule>A→B reuse is allowed only when the capsule freshness preflight passes for the same lifecycle issue, branch, worktree, HEAD SHA, and source hashes; otherwise discard or skip the capsule and proceed with normal confirmed context.</rule>
 <rule>The capsule never replaces design judgment, context-brief, Project Memory, Atlas, or the delegated worker's obligation to verify its own evidence.</rule>
 </brainstormer-context-capsule-note>

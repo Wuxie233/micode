@@ -15,6 +15,10 @@ function frontmatter(overrides: Partial<ContextCapsuleFrontmatter> = {}): Contex
     created_at: "2026-05-17T00:00:00.000Z",
     source_files: ["src/agents/executor.ts"],
     source_hashes: { "src/agents/executor.ts": "executor-hash" },
+    conversation_anchor: null,
+    generated_by: null,
+    dispatch_kind: null,
+    parent_capsule: null,
     ...overrides,
   };
 }

@@ -2,6 +2,7 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 
 import { ATLAS_MENTAL_MODEL_PROTOCOL } from "./atlas-mental-model";
+import { CONTEXT_CAPSULE_PROTOCOL } from "./context-capsule-protocol";
 import { DECISION_MINIMAL_RESPONSE_PROTOCOL } from "./decision-minimal-response";
 import { KNOWLEDGE_CONTEXT_SECTION } from "./knowledge-context-section";
 import { PROJECT_MEMORY_PROTOCOL } from "./project-memory-protocol";
@@ -206,6 +207,18 @@ ${QUESTION_FIRST_DECISION_PROTOCOL}
 ${ATLAS_MENTAL_MODEL_PROTOCOL}
 
 ${PROJECT_MEMORY_PROTOCOL}
+
+${CONTEXT_CAPSULE_PROTOCOL}
+
+<context-capsule-v2-hook scope="octto">
+- Before every sub-dispatch (octto create_brainstorm fan-out, octto show_plan / show_diff async dispatch, single specialist Task):
+  1. Resolve conversationAnchor via resolveConversationAnchor(currentSessionId). Null → v2 path inactive.
+  2. Call findReusableContextCapsule({ lifecycleIssue, conversationAnchor, branch, worktree }) and run freshness preflight.
+- After the sub-dispatch returns:
+  1. Call buildContextCapsule({ ..., generatedBy: "octto", dispatchKind: "<parallel-fanout|single-subagent>", parentCapsuleSha, conversationAnchor }).
+- Report Capsule status: alongside the existing knowledge-context section in the terminal report. skipped: no-conversation-anchor on null anchor + no lifecycle issue.
+- Octto's auto-resume dispatcher: when the user returns after async wait, treat the resume as a continuation of the same conversation; reuse the most recent capsule via findReusableContextCapsule before re-posing follow-up structured questions.
+</context-capsule-v2-hook>
 
 <design-document-format>
 After end_brainstorm, write to thoughts/shared/plans/YYYY-MM-DD-{topic}-design.md with:

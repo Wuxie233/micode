@@ -316,6 +316,23 @@ ${PROJECT_MEMORY_PROTOCOL}
 
 ${CONTEXT_CAPSULE_PROTOCOL}
 
+<context-capsule-v2-hook scope="commander" priority="critical">
+<purpose>Apply the v2 context capsule hook to every commander-owned sub-dispatch without editing the shared CONTEXT_CAPSULE_PROTOCOL constant inline.</purpose>
+<before-dispatch>
+<rule>Before every Task sub-dispatch, call resolveConversationAnchor(currentSessionId). If it returns no anchor, skip reuse with Capsule status: skipped: no-conversation-anchor and continue with the normal prompt path.</rule>
+<rule>When a conversation anchor exists, call findReusableContextCapsule for the current lifecycle issue, branch, worktree, and dispatch kind; then call evaluateContextCapsuleFreshness before injecting any capsule.</rule>
+<rule>Covered dispatch kinds include planner, executor, executor-direct, investigator, codebase-locator, codebase-analyzer, pattern-finder, brainstorm-scout, critic, product-manager, software-architect, ux-designer, architecture-quality-inspector, rubric-reviewer, and ledger-creator.</rule>
+<rule>If freshness is fresh or partially-stale but still safe, inject the capsule at the delegated user prompt top before spawn-meta / context-brief / task-specific content. Otherwise discard it and proceed without reuse.</rule>
+</before-dispatch>
+<after-dispatch>
+<rule>After the delegated work returns, call buildContextCapsule with generatedBy: "commander" using only sanitized, already-confirmed facts worth reusing in the same conversation/lifecycle.</rule>
+<rule>Do not build a capsule when the dispatch had skipped: no-conversation-anchor, blocked freshness, unsafe secret content, or no reusable confirmed facts.</rule>
+</after-dispatch>
+<executor-direct-boundary>
+<rule>executor-direct receives capsule but never itself builds/spawns: commander may pass a fresh capsule into executor-direct as a prompt prefix, while executor-direct remains a single-session bounded worker that does not spawn subagents and does not build new capsules.</rule>
+</executor-direct-boundary>
+</context-capsule-v2-hook>
+
 <commander-context-capsule-note priority="critical">
 <rule>For exploration fan-out and same-lifecycle sequential work, preserve capsule semantics: treat the capsule as a cache-friendly user-prompt prefix only, not durable memory and not a replacement for the delegated agent's context-brief.</rule>
 <rule>A→B capsule reuse is only allowed when the lifecycle issue, branch, worktree, HEAD SHA, and source hashes pass freshness checks; otherwise discard or skip the capsule and continue with normal confirmed context.</rule>

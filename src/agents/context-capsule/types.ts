@@ -1,7 +1,11 @@
 export const CAPSULE_STATUSES = ["none", "fresh", "partially-stale", "discarded", "skipped", "blocked"] as const;
+export const DISPATCH_KINDS = ["parallel-fanout", "single-subagent", "executor-direct"] as const;
+export const GENERATOR_AGENTS = ["brainstormer", "commander", "octto", "executor"] as const;
 
 export type CapsuleStatus = (typeof CAPSULE_STATUSES)[number];
 export type CapsuleFreshnessStatus = "fresh" | "partially-stale" | "discarded";
+export type DispatchKind = (typeof DISPATCH_KINDS)[number];
+export type GeneratorAgent = (typeof GENERATOR_AGENTS)[number];
 
 export interface ContextCapsuleFrontmatter {
   readonly lifecycle_issue: number | null;
@@ -11,6 +15,10 @@ export interface ContextCapsuleFrontmatter {
   readonly created_at: string;
   readonly source_files: readonly string[];
   readonly source_hashes: Readonly<Record<string, string>>;
+  readonly conversation_anchor?: string | null;
+  readonly generated_by?: GeneratorAgent | null;
+  readonly dispatch_kind?: DispatchKind | null;
+  readonly parent_capsule?: string | null;
 }
 
 export interface ContextCapsuleSource {
@@ -29,6 +37,10 @@ export interface ContextCapsuleBuildInput {
   readonly createdAt?: Date;
   readonly outputDir?: string;
   readonly softWindowRatio?: number;
+  readonly conversationAnchor?: string | null;
+  readonly generatedBy?: GeneratorAgent | null;
+  readonly dispatchKind?: DispatchKind | null;
+  readonly parentCapsuleSha?: string | null;
 }
 
 export interface BuiltContextCapsule {
@@ -59,6 +71,7 @@ export interface ContextCapsuleRef {
 
 export interface ContextCapsuleFreshnessInput {
   readonly expectedLifecycleIssue: number | null;
+  readonly expectedConversationAnchor?: string | null;
   readonly branch: string;
   readonly headSha: string;
   readonly worktree: string;
@@ -74,4 +87,12 @@ export interface ContextCapsuleFreshnessResult {
 
 export function isCapsuleStatus(value: string): value is CapsuleStatus {
   return (CAPSULE_STATUSES as readonly string[]).includes(value);
+}
+
+export function isDispatchKind(value: string): value is DispatchKind {
+  return (DISPATCH_KINDS as readonly string[]).includes(value);
+}
+
+export function isGeneratorAgent(value: string): value is GeneratorAgent {
+  return (GENERATOR_AGENTS as readonly string[]).includes(value);
 }
