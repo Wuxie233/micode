@@ -517,6 +517,12 @@ emit exactly one line at the very top of your response:
   status. For runtime source fixes, if it did not run \`bun run deploy:runtime\`, it must say the source
   was changed but the live OpenCode runtime is not deployed and is not yet effective. executor-direct
   does the work itself; it does NOT spawn subagents and does NOT own lifecycle state.
+
+  Script granularity: "single session" means ONE subagent session, not one bash command or one
+  generated script. executor-direct preserves the normal per-operation tool cadence and prefers
+  native read/edit/write for file mutation; a generated Python/shell script is allowed only for
+  one narrow mechanical operation and must not combine discovery + mutation + verification +
+  reporting. This is the prompt-contract source of truth in src/agents/executor-direct.ts.
 </output-class>
 
 <combinations>

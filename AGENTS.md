@@ -332,6 +332,21 @@ micode 在 built-in Task / executor-direct continuation 与 Octto auto-resume an
 
 `src/workflow-retry/policy.ts` 是 maxAttempts / intervalMs 的唯一权威来源；`src/workflow-retry/upstream-predicate.ts` 是 recoverable upstream token set 的唯一权威来源；`src/tools/spawn-agent/classify-tokens.ts` 的 upstream 子集与之对齐由 `tests/tools/spawn-agent/classify-tokens-upstream-alignment.test.ts` 强制。本节是 markdown 镜像，命名和段落顺序需保持一致；`tests/agents/agents-md-bounded-upstream-retry.test.ts` 用 grep-based 关键字符串守护本节存在与关键事实未被删改。
 
+## executor-direct Script Granularity Guard
+
+micode 给 `executor-direct` / direct-execution 加一条窄的 prompt 契约：`single session` 指 one subagent session，不是 one bash command 也不是 one generated script。executor-direct 保持正常的 per-operation tool cadence（每个语义步骤一个 tool call），文件改动优先用 native read/edit/write，generated 的 Python/shell 脚本只在做 one narrow mechanical operation（批量重命名、批量正则替换、批量行删除、单次 build artifact 之类）时允许使用，且不得在同一段脚本里同时承担 discovery + mutation + verification + reporting 四种职责。
+
+### 不引入
+
+- 不禁用 Python/shell；bash 工具仍然启用，单一职责脚本仍然合法。
+- 不改 spawn_agent / runtime / executor reviewer flow / lifecycle 行为。
+- 不弱化既有承诺：subagent 信息采集、Lens Swarm、executor batch parallelism、question batching、context capsule 行为均不变。
+- 不引入全局 tool scheduling 协议；本规则只覆盖 executor-direct / direct-execution 这一条窄路径。
+
+### Drift guard
+
+Prompt 单源在 `src/agents/executor-direct.ts` 的 `<script-granularity-guard>` 块。`src/agents/commander.ts` 与 `src/agents/brainstormer.ts` 的 `<output-class name="direct-execution">` 块各自追加一段同义说明用于路由层 cross-reference，但不引入 byte-identical 镜像；`tests/agents/executor-direct-script-granularity.test.ts` 用 grep-based 关键字符串守护：single session / one subagent session / not one bash command / not one generated script / native read/edit/write / per-operation tool cadence / discovery + mutation + verification + reporting 等 token 必须同时出现在 prompt 源、两个 coordinator 的 `direct-execution` 块、以及本节中。本节是 markdown 镜像，命名与段落顺序需保持一致。
+
 ## Knowledge Bootstrap Commands
 
 micode 提供三条零参数 orchestrator 命令，用单一入口建立 / 大更新 / 体检三层项目知识库 (`/init` → `ARCHITECTURE.md` + `CODE_STYLE.md`；`/mindmodel` → `.mindmodel/`；`/atlas-init` → `atlas/`)。三条命令均路由到 `knowledge-bootstrap-orchestrator` agent，由该 agent 按 mode 串行调度现有 `project-initializer` / `mm-orchestrator` / `atlas-initializer` 子流程。
