@@ -21,7 +21,12 @@ sources:
 
 45 秒预算只覆盖 micode-controlled `retryOnTransient` 外层 orchestration。它不会取消已经进入 `ctx.client.session.prompt(...)` 的 provider/internal in-flight wait；该层需要单独的 cancellation / timeout 设计。
 
+## 与 workflow-retry 的边界
+
+`spawn_agent` 的 45 秒 budget 是 coordinator → subagent 派发链路的 inner retry，只处理派发期间的 transient 分类和 same-session preservation。[[工作流 Continuation Retry]] 是 built-in Task / executor-direct continuation 与 Octto auto-resume 的 outer retry（20 × 30s），两者共享 upstream transient vocabulary，但预算、入口和安全边界相互独立。
+
 ## 链接
 
 - [[子 Agent 失败与恢复漂移]] 记录恢复链路中的上下文漂移风险。
+- [[工作流 Continuation Retry]] 记录 upstream continuation outer retry 与 spawn_agent 45 秒 inner retry 的分层边界。
 - [[工作流 Agent]] 的 executor 和 atlas initializer 都依赖该工具实现并行。

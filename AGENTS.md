@@ -300,6 +300,36 @@ Lifecycle 工具（`lifecycle_finish` / `lifecycle_commit` / `lifecycle_current`
 
 Drift guard: `src/agents/brainstormer.ts` 与 `src/agents/commander.ts` 的 `<bounded-recovery-loop>` 块是单源；`src/agents/planner.ts` 与 `src/agents/executor.ts` 的相应规则与之语义对齐但裁剪到本职范围。本节是 markdown 镜像，drift 由 `tests/agents/agents-md-lifecycle-recovery.test.ts` 强制。
 
+## Bounded Upstream Continuation Retry
+
+micode 在 built-in Task / executor-direct continuation 与 Octto auto-resume answer→owner prompt 路径上加入有界 upstream/provider transient 自动重试，避免 `upstream_error: Upstream request failed` 这类临时故障让用户被迫手动点 "continue"。完整 prompt / 代码协议块单源在 `src/workflow-retry/upstream-predicate.ts`、`src/workflow-retry/policy.ts`、`src/workflow-retry/attempt-registry.ts`、`src/hooks/session-recovery.ts`（upstream 分支）、`src/octto/auto-resume/dispatcher.ts`（upstream 分支）。本节是 markdown 镜像。
+
+### 两层 retry 边界
+
+| 层 | 模块 | 默认参数 | 用途 |
+|---|---|---|---|
+| spawn_agent inner retry | `src/tools/spawn-agent/retry.ts` + `config.subagent.transientRetryBudgetMs` | 2 次，≤ 45 秒 wall-clock | coordinator → subagent 派发链路的 fast inner retry |
+| workflow continuation outer retry | `src/workflow-retry/policy.ts` + session-recovery / Octto auto-resume adapters | 20 次 × 30 秒 | 面向用户的 continuation card / answer dispatch slow outer retry |
+
+两层独立、参数刻意不同；`tests/tools/spawn-agent/classify-no-regression.test.ts` 和 `tests/workflow-retry/policy.test.ts` 共同守护两层数值不互相污染。
+
+### 行为承诺
+
+- 遇到可恢复 `upstream_error` 时 executor-direct / built-in Task 不再立即停下；自动等待 ~30 秒后用同一 session 继续，附带 "先检查当前状态、不要重复已完成副作用" 的恢复 prompt。
+- 最多自动恢复 20 次；耗尽后 toast `Upstream retry exhausted` 并停止，把决策交还用户。
+- 同一 sessionID + errorClass 的并发事件用 attempt-registry dedup，避免在 30 秒窗口内同时发出多条 continue。
+- pending user question / destructive confirmation / semantic blocker 不被自动跳过；这些场景的判定见 session-recovery upstream 分支注释。
+
+### 排除范围
+
+- lifecycle git/GitHub commit / push / merge / PR-check 路径**禁止**导入 `@/workflow-retry/*`；`tests/lifecycle/workflow-retry-exclusion.test.ts` drift-guard 守护。
+- ordinary chat / `src/index.ts` prompt 路径不在本次范围。
+- `resume_subagent`（`src/tools/resume-subagent.ts`）语义不被扩展；它仍只处理 preserved `spawn_agent` task_error / blocked sessions；`tests/tools/resume-subagent-non-expansion.test.ts` drift-guard 守护。
+
+### Drift guard
+
+`src/workflow-retry/policy.ts` 是 maxAttempts / intervalMs 的唯一权威来源；`src/workflow-retry/upstream-predicate.ts` 是 recoverable upstream token set 的唯一权威来源；`src/tools/spawn-agent/classify-tokens.ts` 的 upstream 子集与之对齐由 `tests/tools/spawn-agent/classify-tokens-upstream-alignment.test.ts` 强制。本节是 markdown 镜像，命名和段落顺序需保持一致；`tests/agents/agents-md-bounded-upstream-retry.test.ts` 用 grep-based 关键字符串守护本节存在与关键事实未被删改。
+
 ## Knowledge Bootstrap Commands
 
 micode 提供三条零参数 orchestrator 命令，用单一入口建立 / 大更新 / 体检三层项目知识库 (`/init` → `ARCHITECTURE.md` + `CODE_STYLE.md`；`/mindmodel` → `.mindmodel/`；`/atlas-init` → `atlas/`)。三条命令均路由到 `knowledge-bootstrap-orchestrator` agent，由该 agent 按 mode 串行调度现有 `project-initializer` / `mm-orchestrator` / `atlas-initializer` 子流程。

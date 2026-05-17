@@ -1,4 +1,18 @@
+import { isRecoverableUpstreamError } from "@/workflow-retry/upstream-predicate";
+
+export { isRecoverableUpstreamError };
+
+/**
+ * spawn_agent has a fast inner retry boundary: transient classifier hits are
+ * retried according to config.subagent.transientRetries and
+ * config.subagent.transientRetryBudgetMs (currently 2 retries within 45s).
+ * Workflow continuation retry is the outer boundary and lives in
+ * src/workflow-retry/** (currently 20 attempts x 30s). Keep the vocabulary
+ * aligned with isRecoverableUpstreamError without replacing spawn_agent's
+ * smaller retry budget with the workflow continuation policy.
+ */
 export const TRANSIENT_NETWORK_PATTERNS: readonly RegExp[] = [
+  /\bupstream_error\b/i,
   /\bECONNRESET\b/i,
   /\bETIMEDOUT\b/i,
   /\bEAI_AGAIN\b/i,

@@ -51,9 +51,9 @@ describe("spawn-agent classifier tokens", () => {
     );
   });
 
-  it("does not match generic upstream internal error text as transient network", () => {
+  it("matches upstream_error vocabulary while preserving generic 500/internal_error non-transient coverage", () => {
     expect(matchesAnyPattern(UPSTREAM_INTERNAL_SERVER_ERROR_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
-    expect(matchesAnyPattern(UPSTREAM_ERROR_PROVIDER_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
+    expect(matchesAnyPattern(UPSTREAM_ERROR_PROVIDER_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(true);
     expect(matchesAnyPattern(HTTP_500_INTERNAL_SERVER_ERROR_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
     expect(matchesAnyPattern(STREAM_ERROR_ONLY_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);
     expect(matchesAnyPattern(INTERNAL_ERROR_ONLY_MESSAGE, TRANSIENT_NETWORK_PATTERNS)).toBe(false);

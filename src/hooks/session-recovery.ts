@@ -1,5 +1,9 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 
+import { createAttemptRegistry, type AttemptRegistry } from "../workflow-retry/attempt-registry";
+import { WORKFLOW_CONTINUATION_RETRY_POLICY } from "../workflow-retry/policy";
+import { isRecoverableUpstreamError } from "../workflow-retry/upstream-predicate";
+
 // Error patterns we can recover from
 const RECOVERABLE_ERRORS = {
   TOOL_RESULT_MISSING: "tool_result block(s) missing",
@@ -14,6 +18,9 @@ type RecoverableErrorType = keyof typeof RECOVERABLE_ERRORS;
 interface RecoveryState {
   processingErrors: Set<string>;
   recoveryAttempts: Map<string, number>;
+  upstreamScheduledAttempts: Map<string, number>;
+  upstreamRegistry: AttemptRegistry;
+  upstreamTimers: Map<string, Set<ReturnType<typeof setTimeout>>>;
 }
 
 const MAX_RECOVERY_ATTEMPTS = 3;
@@ -21,6 +28,12 @@ const ABORT_SETTLE_DELAY_MS = 500;
 const RECOVERY_TOAST_DURATION_MS = 3000;
 const TOAST_FAILURE_DURATION_MS = 5000;
 const ERROR_KEY_EXPIRY_MS = 10000;
+const UPSTREAM_ATTEMPT_EXPIRY_MS = 60000;
+const UPSTREAM_ERROR_CLASS = "upstream_error";
+const UPSTREAM_RECOVERY_PROMPT =
+  "Upstream/provider transient failure detected; resuming this session. " +
+  "First check current state — do not repeat any file write, command execution, " +
+  "or remote/network mutation that already completed. Continue from the last verified step only.";
 
 function extractErrorInfo(error: unknown): { message: string; messageIndex?: number } | null {
   if (!error) return null;
@@ -166,7 +179,101 @@ async function attemptRecovery(
   return true;
 }
 
+interface UpstreamRecoveryDeps {
+  readonly rc: RecoveryContext;
+  readonly sessionID: string;
+  readonly providerID?: string;
+  readonly modelID?: string;
+  readonly agent?: string;
+}
+
+function buildUpstreamAttemptKey(sessionID: string): string {
+  return WORKFLOW_CONTINUATION_RETRY_POLICY.attemptKey(sessionID, UPSTREAM_ERROR_CLASS);
+}
+
+function addPendingUpstreamTimer(
+  state: RecoveryState,
+  sessionID: string,
+  timer: ReturnType<typeof setTimeout>,
+): void {
+  const timers = state.upstreamTimers.get(sessionID) ?? new Set<ReturnType<typeof setTimeout>>();
+  timers.add(timer);
+  state.upstreamTimers.set(sessionID, timers);
+}
+
+function removePendingUpstreamTimer(
+  state: RecoveryState,
+  sessionID: string,
+  timer: ReturnType<typeof setTimeout>,
+): void {
+  const timers = state.upstreamTimers.get(sessionID);
+  if (!timers) return;
+
+  timers.delete(timer);
+  if (timers.size === 0) state.upstreamTimers.delete(sessionID);
+}
+
+function clearPendingUpstreamTimers(state: RecoveryState, sessionID: string): void {
+  const timers = state.upstreamTimers.get(sessionID);
+  if (!timers) return;
+
+  for (const timer of timers) clearTimeout(timer);
+  state.upstreamTimers.delete(sessionID);
+}
+
+async function handleUpstreamRecoverable(deps: UpstreamRecoveryDeps): Promise<void> {
+  const key = buildUpstreamAttemptKey(deps.sessionID);
+  if (!deps.rc.state.upstreamRegistry.beginProcessing(key)) return;
+
+  const scheduledAttempts = deps.rc.state.upstreamScheduledAttempts.get(key) ?? 0;
+  if (scheduledAttempts >= WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts) {
+    deps.rc.state.upstreamRegistry.endProcessing(key);
+    showToast(
+      deps.rc,
+      "Upstream retry exhausted",
+      `Reached ${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts} attempts; manual intervention needed.`,
+      "error",
+      TOAST_FAILURE_DURATION_MS,
+    );
+    return;
+  }
+  const attempt = scheduledAttempts + 1;
+  deps.rc.state.upstreamScheduledAttempts.set(key, attempt);
+
+  showToast(
+    deps.rc,
+    "Upstream auto-retry",
+    `Will resume session in ${Math.round(WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs / 1000)}s (attempt ${attempt}/${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts}).`,
+    "warning",
+    RECOVERY_TOAST_DURATION_MS,
+  );
+
+  const timer = setTimeout(() => {
+    removePendingUpstreamTimer(deps.rc.state, deps.sessionID, timer);
+    deps.rc.state.upstreamRegistry.endProcessing(key);
+    void deps.rc.ctx.client.session
+      .prompt({
+        path: { id: deps.sessionID },
+        body: {
+          parts: [{ type: "text", text: UPSTREAM_RECOVERY_PROMPT }],
+          ...(deps.providerID && deps.modelID ? { providerID: deps.providerID, modelID: deps.modelID } : {}),
+          ...(deps.agent ? { agent: deps.agent } : {}),
+        },
+        query: { directory: deps.rc.ctx.directory },
+      })
+      .catch(() => {
+        // Prompt failure is left to the next event cycle.
+      });
+  }, WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs);
+  addPendingUpstreamTimer(deps.rc.state, deps.sessionID, timer);
+}
+
 function cleanupSession(state: RecoveryState, sessionID: string): void {
+  clearPendingUpstreamTimers(state, sessionID);
+  state.upstreamRegistry.clearSession(sessionID);
+  for (const key of state.upstreamScheduledAttempts.keys()) {
+    if (key.startsWith(`${sessionID}:`)) state.upstreamScheduledAttempts.delete(key);
+  }
   for (const key of state.recoveryAttempts.keys()) {
     if (key.startsWith(`${sessionID}:`)) state.recoveryAttempts.delete(key);
   }
@@ -194,6 +301,11 @@ async function handleSessionError(rc: RecoveryContext, props: Record<string, unk
   const error = props?.error;
   if (!sessionID || !error) return;
 
+  if (isRecoverableUpstreamError(error)) {
+    await handleUpstreamRecoverable({ rc, sessionID });
+    return;
+  }
+
   const errorType = classifyError(error);
   if (!errorType) return;
   if (!deduplicateError(rc.state, sessionID, errorType)) return;
@@ -207,13 +319,19 @@ async function handleMessageError(rc: RecoveryContext, props: Record<string, unk
   const error = info?.error;
   if (!sessionID || !error) return;
 
+  const providerID = info.providerID as string | undefined;
+  const modelID = info.modelID as string | undefined;
+  const agent = info.agent as string | undefined;
+
+  if (isRecoverableUpstreamError(error)) {
+    await handleUpstreamRecoverable({ rc, sessionID, providerID, modelID, agent });
+    return;
+  }
+
   const errorType = classifyError(error);
   if (!errorType) return;
   if (!deduplicateError(rc.state, sessionID, errorType)) return;
 
-  const providerID = info.providerID as string | undefined;
-  const modelID = info.modelID as string | undefined;
-  const agent = info.agent as string | undefined;
   await attemptRecovery(rc, sessionID, errorType, providerID, modelID, agent);
 }
 
@@ -224,7 +342,16 @@ interface SessionRecoveryHooks {
 export function createSessionRecoveryHook(ctx: PluginInput): SessionRecoveryHooks {
   const rc: RecoveryContext = {
     ctx,
-    state: { processingErrors: new Set(), recoveryAttempts: new Map() },
+    state: {
+      processingErrors: new Set(),
+      recoveryAttempts: new Map(),
+      upstreamScheduledAttempts: new Map(),
+      upstreamRegistry: createAttemptRegistry({
+        maxAttempts: WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts,
+        expiryMs: UPSTREAM_ATTEMPT_EXPIRY_MS,
+      }),
+      upstreamTimers: new Map(),
+    },
   };
 
   return {

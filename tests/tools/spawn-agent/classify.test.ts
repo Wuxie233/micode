@@ -69,7 +69,13 @@ describe("classifySpawnError", () => {
     const upstreamErrorResult = classifySpawnError({
       thrown: new Error("upstream_error: something went wrong"),
     });
-    expect(upstreamErrorResult.class).not.toBe(INTERNAL_CLASSES.TRANSIENT);
+    expect(upstreamErrorResult.class).toBe(INTERNAL_CLASSES.TRANSIENT);
+
+    const genericHttp500Result = classifySpawnError({
+      thrown: new Error("HTTP 500 Internal Server Error"),
+      httpStatus: 500,
+    });
+    expect(genericHttp500Result.class).not.toBe(INTERNAL_CLASSES.TRANSIENT);
   });
 
   it("returns hard_failure on empty output and no thrown error", () => {

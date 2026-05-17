@@ -163,6 +163,10 @@ Subagent failures are classified into `{success, transient_retried, task_error, 
 
 Example: a batch of 5 parallel implementers runs → one returns `task_error` because of a missing import → executor calls `resume_subagent` with a hint, the subagent fixes the import and finishes, the other 4 are unaffected.
 
+### Bounded Upstream Continuation Retry
+
+micode 在 built-in Task / executor-direct continuation 与 Octto auto-resume 上对可恢复 `upstream_error` 提供有界自动重试（默认 20 次 × 30 秒），避免临时 provider 故障让用户被迫手动点 "continue"。详细策略与排除范围见 [`AGENTS.md` 的 `Bounded Upstream Continuation Retry` 段](./AGENTS.md)，行为承诺见 [`atlas/20-behavior/bounded-upstream-continuation-retry.md`](./atlas/20-behavior/bounded-upstream-continuation-retry.md)，设计见 [`thoughts/shared/designs/2026-05-16-bounded-upstream-error-continuation-retry-design.md`](./thoughts/shared/designs/2026-05-16-bounded-upstream-error-continuation-retry-design.md)。`spawn_agent` 内层 45 秒 budget、`lifecycle` git/GitHub 重试、`resume_subagent` 语义均不在此范围。
+
 ## How It Works
 
 ```
