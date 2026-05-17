@@ -80,12 +80,15 @@ function buildWarnings(input: ContextCapsuleBuildInput): readonly string[] {
 }
 
 function makeCapsulePath(outputDir: string, input: ContextCapsuleBuildInput, token: string): string {
-  const issuePrefix =
-    input.lifecycleIssue === null
-      ? (input.conversationAnchor
-        ? `conv-${slugifyCapsuleTopic(input.conversationAnchor)}`
-        : "no-issue")
-      : `issue-${input.lifecycleIssue}`;
+  let issuePrefix: string;
+  if (input.lifecycleIssue !== null) {
+    issuePrefix = `issue-${input.lifecycleIssue}`;
+  } else if (input.conversationAnchor) {
+    issuePrefix = `conv-${slugifyCapsuleTopic(input.conversationAnchor)}`;
+  } else {
+    issuePrefix = "no-issue";
+  }
+
   const topicSlug = slugifyCapsuleTopic(input.topic);
   return join(outputDir, `${issuePrefix}-${topicSlug}-${token}.md`);
 }
