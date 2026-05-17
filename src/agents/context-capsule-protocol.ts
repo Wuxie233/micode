@@ -13,8 +13,8 @@ The Context Capsule is an immutable, short-lived hot-path artifact that carries 
 <dispatch-trigger>
 - Capsule lookup and generation are required on v2 dispatch paths: 派遣前查找+复用、派遣后生成.
 - Covered dispatch triggers are parallel-fanout, single-subagent, and executor-direct.
-- Before dispatch, call findReusableContextCapsule to locate a fresh capsule that can be reused for the current trigger.
-- After dispatch, call buildContextCapsule to create an immutable new capsule file for future workers instead of mutating an existing capsule.
+- Before dispatch, call \`find_reusable_context_capsule\` to locate a fresh capsule that can be reused for the current trigger.
+- After dispatch, call \`build_context_capsule\` to create an immutable new capsule file for future workers instead of mutating an existing capsule.
 </dispatch-trigger>
 
 <reuse-boundary>

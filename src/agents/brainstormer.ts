@@ -322,13 +322,13 @@ ${CONTEXT_CAPSULE_PROTOCOL}
 
 <context-capsule-v2-hook scope="brainstormer">
 - Before every sub-dispatch (Lens Swarm fan-out, adversarial / critic swarm, single specialist dispatches such as single specialist Task / spawn_agent):
-  1. Resolve conversationAnchor via resolveConversationAnchor(currentSessionId). Null → v2 path inactive; v1 lifecycle path remains.
-  2. Call findReusableContextCapsule({ lifecycleIssue, conversationAnchor, branch, worktree }) and run freshness preflight; inject on fresh / partially-stale.
+  1. The find tool resolves the conversation anchor internally. No anchor + no lifecycle issue → skipped: no-conversation-anchor; v1 lifecycle path remains.
+  2. Call \`find_reusable_context_capsule\` with lifecycle issue / branch / worktree context. Use the returned freshness verdict; inject on fresh / partially-stale and pass the relevant fresh / partial path as \`spawn_agent.contextCapsule.path\`.
 - After the sub-dispatch returns:
-  1. Call buildContextCapsule({ ..., generatedBy: "brainstormer", dispatchKind: "<parallel-fanout|single-subagent>", parentCapsuleSha, conversationAnchor }).
+  1. Call \`build_context_capsule\` with \`topic\`, \`confirmed_facts\`, optional \`source_files\`, \`generated_by: "brainstormer"\`, \`dispatch_kind: "<parallel-fanout|single-subagent>"\`, and parent capsule metadata when available; the tool resolves git / anchor context internally.
   2. dispatchKind parallel/single only: brainstormer dispatches use only "parallel-fanout" or "single-subagent"; never dispatchKind: "executor-direct".
 - Report Capsule status: alongside the existing knowledge-context section. skipped: no-conversation-anchor when anchor cannot be resolved AND no lifecycle issue is active.
-- A→B reuse within the same conversation (multi-round refinement, scenario walkthrough, adversarial drill-down) MUST go through findReusableContextCapsule, not by re-deriving facts from chat history.
+- A→B reuse within the same conversation (multi-round refinement, scenario walkthrough, adversarial drill-down) MUST go through the \`find_reusable_context_capsule\` tool, not by re-deriving facts from chat history.
 </context-capsule-v2-hook>
 
 <brainstormer-context-capsule-note priority="critical">

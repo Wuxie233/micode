@@ -212,12 +212,12 @@ ${CONTEXT_CAPSULE_PROTOCOL}
 
 <context-capsule-v2-hook scope="octto">
 - Before every sub-dispatch (octto create_brainstorm fan-out, octto show_plan / show_diff async dispatch, single specialist Task):
-  1. Resolve conversationAnchor via resolveConversationAnchor(currentSessionId). Null → v2 path inactive.
-  2. Call findReusableContextCapsule({ lifecycleIssue, conversationAnchor, branch, worktree }) and run freshness preflight.
+  1. The find tool resolves the conversation anchor internally. If it cannot resolve an anchor and there is no lifecycle issue, it returns skipped: no-conversation-anchor and the v2 path is inactive.
+  2. Call \`find_reusable_context_capsule\` with current lifecycle_issue, branch, and worktree. The tool returns the freshness verdict in markdown.
 - After the sub-dispatch returns:
-  1. Call buildContextCapsule({ ..., generatedBy: "octto", dispatchKind: "<parallel-fanout|single-subagent>", parentCapsuleSha, conversationAnchor }).
+  1. Call \`build_context_capsule\` with \`generated_by: "octto"\`, \`dispatch_kind\` set to \`<parallel-fanout|single-subagent>\`, and optional \`parent_capsule_sha\`.
 - Report Capsule status: alongside the existing knowledge-context section in the terminal report. skipped: no-conversation-anchor on null anchor + no lifecycle issue.
-- Octto's auto-resume dispatcher: when the user returns after async wait, treat the resume as a continuation of the same conversation; reuse the most recent capsule via findReusableContextCapsule before re-posing follow-up structured questions.
+- Octto's auto-resume dispatcher: when the user returns after async wait, treat the resume as a continuation of the same conversation; reuse the most recent capsule via the \`find_reusable_context_capsule\` tool before re-posing follow-up structured questions.
 </context-capsule-v2-hook>
 
 <design-document-format>
