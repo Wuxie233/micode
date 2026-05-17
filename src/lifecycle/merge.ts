@@ -628,8 +628,8 @@ const deleteBranchIfWorktreeRemoved = async (
 
 const finishViaLocalMerge = async (runner: LifecycleRunner, input: FinishLifecycleInput): Promise<FinishOutcome> => {
   const baseBranch = getBaseBranch(input);
-  const issueNumber = deriveIssueNumber(input.branch);
-  if (issueNumber === null) return createInvalidIssueNumberOutcome(input);
+  const issueNumber = input.issueNumber ?? deriveIssueNumber(input.branch);
+  if (issueNumber === null || issueNumber === undefined) return createInvalidIssueNumberOutcome(input);
 
   const prepared = await prepareTempMergeWorktree(runner, input, issueNumber, baseBranch);
   if (prepared.kind === "failed") return prepared.outcome;

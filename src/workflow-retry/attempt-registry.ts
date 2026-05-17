@@ -37,76 +37,110 @@ export interface AttemptRegistry {
   readonly reset: () => void;
 }
 
-export function createAttemptRegistry(options: AttemptRegistryOptions): AttemptRegistry {
-  const attempts = new Map<string, number>();
-  const processing = new Set<string>();
-  const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+interface AttemptRegistryState {
+  readonly attempts: Map<string, number>;
+  readonly processing: Set<string>;
+  readonly expiryTimers: Map<string, ReturnType<typeof setTimeout>>;
+}
 
-  const clearExpiry = (key: string): void => {
-    const timer = expiryTimers.get(key);
-    if (timer === undefined) {
-      return;
+function clearExpiry(expiryTimers: AttemptRegistryState["expiryTimers"], key: string): void {
+  const timer = expiryTimers.get(key);
+  if (timer === undefined) {
+    return;
+  }
+
+  clearTimeout(timer);
+  expiryTimers.delete(key);
+}
+
+function buildResult(attempt: number, maxAttempts: number): RecordResult {
+  return {
+    attempt,
+    exhausted: attempt >= maxAttempts,
+  };
+}
+
+function createRecord(state: AttemptRegistryState, maxAttempts: number): AttemptRegistry["record"] {
+  return (key) => {
+    const current = state.attempts.get(key) ?? 0;
+    if (current >= maxAttempts) {
+      return buildResult(current, maxAttempts);
     }
 
-    clearTimeout(timer);
-    expiryTimers.delete(key);
+    const next = Math.min(current + 1, maxAttempts);
+    state.attempts.set(key, next);
+    return buildResult(next, maxAttempts);
+  };
+}
+
+function createBeginProcessing(state: AttemptRegistryState, expiryMs: number): AttemptRegistry["beginProcessing"] {
+  return (key) => {
+    if (state.processing.has(key)) {
+      return false;
+    }
+
+    state.processing.add(key);
+    clearExpiry(state.expiryTimers, key);
+    const timer = setTimeout(() => {
+      state.processing.delete(key);
+      state.expiryTimers.delete(key);
+    }, expiryMs);
+    state.expiryTimers.set(key, timer);
+    return true;
+  };
+}
+
+function createEndProcessing(state: AttemptRegistryState): AttemptRegistry["endProcessing"] {
+  return (key) => {
+    state.processing.delete(key);
+    clearExpiry(state.expiryTimers, key);
+  };
+}
+
+function clearMatchingKeys(state: AttemptRegistryState, prefix: string): void {
+  for (const key of state.attempts.keys()) {
+    if (key.startsWith(prefix)) {
+      state.attempts.delete(key);
+    }
+  }
+
+  for (const key of state.processing) {
+    if (key.startsWith(prefix)) {
+      state.processing.delete(key);
+      clearExpiry(state.expiryTimers, key);
+    }
+  }
+}
+
+function createClearSession(state: AttemptRegistryState): AttemptRegistry["clearSession"] {
+  return (sessionId) => {
+    clearMatchingKeys(state, `${sessionId}:`);
+  };
+}
+
+function createReset(state: AttemptRegistryState): AttemptRegistry["reset"] {
+  return () => {
+    state.attempts.clear();
+    state.processing.clear();
+    for (const timer of state.expiryTimers.values()) {
+      clearTimeout(timer);
+    }
+    state.expiryTimers.clear();
+  };
+}
+
+export function createAttemptRegistry(options: AttemptRegistryOptions): AttemptRegistry {
+  const state: AttemptRegistryState = {
+    attempts: new Map<string, number>(),
+    processing: new Set<string>(),
+    expiryTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   };
 
-  const buildResult = (attempt: number): RecordResult => ({
-    attempt,
-    exhausted: attempt >= options.maxAttempts,
-  });
-
   return {
-    record: (key) => {
-      const current = attempts.get(key) ?? 0;
-      if (current >= options.maxAttempts) {
-        return buildResult(current);
-      }
-
-      const next = Math.min(current + 1, options.maxAttempts);
-      attempts.set(key, next);
-      return buildResult(next);
-    },
-    beginProcessing: (key) => {
-      if (processing.has(key)) {
-        return false;
-      }
-
-      processing.add(key);
-      clearExpiry(key);
-      const timer = setTimeout(() => {
-        processing.delete(key);
-        expiryTimers.delete(key);
-      }, options.expiryMs);
-      expiryTimers.set(key, timer);
-      return true;
-    },
-    endProcessing: (key) => {
-      processing.delete(key);
-      clearExpiry(key);
-    },
-    clearSession: (sessionId) => {
-      const prefix = `${sessionId}:`;
-      for (const key of attempts.keys()) {
-        if (key.startsWith(prefix)) {
-          attempts.delete(key);
-        }
-      }
-      for (const key of processing) {
-        if (key.startsWith(prefix)) {
-          processing.delete(key);
-          clearExpiry(key);
-        }
-      }
-    },
-    reset: () => {
-      attempts.clear();
-      processing.clear();
-      for (const timer of expiryTimers.values()) {
-        clearTimeout(timer);
-      }
-      expiryTimers.clear();
-    },
+    record: createRecord(state, options.maxAttempts),
+    beginProcessing: createBeginProcessing(state, options.expiryMs),
+    endProcessing: createEndProcessing(state),
+    clearSession: createClearSession(state),
+    reset: createReset(state),
   };
 }

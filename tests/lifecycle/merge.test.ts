@@ -391,6 +391,30 @@ describe("finishLifecycle", () => {
     );
   });
 
+  it("local merge uses explicit issueNumber when branch is main", async () => {
+    const runner = createRunner({
+      git: [createRun(), createRun(), createRun(), createRun(), createRun()],
+    });
+
+    const outcome = await finishLifecycle(runner, {
+      cwd: CWD,
+      branch: "main",
+      worktree: WORKTREE,
+      mergeStrategy: "local-merge",
+      waitForChecks: false,
+      baseBranch: "main",
+      issueNumber: 98,
+    });
+
+    expect(outcome.merged).toBe(true);
+    const gitCalls = runner.calls.filter((call) => call.bin === "git");
+    expect(gitCalls[1]).toEqual({
+      bin: "git",
+      args: ["worktree", "add", "--detach", "/tmp/micode-merge-issue-98", "origin/main"],
+      cwd: CWD,
+    });
+  });
+
   it("throws a clear error when baseBranch is missing", async () => {
     const runner = createRunner({});
     await expect(

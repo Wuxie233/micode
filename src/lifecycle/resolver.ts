@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { LifecycleRecordSchema } from "@/lifecycle/schemas";
 import { parseIssueBody } from "./issue-body";
 import type { LifecycleCandidateSummary } from "./recovery/hint";
+import { resolveIssueIdentity } from "./recovery/resolve-issue-identity";
 import { classifyStale } from "./recovery/stale-classifier";
 import type { LifecycleRunner } from "./runner";
 import type { LifecycleStore } from "./store";
@@ -43,7 +44,6 @@ const DECIMAL_RADIX = 10;
 const NOT_LIFECYCLE_ISSUE = "not_a_lifecycle_issue";
 const ISSUE_NOT_FOUND = "issue_not_found";
 const BRANCH_ARGS = ["rev-parse", "--abbrev-ref", "HEAD"] as const;
-const TOPLEVEL_ARGS = ["rev-parse", "--show-toplevel"] as const;
 const ISSUE_VIEW_FIELDS = "body";
 const GIT_SHOW_REF = "show-ref";
 const GIT_VERIFY = "--verify";
@@ -63,13 +63,6 @@ const readBranch = async (deps: ResolverDeps): Promise<string | null> => {
   if (run.exitCode !== OK_EXIT_CODE) return null;
   const branch = run.stdout.trim();
   return branch.length > 0 ? branch : null;
-};
-
-const readWorktree = async (deps: ResolverDeps): Promise<string> => {
-  const run = await deps.runner.git(TOPLEVEL_ARGS, { cwd: deps.cwd });
-  if (run.exitCode !== OK_EXIT_CODE) return deps.cwd;
-  const top = run.stdout.trim();
-  return top.length > 0 ? top : deps.cwd;
 };
 
 const matchBranchIssue = (branch: string): number | null => {
@@ -95,13 +88,19 @@ const reconstructFromBody = async (deps: ResolverDeps, issueNumber: number, body
   const hasMarkers = parsed.state !== undefined || parsed.artifacts !== undefined;
   if (!hasMarkers) throw new Error(`${NOT_LIFECYCLE_ISSUE}: #${issueNumber}`);
 
-  const branch = (await readBranch(deps)) ?? `issue/${issueNumber}`;
-  const worktree = await readWorktree(deps);
+  const identity = await resolveIssueIdentity({
+    runner: deps.runner,
+    cwd: deps.cwd,
+    issueNumberHint: issueNumber,
+    localRecord: await deps.store.load(issueNumber),
+    issueBodyArtifacts: { worktree: parsed.artifacts?.[ARTIFACT_KINDS.WORKTREE] },
+    explicit: null,
+  });
   const candidate: LifecycleRecord = {
     issueNumber,
     issueUrl: "",
-    branch,
-    worktree,
+    branch: identity.branch,
+    worktree: identity.worktree,
     state: parsed.state ?? LIFECYCLE_STATES.IN_PROGRESS,
     artifacts: parsed.artifacts ?? emptyArtifacts(),
     notes: [],
