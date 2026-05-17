@@ -5,6 +5,7 @@ sources:
   - code:src/agents/commander.ts
   - code:src/agents/brainstormer.ts
   - code:src/agents/octto.ts
+  - code:src/agents/context-capsule-protocol.ts
   - code:src/agents/planner.ts
   - code:src/agents/executor.ts
   - code:src/agents/implementer-frontend-ui.ts
@@ -27,6 +28,7 @@ sources:
 - `executor` 按 `Domain` 派发 implementers，并组织 implementer → reviewer 循环。
 - `reviewer` 只读校验任务结果、测试状态与契约一致性。
 - primary/coordinator prompts 注入 `DECISION_MINIMAL_RESPONSE_PROTOCOL` 与 `QUESTION_FIRST_DECISION_PROTOCOL`：用户可见回复只保留 decision、acceptance、next-step；真实用户决策默认走 built-in `question` tool。
+- primary/coordinator prompts 注入 `CONTEXT_CAPSULE_PROTOCOL`；`commander` / `brainstormer` / `octto` 还各自声明 `<context-capsule-v2-hook>`，要求同一 lifecycle 或同一 conversation anchor 的连续 sub-dispatch 先查找可复用 capsule，再在派发后生成新的不可变 capsule。`executor-direct` 只接收 capsule 前缀，不自建 capsule、不派生 subagent。
 - conflict resolver 相关 prompt 要求 reviewer mandatory，leaf agents 只向上层返回 compact facts，不能把 raw recovery hint、git logs、reviewer checklist 或 subagent raw reports 直接 dump 给用户。
 
 ## 链接

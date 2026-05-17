@@ -4,6 +4,7 @@ tags: [atlas, impl]
 sources:
   - code:src/tools/spawn-agent/*
   - code:src/tools/resume-subagent.ts
+  - code:src/agents/context-capsule/*
 ---
 # 子 Agent 派发工具
 
@@ -16,6 +17,7 @@ sources:
 - `spawn_agent` transient retry 由 `config.subagent.transientRetryBudgetMs` 约束累计预算；默认 45 秒，在下一次 sleep 或下一次 attempt 前检查 wall-clock elapsed，预算耗尽时停止继续累计 backoff。
 - 为可恢复失败保留 `session_id`，供 `resume_subagent` 继续同一上下文。
 - 限制 primary agent 的模型覆盖逃生口，避免任意 agent 滥用模型选择。
+- `spawn-agent` runtime 只把父层传入的 `ContextCapsuleRef` 作为 prompt prefix 注入；v2 的 `conversation_anchor`、`dispatch_kind`、`generated_by`、`parent_capsule` 保持对工具透明，由 primary/coordinator 负责 find / freshness / build 周期。
 
 ## Retry budget 边界
 

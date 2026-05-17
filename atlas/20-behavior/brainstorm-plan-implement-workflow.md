@@ -3,6 +3,7 @@ title: 头脑风暴到计划到实现工作流
 tags: [atlas, behavior]
 sources:
   - thoughts:thoughts/shared/designs/2026-05-15-question-tool-first-routing-design.md
+  - thoughts:thoughts/shared/designs/2026-05-17-working-context-capsule-v2-design.md
   - code:README.md
   - code:ARCHITECTURE.md
   - code:src/agents/brainstormer.ts
@@ -10,6 +11,8 @@ sources:
   - code:src/agents/executor.ts
   - code:src/agents/reviewer.ts
   - code:src/agents/commander.ts
+  - code:src/agents/octto.ts
+  - code:src/agents/context-capsule-protocol.ts
 ---
 # 头脑风暴到计划到实现工作流
 
@@ -23,6 +26,7 @@ micode 面向 OpenCode 开发者提供一条固定主路径：先由 `brainstorm
 - Brainstormer 写 design.md 时，可在 frontmatter 之后、`## Problem Statement` 之前产出 `## 承诺清单 / Commitments`，记录用户原话、已确认 sub-decision 与可核对承诺；终态汇报的「你可以怎么验收」在存在该段时必须包含「需求核对表」，用 `✓ / ⚠️ / ✗` 对照承诺逐条 surface。
 - 计划阶段把设计拆成 2-5 分钟粒度任务，包含路径、依赖、测试策略和 `Domain`；planner 在 plan.md 开头生成 `## 行为承诺映射`，用自然语言把每条 Behavior 映射到 task 或说明不需要 task 的理由，不新增 task 字段。
 - 实现阶段使用 implementer → reviewer 循环，并通过 [[子 Agent 派发工具]] 并行处理可并行任务；Executor 派 leaf agent 时在 `<context-brief>` 下传本 task 对应的行为承诺；planner / executor / reviewer / implementer 若发现 brainstorm 阶段漏识别 architectural sub-decision，必须用保守默认继续，不打断用户，并由 executor 聚合「本次按默认决定的事项」回传给 primary 终态汇报；每个 batch reviewer 通过后做一次 `Atlas 行为节点审视`，判断是否维护 atlas/20-behavior。
+- Working Context Capsule v2 让 `commander` / `brainstormer` / `octto` 在每次 sub-dispatch 前通过 `findReusableContextCapsule` 复用、派发后通过 `buildContextCapsule` 生成新的不可变 capsule；v1 优先按 `(lifecycle_issue, branch, worktree)` 复用，v2 fallback 仅允许 `(conversation_anchor, branch, worktree)` 同时匹配，OpenCode restart 后 anchor 丢失时报告 `Capsule status: none` 或 `skipped: no-conversation-anchor`，不尝试恢复旧对话 anchor。
 - Reviewer 在 `**Findings**` 中检查「行为一致性」子项，明显漂移时升级为 `CHANGES REQUESTED`，可复用漂移教训只通过 `Behavior observation: drift-lesson` 上报给 executor / primary 决定是否写 Project Memory（不直接 promote）。
 - 终态汇报的「预期表现」和「你可以怎么验收」需要与 design.md `## Behavior` 语义一致，但不新增 `Scenario coverage: N/M` 状态行，五段结构不变。
 - 历史计划和 ledger 会被索引，后续可通过 `/search` 或 `artifact_search` 找回。

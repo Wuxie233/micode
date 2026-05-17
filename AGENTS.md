@@ -47,6 +47,8 @@ micode 在主工作流（brainstormer / planner / executor）和对抗审查（c
 2. **你可以怎么验收**：用户用 2-4 个步骤自己验证（打开某页 / 跑某命令 / 检查某输出），不是 agent 内部 verify 脚本。
 3. **已知限制 / 下一步**：没完成的部分、需要用户手动处理的事、已知边界。没有就写"无"。
 4. **本次知识上下文**：本任务读取/确认/维护了哪些 Atlas 节点、Project Memory 条目、Mindmodel 主题，传给子 agent 的 context-brief 摘要长度。段尾三行固定状态：`Atlas status: <value>`、`Project Memory status: <value>` 和 `Capsule status: <value>`；Capsule status 取值为 `none|fresh|partially-stale|discarded|skipped:<reason>|blocked:<reason>`。
+
+Working Context Capsule v2：commander / brainstormer / octto 在终态汇报前遵循 `findReusableContextCapsule` before `buildContextCapsule`（先 find 现有 capsule，必要时 build 后再报告）顺序；single subagent / Task / executor-direct 只消费下传 capsule，不把复用状态扩散到边界外。v1 lifecycle boundary priority 高于 v2 复用：优先匹配 `(lifecycle_issue, branch, worktree)`，缺少 lifecycle anchor 时才允许 `(conversation_anchor, branch, worktree)` 作为 fallback；OpenCode restart 导致 conversation_anchor lost 时必须报告 `Capsule status: none` 或 `skipped: no-conversation-anchor`。executor-direct receives but does not build/spawn capsule；任何 out-of-bound reuse 必须 `discarded`。
 5. **实现记录**：commit / 测试 / issue / batch / 子任务等过程产物压缩为 1-2 行。
 
 ### Blocked / failed-stop 例外

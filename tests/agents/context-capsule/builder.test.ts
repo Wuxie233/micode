@@ -43,6 +43,10 @@ describe("context capsule builder", () => {
     expect(result.path).toEndWith(".md");
     expect(result.frontmatter).toEqual({
       lifecycle_issue: 91,
+      conversation_anchor: null,
+      generated_by: null,
+      dispatch_kind: null,
+      parent_capsule: null,
       branch: "issue-91-working-context-capsule",
       head_sha: "abc123",
       worktree,

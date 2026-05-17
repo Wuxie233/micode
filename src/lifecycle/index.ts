@@ -657,7 +657,7 @@ const createCommitter = (context: LifecycleContext): LifecycleHandle["commit"] =
     const record = await requireRecord(context.store, issueNumber);
     const remoteWriteGuard = await evaluateRemoteWriteGuard({
       runner: context.runner,
-      cwd: record.worktree,
+      cwd: context.cwd,
       operation: "lifecycle_commit",
       issueNumber,
       branch: record.branch,

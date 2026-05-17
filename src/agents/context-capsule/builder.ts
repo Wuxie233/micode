@@ -23,6 +23,10 @@ function buildSourceHashes(input: ContextCapsuleBuildInput): Readonly<Record<str
 function buildFrontmatter(input: ContextCapsuleBuildInput): ContextCapsuleFrontmatter {
   return {
     lifecycle_issue: input.lifecycleIssue,
+    conversation_anchor: input.conversationAnchor ?? null,
+    generated_by: input.generatedBy ?? null,
+    dispatch_kind: input.dispatchKind ?? null,
+    parent_capsule: input.parentCapsuleSha ?? null,
     branch: input.branch,
     head_sha: input.headSha,
     worktree: input.worktree,
@@ -76,7 +80,15 @@ function buildWarnings(input: ContextCapsuleBuildInput): readonly string[] {
 }
 
 function makeCapsulePath(outputDir: string, input: ContextCapsuleBuildInput, token: string): string {
-  const issuePrefix = input.lifecycleIssue === null ? "no-issue" : `issue-${input.lifecycleIssue}`;
+  let issuePrefix: string;
+  if (input.lifecycleIssue !== null) {
+    issuePrefix = `issue-${input.lifecycleIssue}`;
+  } else if (input.conversationAnchor) {
+    issuePrefix = `conv-${slugifyCapsuleTopic(input.conversationAnchor)}`;
+  } else {
+    issuePrefix = "no-issue";
+  }
+
   const topicSlug = slugifyCapsuleTopic(input.topic);
   return join(outputDir, `${issuePrefix}-${topicSlug}-${token}.md`);
 }

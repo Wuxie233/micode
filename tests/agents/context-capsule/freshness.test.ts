@@ -83,4 +83,56 @@ describe("context capsule freshness", () => {
       staleSourceFiles: [],
     });
   });
+
+  it("hard-discards when the expected conversation anchor does not match", () => {
+    expect(
+      evaluateContextCapsuleFreshness(
+        input({
+          expectedConversationAnchor: "anchor-current",
+          frontmatter: frontmatter({ conversation_anchor: "anchor-old" }),
+        }),
+      ),
+    ).toEqual({
+      status: "discarded",
+      reasons: ["conversation_anchor_mismatch"],
+      staleSourceFiles: [],
+    });
+  });
+
+  it("treats a missing frontmatter conversation anchor as null when comparing", () => {
+    expect(
+      evaluateContextCapsuleFreshness(
+        input({
+          expectedConversationAnchor: "anchor-current",
+          frontmatter: frontmatter(),
+        }),
+      ),
+    ).toEqual({
+      status: "discarded",
+      reasons: ["conversation_anchor_mismatch"],
+      staleSourceFiles: [],
+    });
+  });
+
+  it("returns fresh when the expected conversation anchor is null and frontmatter omits it", () => {
+    expect(evaluateContextCapsuleFreshness(input({ expectedConversationAnchor: null }))).toEqual({
+      status: "fresh",
+      reasons: [],
+      staleSourceFiles: [],
+    });
+  });
+
+  it("does not check conversation anchor when expected is undefined for v1 compatibility", () => {
+    expect(
+      evaluateContextCapsuleFreshness(
+        input({
+          frontmatter: frontmatter({ conversation_anchor: "anchor-old" }),
+        }),
+      ),
+    ).toEqual({
+      status: "fresh",
+      reasons: [],
+      staleSourceFiles: [],
+    });
+  });
 });

@@ -117,7 +117,7 @@ describe("lifecycle remote write guard integration", () => {
       branch: BRANCH,
       worktree: WORKTREE,
     });
-    expect(runner.calls).toEqual([{ bin: "git", args: ["remote", "get-url", "origin"], cwd: WORKTREE }]);
+    expect(runner.calls).toEqual([{ bin: "git", args: ["remote", "get-url", "origin"], cwd: CWD }]);
     expect(hasCall(runner, "git", ["add", "--all"])).toBe(false);
     expect(hasCall(runner, "git", ["commit"])).toBe(false);
     expect(hasCall(runner, "git", ["push"])).toBe(false);
