@@ -37,78 +37,110 @@ export interface AttemptRegistry {
   readonly reset: () => void;
 }
 
-interface RegistryState {
+interface AttemptRegistryState {
   readonly attempts: Map<string, number>;
   readonly processing: Set<string>;
   readonly expiryTimers: Map<string, ReturnType<typeof setTimeout>>;
 }
 
-function clearExpiry(state: RegistryState, key: string): void {
-  const timer = state.expiryTimers.get(key);
-  if (timer === undefined) return;
+function clearExpiry(expiryTimers: AttemptRegistryState["expiryTimers"], key: string): void {
+  const timer = expiryTimers.get(key);
+  if (timer === undefined) {
+    return;
+  }
+
   clearTimeout(timer);
-  state.expiryTimers.delete(key);
+  expiryTimers.delete(key);
 }
 
 function buildResult(attempt: number, maxAttempts: number): RecordResult {
-  return { attempt, exhausted: attempt >= maxAttempts };
+  return {
+    attempt,
+    exhausted: attempt >= maxAttempts,
+  };
 }
 
-function recordAttempt(state: RegistryState, key: string, maxAttempts: number): RecordResult {
-  const current = state.attempts.get(key) ?? 0;
-  if (current >= maxAttempts) return buildResult(current, maxAttempts);
-  const next = Math.min(current + 1, maxAttempts);
-  state.attempts.set(key, next);
-  return buildResult(next, maxAttempts);
+function createRecord(state: AttemptRegistryState, maxAttempts: number): AttemptRegistry["record"] {
+  return (key) => {
+    const current = state.attempts.get(key) ?? 0;
+    if (current >= maxAttempts) {
+      return buildResult(current, maxAttempts);
+    }
+
+    const next = Math.min(current + 1, maxAttempts);
+    state.attempts.set(key, next);
+    return buildResult(next, maxAttempts);
+  };
 }
 
-function beginProcessingKey(state: RegistryState, key: string, expiryMs: number): boolean {
-  if (state.processing.has(key)) return false;
-  state.processing.add(key);
-  clearExpiry(state, key);
-  const timer = setTimeout(() => {
+function createBeginProcessing(state: AttemptRegistryState, expiryMs: number): AttemptRegistry["beginProcessing"] {
+  return (key) => {
+    if (state.processing.has(key)) {
+      return false;
+    }
+
+    state.processing.add(key);
+    clearExpiry(state.expiryTimers, key);
+    const timer = setTimeout(() => {
+      state.processing.delete(key);
+      state.expiryTimers.delete(key);
+    }, expiryMs);
+    state.expiryTimers.set(key, timer);
+    return true;
+  };
+}
+
+function createEndProcessing(state: AttemptRegistryState): AttemptRegistry["endProcessing"] {
+  return (key) => {
     state.processing.delete(key);
-    state.expiryTimers.delete(key);
-  }, expiryMs);
-  state.expiryTimers.set(key, timer);
-  return true;
+    clearExpiry(state.expiryTimers, key);
+  };
 }
 
-function clearSessionKeys(state: RegistryState, sessionId: string): void {
-  const prefix = `${sessionId}:`;
+function clearMatchingKeys(state: AttemptRegistryState, prefix: string): void {
   for (const key of state.attempts.keys()) {
-    if (key.startsWith(prefix)) state.attempts.delete(key);
+    if (key.startsWith(prefix)) {
+      state.attempts.delete(key);
+    }
   }
+
   for (const key of state.processing) {
     if (key.startsWith(prefix)) {
       state.processing.delete(key);
-      clearExpiry(state, key);
+      clearExpiry(state.expiryTimers, key);
     }
   }
 }
 
-function resetRegistry(state: RegistryState): void {
-  state.attempts.clear();
-  state.processing.clear();
-  for (const timer of state.expiryTimers.values()) clearTimeout(timer);
-  state.expiryTimers.clear();
+function createClearSession(state: AttemptRegistryState): AttemptRegistry["clearSession"] {
+  return (sessionId) => {
+    clearMatchingKeys(state, `${sessionId}:`);
+  };
+}
+
+function createReset(state: AttemptRegistryState): AttemptRegistry["reset"] {
+  return () => {
+    state.attempts.clear();
+    state.processing.clear();
+    for (const timer of state.expiryTimers.values()) {
+      clearTimeout(timer);
+    }
+    state.expiryTimers.clear();
+  };
 }
 
 export function createAttemptRegistry(options: AttemptRegistryOptions): AttemptRegistry {
-  const state: RegistryState = {
+  const state: AttemptRegistryState = {
     attempts: new Map<string, number>(),
     processing: new Set<string>(),
     expiryTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   };
 
   return {
-    record: (key) => recordAttempt(state, key, options.maxAttempts),
-    beginProcessing: (key) => beginProcessingKey(state, key, options.expiryMs),
-    endProcessing: (key) => {
-      state.processing.delete(key);
-      clearExpiry(state, key);
-    },
-    clearSession: (sessionId) => clearSessionKeys(state, sessionId),
-    reset: () => resetRegistry(state),
+    record: createRecord(state, options.maxAttempts),
+    beginProcessing: createBeginProcessing(state, options.expiryMs),
+    endProcessing: createEndProcessing(state),
+    clearSession: createClearSession(state),
+    reset: createReset(state),
   };
 }

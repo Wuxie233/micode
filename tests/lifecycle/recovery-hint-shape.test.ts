@@ -129,6 +129,62 @@ describe("recovery hint shape contract", () => {
     );
   });
 
+  it("lifecycle_current ambiguous fresh-candidates path emits ask_user recovery hint fields", async () => {
+    const tool = createLifecycleCurrentTool({
+      current: async () => ({
+        kind: "ambiguous",
+        candidates: [
+          {
+            issueNumber: 7,
+            branch: "issue/7-active",
+            worktree: "/tmp/issue-7",
+            state: "in_progress",
+            stale: false,
+            staleReason: null,
+          },
+          {
+            issueNumber: 67,
+            branch: "issue/67-active",
+            worktree: "/tmp/issue-67",
+            state: "in_progress",
+            stale: false,
+            staleReason: null,
+          },
+        ],
+      }),
+    });
+
+    const output = await execute(tool, {});
+
+    expectRecoveryHintShape(output);
+    expect(output).toContain("**failure_kind:** `ambiguous_lifecycle`");
+    expect(output).toContain("**recommended_next_action:** `ask_user`");
+    expect(output).toContain("**safe_to_retry:** `false`");
+    expect(output).toContain("**attempt:** `1`");
+    expect(output).toContain(
+      "**summary:** Multiple lifecycle records match the current context; 2 candidate(s) found.",
+    );
+  });
+
+  it("lifecycle_finish omitted issue_number path emits invalid_issue_number ask_user recovery hint fields", async () => {
+    const tool = createLifecycleFinishTool({
+      finish: async () => {
+        throw new Error("finish should not be called without issue_number");
+      },
+    });
+
+    const output = await execute(tool, { merge_strategy: "auto", wait_for_checks: false });
+
+    expectRecoveryHintShape(output);
+    expect(output).toContain("**failure_kind:** `invalid_issue_number`");
+    expect(output).toContain("**recommended_next_action:** `ask_user`");
+    expect(output).toContain("**safe_to_retry:** `false`");
+    expect(output).toContain("**attempt:** `1`");
+    expect(output).toContain(
+      "**summary:** issue_number was omitted and no active lifecycle could be inferred. Pass issue_number explicitly or run lifecycle_current first.",
+    );
+  });
+
   it("lifecycle_resume stale-record failure path emits the required recovery hint fields", async () => {
     const tool = createLifecycleResumeTool({
       resume: async () => {

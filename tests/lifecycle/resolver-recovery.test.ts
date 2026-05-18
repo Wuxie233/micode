@@ -155,7 +155,7 @@ describe("resolver explicit recovery methods", () => {
     await expect(resolver.resolveExplicit(7)).rejects.toThrow(StaleRecordError);
   });
 
-  it("forceRefresh reconstructs from issue body and overwrites local cache", async () => {
+  it("forceRefresh reconstructs from issue body and overwrites low-confidence local cache", async () => {
     const body = [
       "<!-- micode:lifecycle:state:begin -->",
       `state: ${LIFECYCLE_STATES.IN_PROGRESS}`,
@@ -170,12 +170,71 @@ describe("resolver explicit recovery methods", () => {
       },
       gh: async () => ok(JSON.stringify({ body })),
     };
-    const store = fakeStore([mkRecord(67, "issue/67-stale", LIFECYCLE_STATES.BRANCH_READY)], [67]);
+    const store = fakeStore([mkRecord(67, "main", LIFECYCLE_STATES.BRANCH_READY)], [67]);
     const resolver = createResolver({ runner, store, cwd: "/r" });
 
     const refreshed = await resolver.forceRefresh(67);
 
     expect(refreshed.branch).toBe("issue/67-refreshed");
     expect((await store.load(67))?.branch).toBe("issue/67-refreshed");
+  });
+
+  it("forceRefresh preserves high-confidence local branch/worktree when called from main", async () => {
+    const body = [
+      "<!-- micode:lifecycle:state:begin -->",
+      `state: ${LIFECYCLE_STATES.IN_PROGRESS}`,
+      "<!-- micode:lifecycle:state:end -->",
+    ].join("\n");
+    const runner: LifecycleRunner = {
+      git: async (args) => {
+        const k = args.join(" ");
+        if (k === "rev-parse --abbrev-ref HEAD") return ok("main");
+        if (k === "rev-parse --show-toplevel") return ok("/root/CODE/micode");
+        return ok();
+      },
+      gh: async () => ok(JSON.stringify({ body })),
+    };
+    const store = fakeStore([mkRecord(67, "issue/67-real", LIFECYCLE_STATES.BRANCH_READY)], [67]);
+    const resolver = createResolver({ runner, store, cwd: "/root/CODE/micode" });
+
+    const refreshed = await resolver.forceRefresh(67);
+
+    expect(refreshed.branch).toBe("issue/67-real");
+    expect(refreshed.worktree).toBe("/wt/67");
+    expect(refreshed.state).toBe(LIFECYCLE_STATES.IN_PROGRESS);
+    expect((await store.load(67))?.branch).toBe("issue/67-real");
+  });
+
+  it("forceRefresh can reconstruct identity from an issue-body worktree artifact before cwd fallback", async () => {
+    const artifactWorktree = "/root/CODE/issue-98-harden-lifecycle-finish-and-resume-identity-reso";
+    const body = [
+      "<!-- micode:lifecycle:state:begin -->",
+      `state: ${LIFECYCLE_STATES.IN_PROGRESS}`,
+      "<!-- micode:lifecycle:state:end -->",
+      "<!-- micode:lifecycle:artifacts:begin -->",
+      "| Kind | Pointer |",
+      "| --- | --- |",
+      `| ${ARTIFACT_KINDS.WORKTREE} | ${artifactWorktree} |`,
+      "<!-- micode:lifecycle:artifacts:end -->",
+    ].join("\n");
+    const runner: LifecycleRunner = {
+      git: async (args, opts) => {
+        const k = args.join(" ");
+        if (k === "rev-parse --abbrev-ref HEAD" && opts?.cwd === artifactWorktree) return ok("issue/98-real");
+        if (k === "rev-parse --abbrev-ref HEAD") return ok("main");
+        if (k === "rev-parse --show-toplevel") return ok("/root/CODE/micode");
+        if (k === "worktree list --porcelain") return ok(`worktree /root/CODE/micode\nworktree ${artifactWorktree}\n`);
+        return ok();
+      },
+      gh: async () => ok(JSON.stringify({ body })),
+    };
+    const store = fakeStore([mkRecord(98, "main", LIFECYCLE_STATES.BRANCH_READY)], [98]);
+    const resolver = createResolver({ runner, store, cwd: "/root/CODE/micode" });
+
+    const refreshed = await resolver.forceRefresh(98);
+
+    expect(refreshed.branch).toBe("issue/98-real");
+    expect(refreshed.worktree).toBe(artifactWorktree);
+    expect((await store.load(98))?.worktree).toBe(artifactWorktree);
   });
 });

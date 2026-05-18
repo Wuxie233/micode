@@ -20,8 +20,10 @@ import { createLeaseStore, type LeaseStore } from "./lease/store";
 import { buildExecutionMarker, parseExecutionMarker } from "./markers";
 import { finishLifecycle } from "./merge";
 import { classifyRepo, type PreFlightResult, REPO_KIND } from "./pre-flight";
+import { buildHint } from "./recovery/hint";
 import { probeRuntimeIdentity } from "./recovery/identity";
 import { inspectRecovery } from "./recovery/inspect";
+import { resolveIssueIdentity } from "./recovery/resolve-issue-identity";
 import type { RecoveryDecision } from "./recovery/types";
 import { evaluateRemoteWriteGuard } from "./remote-write-guard";
 import { collectReviewSummary, renderReviewSummarySection } from "./review-summary";
@@ -133,6 +135,7 @@ const LINE_BREAK = "\n";
 const LIST_PREFIX = "- ";
 const NO_ITEMS = "- None";
 const ISSUE_URL_PATTERN = /https:\/\/github\.com\/\S+\/issues\/(\d+)/;
+const ISSUE_URL_TRAILING_PATTERN = /\/issues\/\d+$/;
 const SLUG_SEPARATOR = "-";
 const SLUG_PATTERN = /[^a-z0-9]+/g;
 const SLUG_EDGE_PATTERN = /^-+|-+$/g;
@@ -151,6 +154,8 @@ const ISSUE_POINTER_PREFIX = "issue/";
 const RESOLVED_BASE_PREFIX = "resolved-base";
 const PROJECT_MEMORY_TERMINAL_TRIGGER = "lifecycle.finish";
 const OUTCOME_POINTER_PREFIX = "outcome/";
+const MAIN_BRANCH = "main";
+const AMBIGUOUS_LIFECYCLE = "ambiguous_lifecycle";
 
 const GH_ISSUE = "issue";
 const GH_REPO = "repo";
@@ -386,6 +391,15 @@ const closeMergedIssue = async (
   return { ...outcome, closedAt };
 };
 
+const normalizeLifecycleRecordIssueIdentity = (
+  record: LifecycleRecord,
+  explicitIssueNumber: number,
+): LifecycleRecord => {
+  const issueUrl = record.issueUrl.replace(ISSUE_URL_TRAILING_PATTERN, `/issues/${explicitIssueNumber}`);
+  if (record.issueNumber === explicitIssueNumber && issueUrl === record.issueUrl) return record;
+  return { ...record, issueNumber: explicitIssueNumber, issueUrl };
+};
+
 const annotateWithResolvedBranch = (
   outcome: FinishOutcome,
   resolved: { readonly branch: string; readonly source: string },
@@ -403,6 +417,29 @@ const buildExecutorBlockedOutcome = (note: string): FinishOutcome => ({
   worktreeRemoved: false,
   cleanupOutcome: { kind: "failed", reason: "cleanup not attempted (executor blocked)", retried: false },
   note,
+});
+
+const buildAmbiguousLifecycleFinishOutcome = (
+  issueNumber: number,
+  branch: string,
+  worktree: string,
+  reason: string,
+): FinishOutcome => ({
+  merged: false,
+  prUrl: null,
+  closedAt: null,
+  worktreeRemoved: false,
+  cleanupOutcome: { kind: "failed", reason: "finish blocked before merge identity resolution", retried: false },
+  note: `${AMBIGUOUS_LIFECYCLE}: ${reason}`,
+  recoveryHint: buildHint({
+    failureKind: "ambiguous_lifecycle",
+    recommendedNextAction: "ask_user",
+    summary: reason,
+    issueNumber,
+    branch,
+    worktree,
+    safeToRetry: false,
+  }),
 });
 
 const buildRemoteWriteBlockedCommitOutcome = (
@@ -449,12 +486,13 @@ const safeNotify = async (
   status: NotificationStatus,
   record: LifecycleRecord,
   summary: string,
+  issueNumber = record.issueNumber,
 ): Promise<void> => {
   if (!context.notifier) return;
   try {
     await context.notifier.notify({
       status,
-      issueNumber: record.issueNumber,
+      issueNumber,
       title: record.branch,
       summary,
       reference: record.issueUrl.length > 0 ? record.issueUrl : null,
@@ -725,42 +763,115 @@ const finishBlockedTasks = async (
   return outcome;
 };
 
-const executeFinishMerge = async (
+const resolveFinishRecordIdentity = async (
   context: LifecycleContext,
-  record: LifecycleRecord,
+  merging: LifecycleRecord,
+  explicitIssueNumber: number,
+): Promise<LifecycleRecord | FinishOutcome> => {
+  if (merging.branch !== MAIN_BRANCH) return merging;
+
+  const identity = await resolveIssueIdentity({
+    runner: context.runner,
+    cwd: context.cwd,
+    issueNumberHint: explicitIssueNumber,
+    localRecord: merging,
+    issueBodyArtifacts: { worktree: merging.artifacts[ARTIFACT_KINDS.WORKTREE] },
+    explicit: null,
+  });
+
+  if (identity.source === "issue-body-artifact" && !identity.ambiguous && identity.branch !== MAIN_BRANCH) {
+    return { ...merging, branch: identity.branch, worktree: identity.worktree };
+  }
+
+  const reason = identity.ambiguous
+    ? (identity.ambiguityReason ?? "ambiguous lifecycle identity")
+    : "branch=main and no validated issue worktree artifact";
+  return buildAmbiguousLifecycleFinishOutcome(explicitIssueNumber, identity.branch, identity.worktree, reason);
+};
+
+const runFinishLifecycle = async (
+  context: LifecycleContext,
+  explicitIssueNumber: number,
+  mergeRecord: LifecycleRecord,
   events: readonly JournalEvent[],
   finishInput: FinishInput,
 ): Promise<FinishOutcome> => {
-  const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
-  const summary = collectReviewSummary({ record: merging, events, now: Date.now() });
+  const summary = collectReviewSummary({ record: mergeRecord, events, now: Date.now() });
   const reviewSummarySection = renderReviewSummarySection(summary);
   const resolvedBranch = await resolveDefaultBranch(context.runner, { cwd: context.cwd });
   const finished = await finishLifecycle(context.runner, {
     cwd: context.cwd,
-    branch: merging.branch,
-    worktree: merging.worktree,
+    branch: mergeRecord.branch,
+    worktree: mergeRecord.worktree,
     mergeStrategy: finishInput.mergeStrategy,
     waitForChecks: finishInput.waitForChecks,
     baseBranch: resolvedBranch.branch,
     reviewSummarySection,
     postSummaryComment: config.lifecycle.postPrSummaryComment,
-    issueNumber: merging.issueNumber,
-    artifactPointers: Object.values(merging.artifacts).flat(),
+    issueNumber: explicitIssueNumber,
+    artifactPointers: Object.values(mergeRecord.artifacts).flat(),
   });
-  const annotated = annotateWithResolvedBranch(finished, resolvedBranch);
-  const outcome = await closeMergedIssue(context.runner, record.issueNumber, annotated, context.cwd);
-  const final = await saveAndSync(context, applyFinishOutcome(merging, outcome));
+  return closeMergedIssue(
+    context.runner,
+    explicitIssueNumber,
+    annotateWithResolvedBranch(finished, resolvedBranch),
+    context.cwd,
+  );
+};
+
+const persistFinishMergeOutcome = async (
+  context: LifecycleContext,
+  explicitIssueNumber: number,
+  mergeRecord: LifecycleRecord,
+  outcome: FinishOutcome,
+): Promise<LifecycleRecord> => {
+  const final = await saveAndSync(context, applyFinishOutcome(mergeRecord, outcome));
   scheduleTerminalMaintenance(context, final, outcome);
-  await safeEmit(context, record.issueNumber, `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`);
-  if (outcome.merged) {
-    await safeNotify(context, NOTIFICATION_STATUSES.COMPLETED, final, `merged: ${outcome.prUrl ?? "(local merge)"}`);
-  }
+  await safeEmit(
+    context,
+    explicitIssueNumber,
+    `Finished: merged=${outcome.merged}, prUrl=${outcome.prUrl ?? "(none)"}`,
+  );
+  return final;
+};
+
+const notifyFinishedIfMerged = async (
+  context: LifecycleContext,
+  explicitIssueNumber: number,
+  final: LifecycleRecord,
+  outcome: FinishOutcome,
+): Promise<void> => {
+  if (!outcome.merged) return;
+  await safeNotify(
+    context,
+    NOTIFICATION_STATUSES.COMPLETED,
+    final,
+    `merged: ${outcome.prUrl ?? "(local merge)"}`,
+    explicitIssueNumber,
+  );
+};
+
+const executeFinishMerge = async (
+  context: LifecycleContext,
+  explicitIssueNumber: number,
+  record: LifecycleRecord,
+  events: readonly JournalEvent[],
+  finishInput: FinishInput,
+): Promise<FinishOutcome> => {
+  const merging = await saveAndSync(context, advanceTo(record, LIFECYCLE_STATES.MERGING));
+  const resolvedIdentity = await resolveFinishRecordIdentity(context, merging, explicitIssueNumber);
+  if ("merged" in resolvedIdentity) return resolvedIdentity;
+
+  const mergeRecord = resolvedIdentity;
+  const outcome = await runFinishLifecycle(context, explicitIssueNumber, mergeRecord, events, finishInput);
+  const final = await persistFinishMergeOutcome(context, explicitIssueNumber, mergeRecord, outcome);
+  await notifyFinishedIfMerged(context, explicitIssueNumber, final, outcome);
   return outcome;
 };
 
 const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] => {
   return async (issueNumber, finishInput) => {
-    const record = await requireRecord(context.store, issueNumber);
+    const record = normalizeLifecycleRecordIssueIdentity(await requireRecord(context.store, issueNumber), issueNumber);
     const guardOutcome = await checkFinishRemoteWriteGuard(context, record, issueNumber);
     if (guardOutcome) return guardOutcome;
 
@@ -769,7 +880,7 @@ const createFinisher = (context: LifecycleContext): LifecycleHandle["finish"] =>
     const blockedOutcome = await finishBlockedTasks(context, record, blocked);
     if (blockedOutcome) return blockedOutcome;
 
-    return executeFinishMerge(context, record, events, finishInput);
+    return executeFinishMerge(context, issueNumber, record, events, finishInput);
   };
 };
 

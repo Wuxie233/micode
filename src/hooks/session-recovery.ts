@@ -27,9 +27,9 @@ const MAX_RECOVERY_ATTEMPTS = 3;
 const ABORT_SETTLE_DELAY_MS = 500;
 const RECOVERY_TOAST_DURATION_MS = 3000;
 const TOAST_FAILURE_DURATION_MS = 5000;
-const MS_PER_SECOND = 1000;
 const ERROR_KEY_EXPIRY_MS = 10000;
 const UPSTREAM_ATTEMPT_EXPIRY_MS = 60000;
+const MS_PER_SECOND = 1000;
 const UPSTREAM_ERROR_CLASS = "upstream_error";
 const UPSTREAM_RECOVERY_PROMPT =
   "Upstream/provider transient failure detected; resuming this session. " +
@@ -192,6 +192,16 @@ function buildUpstreamAttemptKey(sessionID: string): string {
   return WORKFLOW_CONTINUATION_RETRY_POLICY.attemptKey(sessionID, UPSTREAM_ERROR_CLASS);
 }
 
+function showUpstreamRetryExhaustedToast(rc: RecoveryContext): void {
+  showToast(
+    rc,
+    "Upstream retry exhausted",
+    `Reached ${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts} attempts; manual intervention needed.`,
+    "error",
+    TOAST_FAILURE_DURATION_MS,
+  );
+}
+
 function addPendingUpstreamTimer(state: RecoveryState, sessionID: string, timer: ReturnType<typeof setTimeout>): void {
   const timers = state.upstreamTimers.get(sessionID) ?? new Set<ReturnType<typeof setTimeout>>();
   timers.add(timer);
@@ -225,13 +235,7 @@ async function handleUpstreamRecoverable(deps: UpstreamRecoveryDeps): Promise<vo
   const scheduledAttempts = deps.rc.state.upstreamScheduledAttempts.get(key) ?? 0;
   if (scheduledAttempts >= WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts) {
     deps.rc.state.upstreamRegistry.endProcessing(key);
-    showToast(
-      deps.rc,
-      "Upstream retry exhausted",
-      `Reached ${WORKFLOW_CONTINUATION_RETRY_POLICY.maxAttempts} attempts; manual intervention needed.`,
-      "error",
-      TOAST_FAILURE_DURATION_MS,
-    );
+    showUpstreamRetryExhaustedToast(deps.rc);
     return;
   }
   const attempt = scheduledAttempts + 1;
@@ -245,33 +249,24 @@ async function handleUpstreamRecoverable(deps: UpstreamRecoveryDeps): Promise<vo
     RECOVERY_TOAST_DURATION_MS,
   );
 
-  const timer = setTimeout(
-    () => scheduleUpstreamResumePrompt(deps, key, timer),
-    WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs,
-  );
+  const timer = setTimeout(() => {
+    removePendingUpstreamTimer(deps.rc.state, deps.sessionID, timer);
+    deps.rc.state.upstreamRegistry.endProcessing(key);
+    void deps.rc.ctx.client.session
+      .prompt({
+        path: { id: deps.sessionID },
+        body: {
+          parts: [{ type: "text", text: UPSTREAM_RECOVERY_PROMPT }],
+          ...(deps.providerID && deps.modelID ? { providerID: deps.providerID, modelID: deps.modelID } : {}),
+          ...(deps.agent ? { agent: deps.agent } : {}),
+        },
+        query: { directory: deps.rc.ctx.directory },
+      })
+      .catch(() => {
+        // Prompt failure is left to the next event cycle.
+      });
+  }, WORKFLOW_CONTINUATION_RETRY_POLICY.intervalMs);
   addPendingUpstreamTimer(deps.rc.state, deps.sessionID, timer);
-}
-
-function scheduleUpstreamResumePrompt(
-  deps: UpstreamRecoveryDeps,
-  key: string,
-  timer: ReturnType<typeof setTimeout>,
-): void {
-  removePendingUpstreamTimer(deps.rc.state, deps.sessionID, timer);
-  deps.rc.state.upstreamRegistry.endProcessing(key);
-  void deps.rc.ctx.client.session
-    .prompt({
-      path: { id: deps.sessionID },
-      body: {
-        parts: [{ type: "text", text: UPSTREAM_RECOVERY_PROMPT }],
-        ...(deps.providerID && deps.modelID ? { providerID: deps.providerID, modelID: deps.modelID } : {}),
-        ...(deps.agent ? { agent: deps.agent } : {}),
-      },
-      query: { directory: deps.rc.ctx.directory },
-    })
-    .catch(() => {
-      // Prompt failure is left to the next event cycle.
-    });
 }
 
 function cleanupSession(state: RecoveryState, sessionID: string): void {
