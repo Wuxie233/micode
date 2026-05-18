@@ -62,7 +62,12 @@ async function advanceTimersByTime(ms: number): Promise<void> {
   }
 }
 
-function makeCtx(): { ctx: any; captures: PromptCapture[]; abortCalls: string[]; toastCalls: Array<{ title: string; variant: string }> } {
+function makeCtx(): {
+  ctx: any;
+  captures: PromptCapture[];
+  abortCalls: string[];
+  toastCalls: Array<{ title: string; variant: string }>;
+} {
   const captures: PromptCapture[] = [];
   const abortCalls: string[] = [];
   const toastCalls: Array<{ title: string; variant: string }> = [];

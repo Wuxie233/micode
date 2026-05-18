@@ -1,6 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, test } from "bun:test";
 
 const ATLAS = resolve(__dirname, "..", "..", "atlas");
 

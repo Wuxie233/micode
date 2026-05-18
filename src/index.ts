@@ -77,6 +77,7 @@ import {
   checkBtcaAvailable,
   createAtlasLookupTool,
   createBatchReadTool,
+  createContextCapsuleTools,
   createDetectKnowledgeStateTool,
   createMindmodelLookupTool,
   createOcttoTools,
@@ -999,6 +1000,7 @@ const OpenCodeConfigPlugin: Plugin = async (ctx) => {
       ...octtoTools,
       ...lifecycleTools,
       ...createDetectKnowledgeStateTool(ctx),
+      ...createContextCapsuleTools(ctx),
     },
 
     config: async (config) => {

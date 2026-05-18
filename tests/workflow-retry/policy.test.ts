@@ -1,9 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  WORKFLOW_CONTINUATION_RETRY_POLICY,
-  DEFAULT_MAX_ATTEMPTS,
-  DEFAULT_INTERVAL_MS,
-} from "@/workflow-retry/policy";
+import { DEFAULT_INTERVAL_MS, DEFAULT_MAX_ATTEMPTS, WORKFLOW_CONTINUATION_RETRY_POLICY } from "@/workflow-retry/policy";
 
 describe("WORKFLOW_CONTINUATION_RETRY_POLICY", () => {
   test("default maxAttempts is 20", () => {
@@ -23,8 +19,6 @@ describe("WORKFLOW_CONTINUATION_RETRY_POLICY", () => {
   test("attemptKey combines sessionId and errorClass deterministically", () => {
     const { attemptKey } = WORKFLOW_CONTINUATION_RETRY_POLICY;
     expect(attemptKey("ses_abc", "upstream_error")).toBe("ses_abc:upstream_error");
-    expect(attemptKey("ses_abc", "upstream_error")).toBe(
-      attemptKey("ses_abc", "upstream_error"),
-    );
+    expect(attemptKey("ses_abc", "upstream_error")).toBe(attemptKey("ses_abc", "upstream_error"));
   });
 });

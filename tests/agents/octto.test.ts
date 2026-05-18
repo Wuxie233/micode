@@ -13,6 +13,6 @@ describe("octto context capsule prompt", () => {
 
   it("keeps auto-resume reuse through reusable context capsules explicit", () => {
     expect(prompt).toContain("auto-resume");
-    expect(prompt).toContain("findReusableContextCapsule");
+    expect(prompt).toContain("find_reusable_context_capsule");
   });
 });

@@ -135,8 +135,9 @@ const collectArtifactCandidates = async (
   const registered = artifacts.length > 0 ? await readRegisteredWorktrees(input.runner, input.cwd) : [];
   const validArtifactCandidates = [] as WorktreeCandidate[];
   for (const candidate of artifacts) {
-    if (!exists(candidate)) continue;
-    if (!registered.includes(candidate)) continue;
+    const isRegistered = registered.includes(candidate);
+    if (!isRegistered && !exists(candidate)) continue;
+    if (!isRegistered) continue;
     const branch = await deriveBranchFromWorktree(input.runner, candidate, input.issueNumberHint);
     if (!branchMatchesIssue(branch, input.issueNumberHint)) continue;
     validArtifactCandidates.push({ worktree: candidate, branch });

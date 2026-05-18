@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ToolContext, ToolResult } from "@opencode-ai/plugin/tool";
 
 import { createResolver, StaleRecordError } from "@/lifecycle/resolver";
@@ -148,8 +150,10 @@ describe("lifecycle_resume recovery", () => {
 
   it("force-refreshes issue identity from a validated worktree artifact instead of main cwd", async () => {
     const issueNumber = 96;
-    const mainCwd = "/root/CODE/micode";
-    const artifactWorktree = "/root/CODE/issue-96-x";
+    const mainCwd = join(tmpdir(), `micode-main-${issueNumber}-${process.pid}`);
+    const artifactWorktree = join(tmpdir(), `micode-issue-${issueNumber}-x-${process.pid}`);
+    const createdMainCwd = !existsSync(mainCwd);
+    if (createdMainCwd) mkdirSync(mainCwd, { recursive: true });
     const createdArtifactWorktree = !existsSync(artifactWorktree);
     if (createdArtifactWorktree) mkdirSync(artifactWorktree, { recursive: true });
 
@@ -197,6 +201,7 @@ describe("lifecycle_resume recovery", () => {
       expect(output).not.toContain(mainCwd);
     } finally {
       if (createdArtifactWorktree) rmSync(artifactWorktree, { recursive: true, force: true });
+      if (createdMainCwd) rmSync(mainCwd, { recursive: true, force: true });
     }
   });
 });

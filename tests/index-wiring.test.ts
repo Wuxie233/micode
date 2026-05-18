@@ -35,7 +35,8 @@ const PROJECT_MEMORY_TOOLS = [
   "project_memory_health",
   "project_memory_forget",
 ] as const;
-const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS] as const;
+const CONTEXT_CAPSULE_TOOLS = ["find_reusable_context_capsule", "build_context_capsule"] as const;
+const EXPECTED_TOOLS = [...EXISTING_TOOLS, ...PROJECT_MEMORY_TOOLS, ...CONTEXT_CAPSULE_TOOLS] as const;
 const TRACKED_KEYS = {
   PERSISTED_SESSIONS_DIR: "persistedSessionsDir",
   LIFECYCLE_DIR: "lifecycleDir",
